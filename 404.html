@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>404 - BakaMusic</title>
+    <link rel="icon" type="image/svg+xml" href="/music.svg">
+    <style>
+        /* Reset */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Design Tokens */
+        :root {
+            --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+            --font-mono: 'SF Mono', SFMono-Regular, ui-monospace, Menlo, Monaco, 'Cascadia Code', monospace;
+
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+            --space-8: 32px;
+            --space-10: 40px;
+            --space-12: 48px;
+            --space-16: 64px;
+
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+            --radius-full: 9999px;
+
+            --ease-default: cubic-bezier(0.25, 0.1, 0.25, 1);
+            --duration-fast: 200ms;
+            --duration-normal: 300ms;
+
+            /* Light Mode */
+            --color-bg: #F5F5F7;
+            --color-surface: #FFFFFF;
+            --color-surface-secondary: #F2F2F7;
+            --color-text-primary: #1D1D1F;
+            --color-text-secondary: #6E6E73;
+            --color-text-tertiary: #86868B;
+            --color-accent: #0071E3;
+            --color-accent-hover: #0077ED;
+            --color-accent-subtle: rgba(0, 113, 227, 0.08);
+            --color-green: #34C759;
+            --color-green-subtle: rgba(52, 199, 89, 0.12);
+            --color-separator: rgba(0, 0, 0, 0.06);
+            --color-border: rgba(0, 0, 0, 0.08);
+            --color-shadow: rgba(0, 0, 0, 0.04);
+            --color-code-bg: #F2F2F7;
+        }
+
+        [data-theme="dark"] {
+            --color-bg: #000000;
+            --color-surface: #1C1C1E;
+            --color-surface-secondary: #2C2C2E;
+            --color-text-primary: #F5F5F7;
+            --color-text-secondary: #98989D;
+            --color-text-tertiary: #6E6E73;
+            --color-accent: #2997FF;
+            --color-accent-hover: #40A9FF;
+            --color-accent-subtle: rgba(41, 151, 255, 0.12);
+            --color-green: #30D158;
+            --color-green-subtle: rgba(48, 209, 88, 0.16);
+            --color-separator: rgba(255, 255, 255, 0.08);
+            --color-border: rgba(255, 255, 255, 0.1);
+            --color-shadow: rgba(0, 0, 0, 0.2);
+            --color-code-bg: #2C2C2E;
+        }
+
+        /* Base */
+        html {
+            font-size: 16px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            font-family: var(--font-system);
+            background-color: var(--color-bg);
+            color: var(--color-text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-6);
+            transition: background-color var(--duration-normal) var(--ease-default),
+                        color var(--duration-normal) var(--ease-default);
+        }
+
+        /* Top Actions */
+        .top-actions {
+            position: fixed;
+            top: var(--space-5);
+            right: var(--space-5);
+            display: flex;
+            align-items: center;
+            gap: var(--space-1);
+            z-index: 100;
+        }
+
+        .nav-icon-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--duration-fast) var(--ease-default),
+                        color var(--duration-fast) var(--ease-default);
+            text-decoration: none;
+        }
+
+        .nav-icon-btn:hover {
+            background: var(--color-accent-subtle);
+            color: var(--color-accent);
+        }
+
+        .nav-icon-btn:active {
+            transform: scale(0.92);
+        }
+
+        .nav-icon-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .theme-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--duration-fast) var(--ease-default);
+        }
+
+        .theme-btn:hover {
+            background: var(--color-accent-subtle);
+            color: var(--color-accent);
+        }
+
+        .theme-btn:active {
+            transform: scale(0.92);
+        }
+
+        .theme-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .icon-sun, .icon-moon { display: none; }
+        [data-theme="light"] .icon-moon { display: block; }
+        [data-theme="dark"] .icon-sun { display: block; }
+
+        /* Container */
+        .container {
+            max-width: 560px;
+            width: 100%;
+            text-align: center;
+            animation: fadeIn 0.6s var(--ease-default) both;
+        }
+
+        /* Error Code */
+        .error-code {
+            font-size: clamp(96px, 20vw, 160px);
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            line-height: 1;
+            color: var(--color-text-tertiary);
+            opacity: 0.3;
+            margin-bottom: var(--space-4);
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* Title & Subtitle */
+        .title {
+            font-size: clamp(28px, 5vw, 40px);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            margin-bottom: var(--space-3);
+        }
+
+        .subtitle {
+            font-size: clamp(15px, 3vw, 19px);
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+            max-width: 420px;
+            margin: 0 auto var(--space-10);
+        }
+
+        /* Card */
+        .card {
+            background: var(--color-surface);
+            border-radius: var(--radius-xl);
+            padding: var(--space-6);
+            box-shadow: 0 1px 2px var(--color-shadow),
+                        0 4px 16px var(--color-shadow);
+            border: 0.5px solid var(--color-border);
+            text-align: left;
+            margin-bottom: var(--space-8);
+            transition: background var(--duration-normal) var(--ease-default),
+                        border-color var(--duration-normal) var(--ease-default);
+        }
+
+        .card-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: var(--space-4);
+            color: var(--color-text-primary);
+        }
+
+        /* API Items */
+        .api-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-3);
+        }
+
+        .api-item {
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-surface-secondary);
+            border-radius: var(--radius-md);
+        }
+
+        .api-method {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: var(--radius-full);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            background: var(--color-green-subtle);
+            color: var(--color-green);
+            margin-bottom: var(--space-1);
+        }
+
+        .api-label {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: var(--space-1);
+        }
+
+        .api-url {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            word-break: break-all;
+        }
+
+        /* Platforms */
+        .platforms {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            margin-top: var(--space-4);
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-accent-subtle);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            color: var(--color-accent);
+            flex-wrap: wrap;
+        }
+
+        .platforms svg {
+            flex-shrink: 0;
+            width: 16px;
+            height: 16px;
+            fill: var(--color-accent);
+        }
+
+        .platform-tag {
+            font-family: var(--font-mono);
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        /* Button */
+        .btn-home {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-2);
+            min-height: 48px;
+            padding: 0 var(--space-8);
+            font-family: var(--font-system);
+            font-size: 17px;
+            font-weight: 600;
+            color: #FFFFFF;
+            background: var(--color-accent);
+            border: none;
+            border-radius: var(--radius-full);
+            cursor: pointer;
+            text-decoration: none;
+            transition: all var(--duration-fast) var(--ease-default);
+        }
+
+        .btn-home:hover {
+            background: var(--color-accent-hover);
+        }
+
+        .btn-home:active {
+            transform: scale(0.97);
+        }
+
+        .btn-home svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: var(--space-10);
+            font-size: 13px;
+            color: var(--color-text-tertiary);
+            line-height: 1.6;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .card {
+                padding: var(--space-5);
+                border-radius: var(--radius-lg);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Actions -->
+    <div class="top-actions">
+        <a href="https://github.com/Zencok/baka-plugins" class="nav-icon-btn" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        </a>
+        <button class="theme-btn" onclick="toggleTheme()" aria-label="Toggle theme">
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><style>path{stroke:currentColor;stroke-width:2;stroke-linecap:round}</style></svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+    </div>
+
+    <div class="container">
+        <!-- Error Code -->
+        <div class="error-code" aria-hidden="true">404</div>
+
+        <!-- Title -->
+        <h1 class="title">Page Not Found</h1>
+        <p class="subtitle">
+            The page you're looking for doesn't exist or has been moved. Check the URL or head back to the homepage.
+        </p>
+
+        <!-- API Endpoints -->
+        <div class="card">
+            <div class="card-title">Available Endpoints</div>
+            <div class="api-list">
+                <div class="api-item">
+                    <span class="api-method">GET</span>
+                    <div class="api-label">Plugin Subscription</div>
+                    <div class="api-url">/api/subscription.json?source={source}&key={key}</div>
+                </div>
+                <div class="api-item">
+                    <span class="api-method">GET</span>
+                    <div class="api-label">Plugin Download</div>
+                    <div class="api-url">/plugins/{platform}.js?source={source}&key={key}</div>
+                </div>
+            </div>
+            <div class="platforms">
+                <svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+                <span>Sources:</span>
+                <span class="platform-tag">linglan</span> &middot;
+                <span class="platform-tag">ikun</span> &middot;
+                <span class="platform-tag">fengyu</span> &middot;
+                <span class="platform-tag">suyin</span> &middot;
+                <span class="platform-tag">xinghai</span> &middot;
+                <span class="platform-tag">nianxin</span> &middot;
+                <span class="platform-tag">changqing</span> &middot;
+                <span class="platform-tag">huibq</span>
+            </div>
+            <div class="platforms">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                <span>Platforms:</span>
+                <span class="platform-tag">wy</span> &middot;
+                <span class="platform-tag">qq</span> &middot;
+                <span class="platform-tag">kg</span> &middot;
+                <span class="platform-tag">kw</span> &middot;
+                <span class="platform-tag">mg</span> &middot;
+                <span class="platform-tag">bilibili</span> &middot;
+                <span class="platform-tag">qishui</span> &middot;
+                <span class="platform-tag">git</span>
+            </div>
+        </div>
+
+        <!-- Back Button -->
+        <a href="/" class="btn-home">
+            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            <span>Back to Home</span>
+        </a>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>BakaMusic Plugin Subscription Service</p>
+        </div>
+    </div>
+
+    <script>
+        function getPreferredTheme() {
+            const stored = localStorage.getItem('theme');
+            if (stored) return stored;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            applyTheme(current === 'dark' ? 'light' : 'dark');
+        }
+
+        applyTheme(getPreferredTheme());
+
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+            if (!localStorage.getItem('theme')) {
+                applyTheme(e.matches ? 'dark' : 'light');
+            }
+        });
+
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+                e.preventDefault();
+                toggleTheme();
+            }
+        });
+    </script>
+</body>
+</html>
