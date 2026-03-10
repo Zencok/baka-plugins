@@ -28,7 +28,7 @@
 | 酷我音乐 | [kw.js](./plugins/kw.js) | 0.2.9 | ✅ 需要 | ✅ |
 | QQ音乐 | [qq.js](./plugins/qq.js) | 0.3.4 | ✅ 需要 | ✅ |
 | Bilibili | [bilibili.js](./plugins/bilibili.js) | 0.2.7 | ❌ 无需 | ✅ |
-| 汽水音乐 | [qishui.js](./plugins/qishui.js) | 0.2.6 | ❌ 无需 | ✅ |
+| 汽水音乐 | [qishui.js](./plugins/qishui.js) | 0.2.7 | ❌ 无需 | ✅ |
 | Gitcode | [git.js](./plugins/git.js) | 0.2.1 | ❌ 无需 | ✅ |
 
 > **注意**：标记为"❌ 无需"的插件可以直接导入使用，无需配置 API Key。

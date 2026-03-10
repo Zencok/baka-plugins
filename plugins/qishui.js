@@ -48,6 +48,69 @@ const AUDIO_PLAYBACK_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36"
 };
 
+/**
+ * 汽水音乐网页分享页请求头（使用爬虫 UA 获取完整 SSR 数据）
+ * @constant {Object}
+ */
+const QISHUI_WEB_SHARE_HEADERS = {
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+};
+
+/**
+ * 汽水音乐网页分享页地址
+ * @constant {string}
+ */
+const QISHUI_WEB_SHARE_URL = "https://music.douyin.com/qishui/share/playlist";
+
+/**
+ * 汽水音乐榜单列表
+ * @constant {Array<Object>}
+ */
+const QISHUI_TOP_LIST_ITEMS = [{
+  "id": "7036274230471712007",
+  "description": "汽水音乐内每周热度最高的50首歌，每周四更新",
+  "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-i-b829550vbb/d0d8d48461a62748e84689cdf049b19a.png~tplv-b829550vbb-resize:960:960.png",
+  "title": "热歌榜"
+}, {
+  "id": "7060812597884869927",
+  "description": "近期发行的热度最高的50首新歌，每周四更新",
+  "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-i-b829550vbb/f12f7eb5b54d0899c7c724df009668a8.png~tplv-b829550vbb-resize:960:960.png",
+  "title": "新歌榜"
+}, {
+  "id": "7061475546400005410",
+  "description": "汽水音乐内每周热度最高的50首外文歌曲，每周四更新",
+  "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-i-b829550vbb/33747550ed5499b58feda42a21748637.png~tplv-b829550vbb-resize:960:960.png",
+  "title": "欧美榜"
+}, {
+  "id": "7415959718721494311",
+  "description": "抖音音乐人开放平台上传歌曲，综合每周站内热度进行排序展示",
+  "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-v-2774c002/o8FQKiQQBxHWa2hzsBNAgYOX6iEHEAibADAbfB~tplv-b829550vbb-resize:960:960.png",
+  "title": "音乐人歌曲榜"
+}];
+
+/**
+ * 汽水音乐榜单 ID 集合
+ * @constant {Set<string>}
+ */
+const QISHUI_TOP_LIST_IDS = new Set(QISHUI_TOP_LIST_ITEMS.map(item => String(item.id)));
+
+/**
+ * 推荐歌单兜底数据
+ * @constant {Array<Object>}
+ */
+const QISHUI_FALLBACK_PLAYLISTS = [{
+  "id": "7434476168507637799",
+  "title": "旅行者必听｜原神全部专辑上线✨",
+  "artist": "汽水音乐APP",
+  "createUserId": "2331429247649368",
+  "description": "汽水音乐公开歌单",
+  "artwork": "https://p3-luna.douyinpic.com/img/tos-cn-i-b829550vbb/c2da1ff20dcb4a168117392c7964b6d0~tplv-b829550vbb-crop-center:720:720.jpg",
+  "createTime": 1730981418,
+  "fee": 0,
+  "_bakaSourceType": "playlist"
+}];
+
 // ============================================
 // 工具函数
 // ============================================
@@ -61,6 +124,123 @@ const AUDIO_PLAYBACK_HEADERS = {
  */
 function buildDouyinImageUrl(uri, templatePrefix, size = '960:960') {
   return `${DOUYIN_IMAGE_BASE_URL}${uri}~${templatePrefix}-resize:${size}.png`;
+}
+
+/**
+ * 从汽水/抖音封面对象构建完整图片 URL
+ * @param {Object|string} urlCover - 封面对象或字符串 URL
+ * @param {string} [size='960:960'] - 图片尺寸
+ * @returns {string} 完整图片 URL
+ */
+function buildImageUrlFromCover(urlCover, size = "960:960") {
+  if (!urlCover) return "";
+  if (typeof urlCover === "string") return urlCover;
+
+  if (urlCover.uri && urlCover.template_prefix) {
+    return buildDouyinImageUrl(urlCover.uri, urlCover.template_prefix, size);
+  }
+
+  if (Array.isArray(urlCover.urls) && urlCover.urls.length > 0 && urlCover.uri) {
+    return `${urlCover.urls[0]}${urlCover.uri}`;
+  }
+
+  return "";
+}
+
+/**
+ * 构建歌手列表
+ * @param {Array<Object>} artists - 歌手对象列表
+ * @returns {Array<Object>} 标准化歌手列表
+ */
+function buildSingerList(artists = []) {
+  return artists.map(artist => ({
+    id: artist.id,
+    name: artist.name,
+    avatar: artist.avatar || buildImageUrlFromCover(artist.url_avatar, "100:100") || "",
+  }));
+}
+
+/**
+ * 提取 HTML 中的 _ROUTER_DATA JSON
+ * @param {string} html - 网页 HTML
+ * @returns {Object|null} 解析后的 Router Data
+ */
+function extractRouterData(html) {
+  if (!html || typeof html !== "string") return null;
+
+  const assignment = "_ROUTER_DATA = ";
+  const startIndex = html.indexOf(assignment);
+  if (startIndex === -1) return null;
+
+  const jsonStart = startIndex + assignment.length;
+  let jsonEnd = html.indexOf(";\nfunction runWindowFn", jsonStart);
+
+  if (jsonEnd === -1) {
+    jsonEnd = html.indexOf(";</script>", jsonStart);
+  }
+
+  if (jsonEnd === -1) return null;
+
+  try {
+    return JSON.parse(html.slice(jsonStart, jsonEnd));
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * 解析网页分享页中的歌单数据
+ * @param {string} html - 分享页 HTML
+ * @returns {Object|null} 歌单详情对象
+ */
+function parseWebPlaylistDetail(html) {
+  const routerData = extractRouterData(html);
+  const playlistPage = routerData?.loaderData?.playlist_page;
+
+  if (!playlistPage) return null;
+
+  return {
+    "playlistInfo": playlistPage.playlistInfo || null,
+    "media_resources": Array.isArray(playlistPage.medias) ? playlistPage.medias : []
+  };
+}
+
+/**
+ * 判断歌单详情是否有效
+ * @param {Object|null} playlistDetail - 歌单详情对象
+ * @returns {boolean} 是否有效
+ */
+function hasValidPlaylistDetail(playlistDetail) {
+  return !!playlistDetail && Array.isArray(playlistDetail.media_resources) && playlistDetail.media_resources.length > 0;
+}
+
+/**
+ * 创建推荐栏榜单兜底项
+ * @param {Object} topListItem - 榜单对象
+ * @returns {Object} 标准化推荐项
+ */
+function createRecommendSheetFromTopList(topListItem) {
+  return {
+    "id": topListItem.id,
+    "title": topListItem.title,
+    "artist": "汽水音乐",
+    "createUserId": "",
+    "description": topListItem.description,
+    "artwork": topListItem.coverImg,
+    "createTime": 0,
+    "fee": 0,
+    "_bakaSourceType": "toplist"
+  };
+}
+
+/**
+ * 获取推荐歌单兜底数据
+ * @returns {Array<Object>} 推荐歌单列表
+ */
+function getFallbackRecommendSheets() {
+  return QISHUI_FALLBACK_PLAYLISTS
+    .concat(QISHUI_TOP_LIST_ITEMS.map(createRecommendSheetFromTopList))
+    .map(item => Object.assign({}, item));
 }
 
 /**
@@ -212,10 +392,15 @@ function parseTrackItem(track) {
  * // Returns: { id, title, artist, artistId, album, albumId, artwork, qualities }
  */
 function parsePlaylistMediaResource(mediaResource) {
-  const track = mediaResource.entity.track_wrapper.track;
+  const track = mediaResource?.entity?.track_wrapper?.track
+    || mediaResource?.entity?.track
+    || mediaResource?.track;
+
+  if (!track) return null;
+
   const vipFee = getVipFee(track?.["label_info"]?.["only_vip_playable"]);
-  const coverUri = track.album.url_cover.uri;
-  const coverTemplate = track.album.url_cover.template_prefix;
+  const album = track.album || {};
+  const primaryArtist = Array.isArray(track.artists) && track.artists.length > 0 ? track.artists[0] : {};
 
   // 提供基础音质支持
   const qualities = {
@@ -227,11 +412,12 @@ function parsePlaylistMediaResource(mediaResource) {
   return {
     "id": track.id,
     "title": track.name,
-    "artist": track.artists[0].name,
-    "artistId": track.artists[0].id,
-    "album": track.album.name,
-    "albumId": track.album.id,
-    "artwork": buildDouyinImageUrl(coverUri, coverTemplate),
+    "artist": primaryArtist.name || "",
+    "artistId": primaryArtist.id,
+    "singerList": buildSingerList(track.artists || []),
+    "album": album.name || "",
+    "albumId": album.id,
+    "artwork": buildImageUrlFromCover(album.url_cover),
     "duration": track.duration ? Math.floor(track.duration / 1000) : undefined,
     "qualities": qualities,
     "fee": vipFee
@@ -513,27 +699,7 @@ async function getMusicPlaybackSource(musicItem, quality = "128k") {
 async function getTopLists() {
   return [{
     "title": "默认排行榜",
-    "data": [{
-      "id": "7036274230471712007",
-      "description": "汽水音乐内每周热度最高的50首歌，每周四更新",
-      "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-i-b829550vbb/d0d8d48461a62748e84689cdf049b19a.png~tplv-b829550vbb-resize:960:960.png",
-      "title": "热歌榜"
-    }, {
-      "id": "7060812597884869927",
-      "description": "近期发行的热度最高的50首新歌，每周四更新",
-      "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-i-b829550vbb/f12f7eb5b54d0899c7c724df009668a8.png~tplv-b829550vbb-resize:960:960.png",
-      "title": "新歌榜"
-    }, {
-      "id": "7061475546400005410",
-      "description": "汽水音乐内每周热度最高的50首外文歌曲，每周四更新",
-      "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-i-b829550vbb/33747550ed5499b58feda42a21748637.png~tplv-b829550vbb-resize:960:960.png",
-      "title": "欧美榜"
-    }, {
-      "id": "7415959718721494311",
-      "description": "抖音音乐人开放平台上传歌曲，综合每周站内热度进行排序展示",
-      "coverImg": "https://p3-luna.douyinpic.com/img/tos-cn-v-2774c002/o8FQKiQQBxHWa2hzsBNAgYOX6iEHEAibADAbfB~tplv-b829550vbb-resize:960:960.png",
-      "title": "音乐人歌曲榜"
-    }]
+    "data": QISHUI_TOP_LIST_ITEMS
   }];
 }
 
@@ -612,10 +778,10 @@ async function importMusicPlaylist(playlistUrl) {
   if (!playlistId) return;
 
   const playlistDetail = await fetchPlaylistDetail(playlistId);
-  // 过滤掉视频等非音乐资源（entity 结构不同会导致解析崩溃）
-  return playlistDetail.data.media_resources
-    .filter(r => r.type === "track" && r.entity && r.entity.track_wrapper)
-    .map(parsePlaylistMediaResource);
+  return playlistDetail.media_resources
+    .filter(resource => resource.type === "track")
+    .map(parsePlaylistMediaResource)
+    .filter(Boolean);
 }
 
 /**
@@ -632,16 +798,83 @@ async function importMusicPlaylist(playlistUrl) {
  * const detail = await fetchPlaylistDetail("7036274230471712007");
  * // Returns: { data: { media_resources: [...] } }
  */
-async function fetchPlaylistDetail(playlistId) {
+async function fetchPlaylistDetailFromApi(playlistId) {
   try {
-    return await axios.default.post("https://api5-lq.qishui.com/luna/playlist/detail?charge=0", {
+    const response = await axios.default.post("https://api5-lq.qishui.com/luna/playlist/detail?charge=0", {
       "playlist_id": playlistId
     }, {
       "headers": QISHUI_API_HEADERS
     });
+
+    if (response?.data && Array.isArray(response.data.media_resources) && response.data.media_resources.length > 0) {
+      return {
+        "playlistInfo": response.data.playlist || null,
+        "media_resources": response.data.media_resources
+      };
+    }
   } catch (error) {
-    return [];
+    return null;
   }
+
+  return null;
+}
+
+/**
+ * 通过网页分享页获取歌单详情
+ * @async
+ * @private
+ * @param {string} playlistId - 歌单 ID
+ * @returns {Promise<Object|null>} 歌单详情对象
+ */
+async function fetchPlaylistDetailFromWeb(playlistId) {
+  try {
+    const response = await axios.default.get(QISHUI_WEB_SHARE_URL, {
+      "params": {
+        "playlist_id": playlistId
+      },
+      "headers": QISHUI_WEB_SHARE_HEADERS,
+      "responseType": "text",
+      "transformResponse": [data => data],
+      "validateStatus": status => status >= 200 && status < 500
+    });
+
+    const playlistDetail = parseWebPlaylistDetail(response.data);
+
+    if (
+      hasValidPlaylistDetail(playlistDetail)
+      && String(playlistDetail?.playlistInfo?.id || "") === String(playlistId)
+    ) {
+      return playlistDetail;
+    }
+  } catch (error) {
+    return null;
+  }
+
+  return null;
+}
+
+/**
+ * 获取歌单详细信息（优先旧 API，失败后回退网页 SSR）
+ * @async
+ * @private
+ * @param {string} playlistId - 歌单 ID
+ * @returns {Promise<Object>} 歌单详情对象
+ */
+async function fetchPlaylistDetail(playlistId) {
+  const apiDetail = await fetchPlaylistDetailFromApi(playlistId);
+  if (hasValidPlaylistDetail(apiDetail)) {
+    return apiDetail;
+  }
+
+  const webDetail = await fetchPlaylistDetailFromWeb(playlistId);
+  if (hasValidPlaylistDetail(webDetail)) {
+    return webDetail;
+  }
+
+  return {
+    "playlistInfo": null,
+    "media_resources": []
+  };
 }
 
 /**
@@ -790,16 +1023,20 @@ async function getRecommendPlaylistsByTag(tag, page) {
       "headers": QISHUI_API_HEADERS
     });
 
-    return {
-      "isEnd": false,
-      "data": response.data.inner_block.map(parseRecommendPlaylistBlock)
-    };
+    if (response?.data && Array.isArray(response.data.inner_block) && response.data.inner_block.length > 0) {
+      return {
+        "isEnd": false,
+        "data": response.data.inner_block.map(parseRecommendPlaylistBlock)
+      };
+    }
   } catch (error) {
-    return {
-      "isEnd": false,
-      "data": []
-    };
+    // 忽略旧接口错误，继续走网页兜底
   }
+
+  return {
+    "isEnd": true,
+    "data": page > 1 ? [] : getFallbackRecommendSheets()
+  };
 }
 
 /**
@@ -850,11 +1087,27 @@ async function getMusicComments(musicItem, page = 1) {
  * // Returns: { isEnd: true, musicList: [...] }
  */
 async function getMusicPlaylistInfo(playlist) {
+  if (playlist?._bakaSourceType === "toplist" || QISHUI_TOP_LIST_IDS.has(String(playlist?.id))) {
+    const baseTopList = QISHUI_TOP_LIST_ITEMS.find(item => String(item.id) === String(playlist.id)) || {
+      "id": playlist.id,
+      "title": playlist.title,
+      "description": playlist.description,
+      "coverImg": playlist.artwork
+    };
+    const topListDetail = await getTopListDetail(baseTopList);
+
+    return {
+      "isEnd": true,
+      "musicList": topListDetail.musicList || []
+    };
+  }
   const playlistDetail = await fetchPlaylistDetail(playlist.id);
 
   return {
     "isEnd": true,
-    "musicList": playlistDetail.data.media_resources.map(parsePlaylistMediaResource)
+    "musicList": playlistDetail.media_resources
+      .map(parsePlaylistMediaResource)
+      .filter(Boolean)
   };
 }
 
@@ -864,7 +1117,7 @@ async function getMusicPlaylistInfo(playlist) {
 
 module.exports = {
   "platform": "汽水音乐",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "author": "Toskysun",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cnmb.us.ci/plugins/qishui.js",
