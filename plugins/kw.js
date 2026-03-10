@@ -189,6 +189,17 @@ function formatMusicItem(_) {
     nMInfo: _.N_MINFO, // 保留原始信息用于调试
   };
 }
+
+function getDurationSeconds(item) {
+  const rawDuration = item?.duration ?? item?.DURATION ?? item?.songtime ?? item?.song_duration;
+  if (rawDuration === undefined || rawDuration === null || rawDuration === "") {
+    return undefined;
+  }
+
+  const parsedDuration = Number(rawDuration);
+  return Number.isFinite(parsedDuration) ? parsedDuration : undefined;
+}
+
 function formatAlbumItem(_) {
   var _a;
   return {
@@ -672,6 +683,7 @@ async function getAlbumInfo(albumItem) {
       albumId: albumItem.id,
       artistId: _.artistid,
       formats: _.formats,
+      duration: getDurationSeconds(_),
       qualities: normalizedQualities,
       nMInfo: _.n_minfo || _.N_MINFO,
     };
@@ -745,6 +757,7 @@ function getTopListDetail(topListItem) {
             albumId: _.albumid,
             artistId: _.artistid,
             formats: _.formats,
+            duration: getDurationSeconds(_),
             qualities: normalizedQualities,
           };
         });
@@ -952,6 +965,7 @@ function getMusicSheetInfo(sheet, page) {
             albumId: _.albumid,
             artistId: _.artistid,
             formats: _.formats,
+            duration: getDurationSeconds(_),
             qualities: normalizedQualities,
           };
         });
