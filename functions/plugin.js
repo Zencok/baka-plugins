@@ -227,6 +227,23 @@ async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
+    // ── hyw: GET ${url}/api/music/url?source=&songId=&quality=, X-Script-* + X-Card-Key ──
+    case 'hyw': {
+      const scriptVersion = sourceConfig.scriptVersion || '';
+      const scriptId = sourceConfig.scriptId || '';
+      code += `
+async function requestMusicUrl(source, songId, quality) {
+  return (await axios_1.default.get(\`\${API_URL}/api/music/url?source=\${source}&songId=\${songId}&quality=\${quality}\`, {
+    headers: {
+      "X-Script-Version": ${JSON.stringify(scriptVersion)},
+      "X-Script-ID": ${JSON.stringify(scriptId)},
+      "X-Card-Key": API_KEY
+    }
+  })).data;
+}`;
+      break;
+    }
+
     // ── 默认: 同 query 类型 ──
     default:
       code += `

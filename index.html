@@ -1219,6 +1219,20 @@
                             <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
                         </div>
                     </div>
+                    <div class="source-card" data-source="hyw" data-url="https://music.bxa241d4.shop" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🌀</div>
+                        <div class="source-info">
+                            <div class="source-name">何意味</div>
+                            <div class="source-url">music.bxa241d4.shop (免费)</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-hires">Hi-Res</span>
+                                <span class="quality-tag q-lossless">FLAC</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
                     <div class="source-card" data-source="fengyu" data-url="多端点聚合" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
                         <div class="source-icon" aria-hidden="true">🍁</div>
                         <div class="source-info">
@@ -1474,6 +1488,7 @@
             'huibq':     ['kw.js', 'qq.js'],
             'nianxin':   [],
             'changqing': ['wy.js', 'qq.js', 'kg.js', 'kw.js', 'mg.js'],
+            'hyw':       ['wy.js', 'qq.js', 'kg.js', 'kw.js', 'mg.js'],
         };
 
         // 音源 → 各插件音质 (null = 使用插件默认音质)
@@ -1485,6 +1500,7 @@
             'xinghai':   { 'wy.js': ['128k','192k','320k','flac','flac24bit'], 'kw.js': ['128k','192k','320k','flac'] },
             'huibq':     { 'kw.js': ['128k','320k'], 'qq.js': ['128k','320k'] },
             'changqing': { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'], 'mg.js': ['128k','320k','flac'] },
+            'hyw':       { 'wy.js': ['128k','320k','flac','flac24bit','hires'], 'qq.js': ['128k','320k','flac','flac24bit','hires'], 'kg.js': ['128k','320k','flac','flac24bit','hires'], 'kw.js': ['128k','320k','flac','flac24bit','hires'], 'mg.js': ['128k','320k','flac'] },
         };
 
         // 插件默认音质 (音源配置为 null 时使用)

@@ -46,6 +46,7 @@
 | Huibq 音源 | `huibq` | 内置 | kw / qq |
 | 长青音源 | `changqing` | 内置 | wy / qq / kg / kw / mg |
 | 枫雨音源 | `fengyu` | 内置 | wy / qq / kw / mg |
+| 何意味音源 | `hyw` | 内置 | wy / qq / kg / kw / mg |
 | 念心音源 | `nianxin` | 内置 | 暂停 |
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。

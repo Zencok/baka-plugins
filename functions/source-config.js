@@ -21,6 +21,7 @@
  *   lxmusic  - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
  *   changqing- 按平台独立 URL, 音质键映射 (standard/exhigh/lossless)
  *   fengyu   - 多端点聚合免费音源, 按平台独立处理 (littleyouzi/bugpk/oiapi/migu/kuwo)
+ *   hyw      - GET  ${url}/api/music/url?source=&songId=&quality=       header: X-Script-* + X-Card-Key
  */
 
 const SOURCE_CONFIG = {
@@ -135,6 +136,22 @@ const SOURCE_CONFIG = {
       'mg.js':  ['128k', '320k', 'flac', 'flac24bit'],
     }
     // 不支持: kg.js (酷狗)
+  },
+  'hyw': {
+    name: '何意味',
+    url: 'https://music.bxa241d4.shop',
+    requiresKey: false,
+    apiType: 'hyw',
+    builtinKey: 'TF-584W-L51Z-BDNM-OILB',
+    scriptVersion: 'HYWmusic_beta_v0.15.114514',
+    scriptId: 'cmnkd5d5x0002s98hxpthzw8r',
+    plugins: {
+      'wy.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
+      'qq.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
+      'kg.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
+      'kw.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
+      'mg.js': ['128k', '320k', 'flac'],
+    }
   }
 };
 
