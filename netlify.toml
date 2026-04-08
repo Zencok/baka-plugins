@@ -1,0 +1,25 @@
+[build]
+  functions = "functions"
+  publish = "."
+
+[functions]
+  included_files = ["plugins/**"]
+
+# Subscription API
+[[redirects]]
+  from = "/api/subscription.json"
+  to = "/.netlify/functions/subscription"
+  status = 200
+
+# Plugin download (/plugins/:plugin and /plugin/:plugin)
+[[redirects]]
+  from = "/plugins/:plugin"
+  to = "/.netlify/functions/plugin?plugin=:plugin"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/plugin/:plugin"
+  to = "/.netlify/functions/plugin?plugin=:plugin"
+  status = 200
+  force = true

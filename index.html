@@ -1,0 +1,1790 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>BakaMusic - Plugin Subscription</title>
+    <link rel="icon" type="image/svg+xml" href="/music.svg">
+    <meta name="description" content="BakaMusic Plugin Subscription Service - 8 Music Platforms">
+    <style>
+        /* ============================================
+           1. Reset & Base
+           ============================================ */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* ============================================
+           2. Design Tokens - Apple HIG Color System
+           ============================================ */
+        :root {
+            /* Typography */
+            --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+            --font-mono: 'SF Mono', SFMono-Regular, ui-monospace, Menlo, Monaco, 'Cascadia Code', monospace;
+
+            /* Spacing (8pt grid) */
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+            --space-8: 32px;
+            --space-10: 40px;
+            --space-12: 48px;
+            --space-16: 64px;
+
+            /* Border Radius */
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+            --radius-full: 9999px;
+
+            /* Transitions */
+            --ease-default: cubic-bezier(0.25, 0.1, 0.25, 1);
+            --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            --duration-fast: 200ms;
+            --duration-normal: 300ms;
+
+            /* Light Mode Colors */
+            --color-bg: #F5F5F7;
+            --color-surface: #FFFFFF;
+            --color-surface-secondary: #F2F2F7;
+            --color-text-primary: #1D1D1F;
+            --color-text-secondary: #6E6E73;
+            --color-text-tertiary: #86868B;
+            --color-accent: #0071E3;
+            --color-accent-hover: #0077ED;
+            --color-accent-subtle: rgba(0, 113, 227, 0.08);
+            --color-green: #34C759;
+            --color-green-subtle: rgba(52, 199, 89, 0.12);
+            --color-orange: #FF9500;
+            --color-orange-subtle: rgba(255, 149, 0, 0.12);
+            --color-red: #FF3B30;
+            --color-separator: rgba(0, 0, 0, 0.06);
+            --color-border: rgba(0, 0, 0, 0.08);
+            --color-shadow: rgba(0, 0, 0, 0.04);
+            --color-shadow-lg: rgba(0, 0, 0, 0.08);
+            --color-code-bg: #F2F2F7;
+            --color-nav-bg: rgba(245, 245, 247, 0.72);
+            --color-toast-bg: #1D1D1F;
+            --color-toast-text: #F5F5F7;
+        }
+
+        [data-theme="dark"] {
+            --color-bg: #000000;
+            --color-surface: #1C1C1E;
+            --color-surface-secondary: #2C2C2E;
+            --color-text-primary: #F5F5F7;
+            --color-text-secondary: #98989D;
+            --color-text-tertiary: #6E6E73;
+            --color-accent: #2997FF;
+            --color-accent-hover: #40A9FF;
+            --color-accent-subtle: rgba(41, 151, 255, 0.12);
+            --color-green: #30D158;
+            --color-green-subtle: rgba(48, 209, 88, 0.16);
+            --color-orange: #FF9F0A;
+            --color-orange-subtle: rgba(255, 159, 10, 0.16);
+            --color-red: #FF453A;
+            --color-separator: rgba(255, 255, 255, 0.08);
+            --color-border: rgba(255, 255, 255, 0.1);
+            --color-shadow: rgba(0, 0, 0, 0.2);
+            --color-shadow-lg: rgba(0, 0, 0, 0.4);
+            --color-code-bg: #2C2C2E;
+            --color-nav-bg: rgba(0, 0, 0, 0.72);
+            --color-toast-bg: #2C2C2E;
+            --color-toast-text: #F5F5F7;
+        }
+
+        /* ============================================
+           3. Base Styles
+           ============================================ */
+        html {
+            font-size: 16px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+
+        body {
+            font-family: var(--font-system);
+            background-color: var(--color-bg);
+            color: var(--color-text-primary);
+            line-height: 1.47059;
+            transition: background-color var(--duration-normal) var(--ease-default),
+                        color var(--duration-normal) var(--ease-default);
+        }
+
+        /* ============================================
+           4. Navigation
+           ============================================ */
+        .nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--color-nav-bg);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border-bottom: 0.5px solid var(--color-separator);
+            transition: background var(--duration-normal) var(--ease-default);
+        }
+
+        .nav-content {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 0 var(--space-6);
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+        }
+
+        .nav-logo {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-logo svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .nav-title {
+            font-size: 17px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--space-1);
+        }
+
+        .nav-icon-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--duration-fast) var(--ease-default),
+                        color var(--duration-fast) var(--ease-default);
+            text-decoration: none;
+        }
+
+        .nav-icon-btn:hover {
+            background: var(--color-accent-subtle);
+            color: var(--color-accent);
+        }
+
+        .nav-icon-btn:active {
+            transform: scale(0.92);
+        }
+
+        .nav-icon-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .theme-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--duration-fast) var(--ease-default);
+        }
+
+        .theme-btn:hover {
+            background: var(--color-accent-subtle);
+            color: var(--color-accent);
+        }
+
+        .theme-btn:active {
+            transform: scale(0.92);
+        }
+
+        .theme-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .icon-sun, .icon-moon { display: none; }
+        [data-theme="light"] .icon-moon { display: block; }
+        [data-theme="dark"] .icon-sun { display: block; }
+
+        /* ============================================
+           5. Main Layout
+           ============================================ */
+        .main {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 0 var(--space-6);
+            padding-bottom: var(--space-16);
+        }
+
+        /* ============================================
+           6. Hero Section
+           ============================================ */
+        .hero {
+            text-align: center;
+            padding: var(--space-16) 0 var(--space-12);
+        }
+
+        .hero-eyebrow {
+            font-size: 17px;
+            font-weight: 600;
+            color: var(--color-accent);
+            letter-spacing: 0.02em;
+            margin-bottom: var(--space-2);
+        }
+
+        .hero-title {
+            font-size: clamp(40px, 8vw, 56px);
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            line-height: 1.07143;
+            margin-bottom: var(--space-4);
+        }
+
+        .hero-subtitle {
+            font-size: clamp(17px, 3vw, 21px);
+            color: var(--color-text-secondary);
+            max-width: 500px;
+            margin: 0 auto var(--space-6);
+            line-height: 1.381;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: 6px 14px;
+            background: var(--color-green-subtle);
+            border-radius: var(--radius-full);
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--color-green);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--color-green);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ============================================
+           7. Section Titles
+           ============================================ */
+        .section {
+            margin-bottom: var(--space-10);
+        }
+
+        .section-header {
+            margin-bottom: var(--space-4);
+        }
+
+        .section-title {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.015em;
+            line-height: 1.14286;
+        }
+
+        .section-desc {
+            font-size: 15px;
+            color: var(--color-text-secondary);
+            margin-top: var(--space-2);
+        }
+
+        /* ============================================
+           8. Cards
+           ============================================ */
+        .card {
+            background: var(--color-surface);
+            border-radius: var(--radius-xl);
+            padding: var(--space-6);
+            box-shadow: 0 1px 2px var(--color-shadow),
+                        0 4px 16px var(--color-shadow);
+            border: 0.5px solid var(--color-border);
+            transition: background var(--duration-normal) var(--ease-default),
+                        box-shadow var(--duration-normal) var(--ease-default),
+                        border-color var(--duration-normal) var(--ease-default);
+        }
+
+        .card + .card {
+            margin-top: var(--space-5);
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            margin-bottom: var(--space-5);
+        }
+
+        /* ============================================
+           9. Source Selection
+           ============================================ */
+        .source-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: var(--space-3);
+        }
+
+        .source-card {
+            position: relative;
+            background: var(--color-surface-secondary);
+            border: 2px solid transparent;
+            border-radius: var(--radius-lg);
+            padding: var(--space-5) var(--space-4);
+            cursor: pointer;
+            text-align: center;
+            transition: all var(--duration-fast) var(--ease-default);
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .source-card:hover {
+            background: var(--color-accent-subtle);
+        }
+
+        .source-card:active {
+            transform: scale(0.97);
+        }
+
+        .source-card.selected {
+            border-color: var(--color-accent);
+            background: var(--color-accent-subtle);
+        }
+
+        .source-card.selected .source-check {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .source-check {
+            position: absolute;
+            top: var(--space-2);
+            right: var(--space-2);
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--color-accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all var(--duration-fast) var(--ease-spring);
+        }
+
+        .source-check svg {
+            width: 14px;
+            height: 14px;
+            fill: #FFFFFF;
+        }
+
+        .source-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-md);
+            margin: 0 auto var(--space-3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            line-height: 1;
+        }
+
+        .source-name {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: var(--space-1);
+        }
+
+        .source-url {
+            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--color-text-tertiary);
+            word-break: break-all;
+        }
+
+        .source-quality-indicator {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 6px;
+        }
+
+        .source-quality-indicator .quality-tag {
+            font-size: 10px;
+            padding: 1px 6px;
+            line-height: 1.4;
+        }
+
+        /* ============================================
+           9.5 Quality Display
+           ============================================ */
+        .quality-section {
+            display: none;
+        }
+
+        .quality-section.visible {
+            display: block;
+            animation: fadeIn var(--duration-normal) var(--ease-default);
+            scroll-margin-top: 68px;
+        }
+
+        .quality-grid {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+        }
+
+        .quality-row {
+            display: flex;
+            align-items: center;
+            gap: var(--space-4);
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-surface-secondary);
+            border-radius: var(--radius-md);
+        }
+
+        .quality-platform {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+
+        .quality-platform-icon {
+            font-size: 20px;
+            line-height: 1;
+            width: 24px;
+            text-align: center;
+        }
+
+        .quality-platform-name {
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .quality-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .quality-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: var(--radius-full);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            line-height: 1.5;
+        }
+
+        .quality-tag.q-basic {
+            background: var(--color-surface);
+            color: var(--color-text-tertiary);
+            border: 0.5px solid var(--color-border);
+        }
+
+        .quality-tag.q-standard {
+            background: var(--color-accent-subtle);
+            color: var(--color-accent);
+        }
+
+        .quality-tag.q-lossless {
+            background: var(--color-green-subtle);
+            color: var(--color-green);
+        }
+
+        .quality-tag.q-hires {
+            background: rgba(88, 86, 214, 0.12);
+            color: #5856D6;
+        }
+
+        [data-theme="dark"] .quality-tag.q-hires {
+            background: rgba(94, 92, 230, 0.16);
+            color: #5E5CE6;
+        }
+
+        .quality-tag.q-spatial {
+            background: var(--color-orange-subtle);
+            color: var(--color-orange);
+        }
+
+        .quality-tag.q-master {
+            background: rgba(175, 82, 222, 0.12);
+            color: #AF52DE;
+        }
+
+        [data-theme="dark"] .quality-tag.q-master {
+            background: rgba(191, 90, 242, 0.16);
+            color: #BF5AF2;
+        }
+
+        /* ============================================
+           10. Form Elements
+           ============================================ */
+        .form-section {
+            display: none;
+        }
+
+        .form-section.visible {
+            display: block;
+            animation: fadeIn var(--duration-normal) var(--ease-default);
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            margin-bottom: var(--space-2);
+        }
+
+        .input-row {
+            display: flex;
+            gap: var(--space-3);
+        }
+
+        .input-field {
+            flex: 1;
+            min-height: 48px;
+            padding: 0 var(--space-4);
+            font-family: var(--font-system);
+            font-size: 17px;
+            color: var(--color-text-primary);
+            background: var(--color-surface-secondary);
+            border: 1.5px solid var(--color-border);
+            border-radius: var(--radius-md);
+            outline: none;
+            transition: all var(--duration-fast) var(--ease-default);
+        }
+
+        .input-field:focus {
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px var(--color-accent-subtle);
+        }
+
+        .input-field::placeholder {
+            color: var(--color-text-tertiary);
+        }
+
+        .info-bar {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            margin-top: var(--space-4);
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-accent-subtle);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            color: var(--color-accent);
+        }
+
+        .info-bar svg {
+            flex-shrink: 0;
+            width: 18px;
+            height: 18px;
+            fill: var(--color-accent);
+        }
+
+        /* ============================================
+           11. Buttons
+           ============================================ */
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 48px;
+            padding: 0 var(--space-6);
+            font-family: var(--font-system);
+            font-size: 17px;
+            font-weight: 600;
+            color: #FFFFFF;
+            background: var(--color-accent);
+            border: none;
+            border-radius: var(--radius-full);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all var(--duration-fast) var(--ease-default);
+        }
+
+        .btn-primary:hover {
+            background: var(--color-accent-hover);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.97);
+        }
+
+        .btn-copy {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-2);
+            min-height: 40px;
+            padding: 0 var(--space-4);
+            font-family: var(--font-system);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--color-accent);
+            background: var(--color-accent-subtle);
+            border: none;
+            border-radius: var(--radius-full);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all var(--duration-fast) var(--ease-default);
+        }
+
+        .btn-copy:hover {
+            background: var(--color-accent);
+            color: #FFFFFF;
+        }
+
+        .btn-copy:active {
+            transform: scale(0.95);
+        }
+
+        .btn-copy.copied {
+            background: var(--color-green);
+            color: #FFFFFF;
+        }
+
+        .btn-copy svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        /* ============================================
+           12. Links Display
+           ============================================ */
+        .links-section {
+            display: none;
+        }
+
+        .links-section.visible {
+            display: block;
+            animation: fadeIn var(--duration-normal) var(--ease-default);
+            scroll-margin-top: 68px;
+        }
+
+        .link-row {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+        }
+
+        .link-box {
+            flex: 1;
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-code-bg);
+            border-radius: var(--radius-md);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.6;
+            word-break: break-all;
+            color: var(--color-text-secondary);
+            border: 0.5px solid var(--color-separator);
+        }
+
+        /* ============================================
+           13. Plugin Grid
+           ============================================ */
+        .plugin-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--space-3);
+        }
+
+        .plugin-card {
+            background: var(--color-surface-secondary);
+            border-radius: var(--radius-lg);
+            padding: var(--space-5) var(--space-3);
+            text-align: center;
+            transition: all var(--duration-fast) var(--ease-default);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .plugin-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px var(--color-shadow-lg);
+        }
+
+        .plugin-card:active {
+            transform: scale(0.97);
+        }
+
+        .plugin-icon-circle {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-md);
+            margin: 0 auto var(--space-3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .plugin-name {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: var(--space-1);
+        }
+
+        .plugin-version {
+            font-size: 12px;
+            color: var(--color-text-tertiary);
+            margin-bottom: var(--space-2);
+        }
+
+        .plugin-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: var(--radius-full);
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: var(--space-3);
+            min-height: 18px;
+        }
+
+        .plugin-badge.free {
+            background: var(--color-green-subtle);
+            color: var(--color-green);
+        }
+
+        .plugin-copy-btn {
+            width: 100%;
+            min-height: 36px;
+            padding: 0 var(--space-3);
+            font-family: var(--font-system);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--color-accent);
+            background: var(--color-accent-subtle);
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--duration-fast) var(--ease-default);
+        }
+
+        .plugin-copy-btn:hover {
+            background: var(--color-accent);
+            color: #FFFFFF;
+        }
+
+        .plugin-copy-btn:active {
+            transform: scale(0.95);
+        }
+
+        .plugin-copy-btn.copied {
+            background: var(--color-green);
+            color: #FFFFFF;
+        }
+
+        .plugin-url-detail {
+            display: none;
+            margin-top: var(--space-3);
+            padding: var(--space-2) var(--space-3);
+            background: var(--color-code-bg);
+            border-radius: var(--radius-sm);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            word-break: break-all;
+            color: var(--color-text-tertiary);
+            text-align: left;
+            line-height: 1.5;
+        }
+
+        .plugin-card.expanded .plugin-url-detail {
+            display: block;
+        }
+
+        /* ============================================
+           14. Steps
+           ============================================ */
+        .steps-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-5);
+        }
+
+        .step-item {
+            display: flex;
+            gap: var(--space-4);
+            align-items: flex-start;
+        }
+
+        .step-number {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--color-accent);
+            color: #FFFFFF;
+            font-size: 15px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .step-content {
+            flex: 1;
+            padding-top: 4px;
+        }
+
+        .step-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: var(--space-1);
+        }
+
+        .step-desc {
+            font-size: 15px;
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+        }
+
+        .code-tag {
+            display: inline;
+            padding: 2px 6px;
+            background: var(--color-code-bg);
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+        }
+
+        /* ============================================
+           15. API Docs
+           ============================================ */
+        .api-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-4);
+        }
+
+        .api-item {
+            padding: var(--space-4);
+            background: var(--color-surface-secondary);
+            border-radius: var(--radius-md);
+        }
+
+        .api-method {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: var(--radius-full);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 700;
+            background: var(--color-green-subtle);
+            color: var(--color-green);
+            margin-bottom: var(--space-2);
+        }
+
+        .api-label {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: var(--space-2);
+        }
+
+        .api-url {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            word-break: break-all;
+            line-height: 1.5;
+        }
+
+        /* ============================================
+           16. Warning / Notice
+           ============================================ */
+        .notice {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-orange-subtle);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            color: var(--color-orange);
+            margin-top: var(--space-5);
+        }
+
+        .notice svg {
+            flex-shrink: 0;
+            width: 18px;
+            height: 18px;
+            fill: var(--color-orange);
+        }
+
+        /* ============================================
+           17. Footer
+           ============================================ */
+        .footer {
+            text-align: center;
+            padding: var(--space-10) var(--space-6) var(--space-12);
+            border-top: 0.5px solid var(--color-separator);
+        }
+
+        .footer-content {
+            max-width: 980px;
+            margin: 0 auto;
+        }
+
+        .footer-text {
+            font-size: 13px;
+            color: var(--color-text-tertiary);
+            line-height: 1.6;
+        }
+
+        .footer-link {
+            color: var(--color-accent);
+            text-decoration: none;
+        }
+
+        .footer-link:hover {
+            text-decoration: underline;
+        }
+
+        /* ============================================
+           18. Toast
+           ============================================ */
+        .toast {
+            position: fixed;
+            bottom: var(--space-8);
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--color-toast-bg);
+            color: var(--color-toast-text);
+            padding: var(--space-3) var(--space-5);
+            border-radius: var(--radius-full);
+            font-size: 15px;
+            font-weight: 500;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.16);
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all var(--duration-normal) var(--ease-default);
+            white-space: nowrap;
+        }
+
+        .toast.visible {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        /* ============================================
+           19. Animations
+           ============================================ */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s var(--ease-default) both;
+        }
+
+        .fade-in-delay-1 { animation-delay: 0.1s; }
+        .fade-in-delay-2 { animation-delay: 0.2s; }
+        .fade-in-delay-3 { animation-delay: 0.3s; }
+
+        /* ============================================
+           20. Responsive
+           ============================================ */
+        @media (max-width: 768px) {
+            .nav-content {
+                padding: 0 var(--space-4);
+                height: 48px;
+            }
+
+            .main {
+                padding: 0 var(--space-4);
+                padding-bottom: var(--space-12);
+            }
+
+            .hero {
+                padding: var(--space-10) 0 var(--space-8);
+            }
+
+            .card {
+                padding: var(--space-5);
+                border-radius: var(--radius-lg);
+            }
+
+            .source-grid {
+                grid-template-columns: 1fr;
+                gap: var(--space-2);
+            }
+
+            .source-card {
+                display: flex;
+                align-items: center;
+                text-align: left;
+                padding: var(--space-4);
+                gap: var(--space-3);
+            }
+
+            .source-icon {
+                margin: 0;
+                width: 44px;
+                height: 44px;
+                flex-shrink: 0;
+            }
+
+            .source-info {
+                flex: 1;
+            }
+
+            .source-check {
+                position: static;
+                flex-shrink: 0;
+            }
+
+            .quality-platform {
+                min-width: 86px;
+            }
+
+            .quality-row {
+                gap: var(--space-3);
+                padding: var(--space-3);
+            }
+
+            .input-row {
+                flex-direction: column;
+            }
+
+            .plugin-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .link-row {
+                flex-direction: column;
+            }
+
+            .link-row .btn-copy {
+                align-self: flex-end;
+            }
+
+            .section-title {
+                font-size: 24px;
+            }
+
+            .footer {
+                padding: var(--space-8) var(--space-4) var(--space-10);
+            }
+        }
+
+        @media (max-width: 420px) {
+            .plugin-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: var(--space-2);
+            }
+
+            .plugin-card {
+                padding: var(--space-4) var(--space-2);
+            }
+        }
+
+        /* ============================================
+           21. Reduced Motion
+           ============================================ */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav" role="navigation">
+        <div class="nav-content">
+            <div class="nav-brand">
+                <div class="nav-logo" aria-hidden="true">
+                    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="13" cy="19" r="8" stroke="var(--color-accent)" stroke-width="2.2"/>
+                        <circle cx="13" cy="19" r="2.5" fill="var(--color-accent)"/>
+                        <path d="M21 5v12" stroke="var(--color-accent)" stroke-width="2.2" stroke-linecap="round"/>
+                        <path d="M21 5c0 0 4.5-.5 6 2s0 4.5-1.5 5" stroke="var(--color-accent)" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+                        <path d="M21 9c0 0 2.2-.2 3 .8s.2 2.2-.5 2.7" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" fill="none"/>
+                    </svg>
+                </div>
+                <span class="nav-title">BakaMusic</span>
+            </div>
+            <div class="nav-actions">
+                <a href="https://github.com/Zencok/baka-plugins" class="nav-icon-btn" target="_blank" rel="noopener" aria-label="GitHub">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/></svg>
+                </a>
+                <button class="theme-btn" onclick="toggleTheme()" aria-label="Toggle theme">
+                    <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><style>path{stroke:currentColor;stroke-width:2;stroke-linecap:round}</style></svg>
+                    <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Hero -->
+        <section class="hero fade-in">
+            <p class="hero-eyebrow">Plugin Subscription</p>
+            <h1 class="hero-title">BakaMusic</h1>
+            <p class="hero-subtitle">8 大音乐平台插件订阅服务，一键导入，畅享音乐。</p>
+            <div class="status-badge">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span>Service Online</span>
+            </div>
+        </section>
+
+        <!-- Source Selection -->
+        <section class="section fade-in fade-in-delay-1">
+            <div class="section-header">
+                <h2 class="section-title">选择音源</h2>
+                <p class="section-desc">选择一个音源类型以开始使用</p>
+            </div>
+            <div class="card">
+                <div class="source-grid" id="sourceGrid">
+                    <div class="source-card" data-source="linglan" data-url="https://source.shiqianjiang.cn/api/music" data-requires-key="true" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🌊</div>
+                        <div class="source-info">
+                            <div class="source-name">聆澜音源</div>
+                            <div class="source-url">shiqianjiang.cn</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-master">Master</span>
+                                <span class="quality-tag q-spatial">Atmos</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="ikun" data-url="https://c.wwwweb.top" data-requires-key="true" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🎵</div>
+                        <div class="source-info">
+                            <div class="source-name">ikun 音源</div>
+                            <div class="source-url">c.wwwweb.top</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-master">Master</span>
+                                <span class="quality-tag q-spatial">Atmos</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="fengyu" data-url="多端点聚合" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🍁</div>
+                        <div class="source-info">
+                            <div class="source-name">枫雨音源</div>
+                            <div class="source-url">多端点聚合 (免费)</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-master">Master</span>
+                                <span class="quality-tag q-spatial">Atmos</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="suyin" data-url="https://oiapi.net" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🔊</div>
+                        <div class="source-info">
+                            <div class="source-name">溯音音源</div>
+                            <div class="source-url">oiapi.net (免费)</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-lossless">FLAC</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="xinghai" data-url="https://music-api.gdstudio.xyz" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🌟</div>
+                        <div class="source-info">
+                            <div class="source-name">GD音乐台</div>
+                            <div class="source-url">gdstudio.xyz (免费)</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-hires">FLAC 24bit</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="nianxin" data-url="https://music.nxinxz.com" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">💫</div>
+                        <div class="source-info">
+                            <div class="source-name">念心音源</div>
+                            <div class="source-url">nxinxz.com (免费)</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-basic">暂停服务</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="changqing" data-url="https://musicapi.haitangw.net" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🌿</div>
+                        <div class="source-info">
+                            <div class="source-name">长青音源</div>
+                            <div class="source-url">haitangw.net (免费)</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-lossless">FLAC</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="huibq" data-url="https://lxmusicapi.onrender.com" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🌐</div>
+                        <div class="source-info">
+                            <div class="source-name">Huibq 音源</div>
+                            <div class="source-url">onrender.com (免费)</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-standard">320K</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quality Display -->
+        <section class="section quality-section" id="qualitySection">
+            <div class="section-header">
+                <h2 class="section-title">支持音质</h2>
+                <p class="section-desc" id="qualityDesc">各平台支持的音质类型</p>
+            </div>
+            <div class="card" style="padding: var(--space-4);">
+                <div class="quality-grid" id="qualityGrid"></div>
+            </div>
+        </section>
+
+        <!-- API Key Input -->
+        <section class="section form-section fade-in" id="apiKeySection">
+            <div class="section-header">
+                <h2 class="section-title">配置卡密</h2>
+            </div>
+            <div class="card">
+                <label class="form-label" for="apiKey">API Key</label>
+                <div class="input-row">
+                    <input type="password" id="apiKey" class="input-field" placeholder="输入您的卡密" autocomplete="off">
+                    <button class="btn-primary" onclick="generateLinks()">生成链接</button>
+                </div>
+                <div class="info-bar">
+                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                    <span>已选择：<strong id="selectedSourceName"></strong> (<span id="selectedSourceUrl"></span>)</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Subscription Link -->
+        <section class="section links-section" id="subscriptionSection">
+            <div class="section-header">
+                <h2 class="section-title">订阅链接</h2>
+                <p class="section-desc">复制以下链接，在 BakaMusic 中添加订阅即可一键导入所有插件</p>
+            </div>
+            <div class="card">
+                <div class="link-row">
+                    <div class="link-box" id="subscriptionUrl"></div>
+                    <button class="btn-copy" onclick="copyToClipboard('subscriptionUrl', this)">
+                        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                        <span>复制</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Plugin Grid -->
+        <section class="section links-section" id="pluginsSection">
+            <div class="section-header">
+                <h2 class="section-title">支持平台</h2>
+                <p class="section-desc">点击卡片查看单个插件链接</p>
+            </div>
+            <div class="card" style="padding: var(--space-4);">
+                <div class="plugin-grid" id="pluginGrid"></div>
+            </div>
+        </section>
+
+        <!-- Usage Instructions -->
+        <section class="section fade-in fade-in-delay-2">
+            <div class="section-header">
+                <h2 class="section-title">使用说明</h2>
+            </div>
+            <div class="card">
+                <ol class="steps-list">
+                    <li class="step-item">
+                        <span class="step-number" aria-hidden="true">1</span>
+                        <div class="step-content">
+                            <div class="step-title">选择音源类型</div>
+                            <div class="step-desc">从聆澜、ikun、枫雨、溯音、GD音乐台、念心、长青、Huibq 中选择一个</div>
+                        </div>
+                    </li>
+                    <li class="step-item">
+                        <span class="step-number" aria-hidden="true">2</span>
+                        <div class="step-content">
+                            <div class="step-title">输入卡密 (如需)</div>
+                            <div class="step-desc">部分音源需要填入卡密；溯音音源已内置 Key，无需填写</div>
+                        </div>
+                    </li>
+                    <li class="step-item">
+                        <span class="step-number" aria-hidden="true">3</span>
+                        <div class="step-content">
+                            <div class="step-title">复制订阅链接</div>
+                            <div class="step-desc">点击 <span class="code-tag">复制</span> 按钮复制完整订阅地址</div>
+                        </div>
+                    </li>
+                    <li class="step-item">
+                        <span class="step-number" aria-hidden="true">4</span>
+                        <div class="step-content">
+                            <div class="step-title">添加到 BakaMusic</div>
+                            <div class="step-desc">设置 → 插件管理 → 订阅 → 粘贴链接</div>
+                        </div>
+                    </li>
+                </ol>
+                <div class="notice">
+                    <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                    <span>本服务仅供学习交流使用，请遵守相关法律法规</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- API Documentation -->
+        <section class="section fade-in fade-in-delay-3">
+            <div class="section-header">
+                <h2 class="section-title">API 端点</h2>
+            </div>
+            <div class="card">
+                <div class="api-list">
+                    <div class="api-item">
+                        <span class="api-method">GET</span>
+                        <div class="api-label">订阅 (有 Key)</div>
+                        <div class="api-url">/api/subscription.json?source=ikun&key=YOUR_KEY.json</div>
+                    </div>
+                    <div class="api-item">
+                        <span class="api-method">GET</span>
+                        <div class="api-label">订阅 (内置 Key)</div>
+                        <div class="api-url">/api/subscription.json?source=suyin.json</div>
+                    </div>
+                    <div class="api-item">
+                        <span class="api-method">GET</span>
+                        <div class="api-label">单个插件下载 (需要 Key)</div>
+                        <div class="api-url">/plugins/{platform}.js?source=ikun&key=YOUR_API_KEY</div>
+                    </div>
+                    <div class="api-item">
+                        <span class="api-method">GET</span>
+                        <div class="api-label">免密插件下载</div>
+                        <div class="api-url">/plugins/{platform}.js</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p class="footer-text">
+                BakaMusic Plugin Subscription Service &middot; Powered by Vercel
+            </p>
+        </div>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+        // ============================================
+        // State
+        // ============================================
+        let selectedSource = null;
+
+        // Plugin Configuration
+        const PLUGINS = [
+            { name: '网易云音乐', file: 'wy.js', version: '1.0.0', emoji: '☁️', requiresKey: true },
+            { name: 'QQ音乐', file: 'qq.js', version: '1.0.0', emoji: '🐧', requiresKey: true },
+            { name: '酷狗音乐', file: 'kg.js', version: '1.0.0', emoji: '🐕', requiresKey: true },
+            { name: '酷我音乐', file: 'kw.js', version: '1.0.0', emoji: '🎵', requiresKey: true },
+            { name: '咪咕音乐', file: 'mg.js', version: '1.0.0', emoji: '🎧', requiresKey: true },
+            { name: 'Bilibili', file: 'bilibili.js', version: '1.0.0', emoji: '📺', requiresKey: false },
+            { name: '汽水音乐', file: 'qishui.js', version: '1.0.0', emoji: '🥤', requiresKey: false },
+            { name: 'Gitcode', file: 'git.js', version: '1.0.0', emoji: '💻', requiresKey: false }
+        ];
+
+        // 音源 → 支持的音源插件 (免密插件始终包含)
+        const SOURCE_PLUGINS = {
+            'ikun':      ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
+            'linglan':   ['wy.js', 'qq.js', 'kg.js', 'kw.js', 'mg.js'],
+            'suyin':     ['wy.js'],
+            'fengyu':    ['wy.js', 'qq.js', 'kw.js', 'mg.js'],
+            'xinghai':   ['wy.js', 'kw.js'],
+            'huibq':     ['kw.js', 'qq.js'],
+            'nianxin':   [],
+            'changqing': ['wy.js', 'qq.js', 'kg.js', 'kw.js', 'mg.js'],
+        };
+
+        // 音源 → 各插件音质 (null = 使用插件默认音质)
+        const SOURCE_QUALITIES = {
+            'ikun':      { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
+            'linglan':   { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': null, 'mg.js': null },
+            'suyin':     { 'wy.js': ['128k','320k','flac'] },
+            'fengyu':    { 'wy.js': ['128k','320k','flac','flac24bit','hires','master'], 'qq.js': ['128k','320k','flac','flac24bit','atmos','atmos_plus','master'], 'kw.js': ['128k','320k','flac','flac24bit'], 'mg.js': ['128k','320k','flac','flac24bit'] },
+            'xinghai':   { 'wy.js': ['128k','192k','320k','flac','flac24bit'], 'kw.js': ['128k','192k','320k','flac'] },
+            'huibq':     { 'kw.js': ['128k','320k'], 'qq.js': ['128k','320k'] },
+            'changqing': { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'], 'mg.js': ['128k','320k','flac'] },
+        };
+
+        // 插件默认音质 (音源配置为 null 时使用)
+        const DEFAULT_QUALITIES = {
+            'wy.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
+            'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
+            'kg.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
+            'kw.js':  ['128k', '320k', 'flac'],
+            'mg.js':  ['128k', '320k', 'flac', 'hires'],
+        };
+
+        // 音质显示信息
+        const QUALITY_INFO = {
+            '128k':       { label: '128K',       cls: 'q-basic' },
+            '192k':       { label: '192K',       cls: 'q-basic' },
+            '320k':       { label: '320K',       cls: 'q-standard' },
+            'flac':       { label: 'FLAC',       cls: 'q-lossless' },
+            'flac24bit':  { label: 'FLAC 24bit', cls: 'q-hires' },
+            'hires':      { label: 'Hi-Res',     cls: 'q-hires' },
+            'dolby':      { label: 'Dolby',      cls: 'q-spatial' },
+            'atmos':      { label: 'Atmos',      cls: 'q-spatial' },
+            'atmos_plus': { label: 'Atmos 2.0',  cls: 'q-spatial' },
+            'master':     { label: 'Master',     cls: 'q-master' },
+        };
+
+        // 插件显示信息 (用于音质表格)
+        const PLUGIN_DISPLAY = {
+            'wy.js':  { emoji: '☁️', name: '网易云' },
+            'qq.js':  { emoji: '🐧', name: 'QQ音乐' },
+            'kg.js':  { emoji: '🐕', name: '酷狗' },
+            'kw.js':  { emoji: '🎵', name: '酷我' },
+            'mg.js':  { emoji: '🎧', name: '咪咕' },
+        };
+
+        // ============================================
+        // Quality Display
+        // ============================================
+        function renderQualityGrid(source) {
+            const section = document.getElementById('qualitySection');
+            const grid = document.getElementById('qualityGrid');
+            const desc = document.getElementById('qualityDesc');
+            const qualities = SOURCE_QUALITIES[source];
+
+            if (!qualities) {
+                section.classList.remove('visible');
+                return;
+            }
+
+            grid.innerHTML = '';
+            desc.textContent = selectedSource
+                ? `${selectedSource.name}支持的各平台音质类型`
+                : '各平台支持的音质类型';
+
+            Object.keys(qualities).forEach(file => {
+                const display = PLUGIN_DISPLAY[file];
+                if (!display) return;
+
+                const qList = qualities[file] || DEFAULT_QUALITIES[file] || [];
+
+                const row = document.createElement('div');
+                row.className = 'quality-row';
+
+                const platform = document.createElement('div');
+                platform.className = 'quality-platform';
+                platform.innerHTML =
+                    `<span class="quality-platform-icon">${display.emoji}</span>` +
+                    `<span class="quality-platform-name">${display.name}</span>`;
+
+                const tags = document.createElement('div');
+                tags.className = 'quality-tags';
+                qList.forEach(q => {
+                    const info = QUALITY_INFO[q] || { label: q, cls: 'q-basic' };
+                    const tag = document.createElement('span');
+                    tag.className = 'quality-tag ' + info.cls;
+                    tag.textContent = info.label;
+                    tags.appendChild(tag);
+                });
+
+                row.appendChild(platform);
+                row.appendChild(tags);
+                grid.appendChild(row);
+            });
+
+            section.classList.add('visible');
+        }
+
+        // ============================================
+        // Theme
+        // ============================================
+        function getPreferredTheme() {
+            const stored = localStorage.getItem('theme');
+            if (stored) return stored;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            applyTheme(current === 'dark' ? 'light' : 'dark');
+        }
+
+        // ============================================
+        // Source Selection
+        // ============================================
+        function initSourceSelection() {
+            const cards = document.querySelectorAll('.source-card');
+            cards.forEach(card => {
+                const handler = () => {
+                    cards.forEach(c => {
+                        c.classList.remove('selected');
+                        c.setAttribute('aria-checked', 'false');
+                    });
+                    card.classList.add('selected');
+                    card.setAttribute('aria-checked', 'true');
+
+                    selectedSource = {
+                        name: card.querySelector('.source-name').textContent,
+                        url: card.dataset.url,
+                        source: card.dataset.source,
+                        requiresKey: card.dataset.requiresKey !== 'false'
+                    };
+
+                    document.getElementById('selectedSourceName').textContent = selectedSource.name;
+                    document.getElementById('selectedSourceUrl').textContent = selectedSource.url;
+
+                    renderQualityGrid(selectedSource.source);
+
+                    const keySection = document.getElementById('apiKeySection');
+
+                    if (selectedSource.requiresKey) {
+                        // 需要 Key: 显示输入框
+                        keySection.classList.add('visible');
+                        // 隐藏已有链接
+                        document.getElementById('subscriptionSection').classList.remove('visible');
+                        document.getElementById('pluginsSection').classList.remove('visible');
+                        document.getElementById('qualitySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    } else {
+                        // 内置 Key: 跳过输入，直接生成
+                        keySection.classList.remove('visible');
+                        generateLinks(true);
+                        document.getElementById('qualitySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+
+                    showToast('已选择 ' + selectedSource.name);
+                };
+
+                card.addEventListener('click', handler);
+                card.addEventListener('keydown', e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handler();
+                    }
+                });
+            });
+        }
+
+        // ============================================
+        // Link Generation
+        // ============================================
+        function generateLinks(skipScroll) {
+            if (!selectedSource) {
+                showToast('请先选择音源类型');
+                return;
+            }
+
+            const apiKey = selectedSource.requiresKey
+                ? document.getElementById('apiKey').value.trim()
+                : '';
+            const baseUrl = window.location.origin;
+
+            // BakaMusic 要求订阅 URL 以 .json 结尾
+            // 有 Key:  ?source=xxx&key=yyy.json  (key 末尾带 .json)
+            // 无 Key:  ?source=xxx.json           (source 末尾带 .json)
+            let subscriptionUrl;
+            if (apiKey) {
+                subscriptionUrl = `${baseUrl}/api/subscription.json?source=${selectedSource.source}&key=${apiKey}.json`;
+            } else {
+                subscriptionUrl = `${baseUrl}/api/subscription.json?source=${selectedSource.source}.json`;
+            }
+
+            document.getElementById('subscriptionUrl').textContent = subscriptionUrl;
+
+            document.getElementById('subscriptionSection').classList.add('visible');
+            document.getElementById('pluginsSection').classList.add('visible');
+
+            generatePluginCards(apiKey, baseUrl);
+
+            if (!skipScroll) {
+                const target = document.getElementById('subscriptionSection');
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            showToast('链接已生成');
+        }
+
+        function generatePluginCards(apiKey, baseUrl) {
+            const grid = document.getElementById('pluginGrid');
+            grid.innerHTML = '';
+
+            const supported = SOURCE_PLUGINS[selectedSource.source] || [];
+
+            PLUGINS.forEach(plugin => {
+                // 音源插件: 检查此音源是否支持
+                if (plugin.requiresKey && !supported.includes(plugin.file)) return;
+
+                let pluginUrl = `${baseUrl}/plugins/${plugin.file}`;
+
+                if (plugin.requiresKey) {
+                    pluginUrl += `?source=${selectedSource.source}`;
+                    if (apiKey) {
+                        pluginUrl += `&key=${apiKey}`;
+                    }
+                }
+
+                const card = document.createElement('div');
+                card.className = 'plugin-card';
+                card.innerHTML = `
+                    <div class="plugin-icon-circle" aria-hidden="true">${plugin.emoji}</div>
+                    <div class="plugin-name">${plugin.name}</div>
+                    <div class="plugin-version">v${plugin.version}</div>
+                    <div class="plugin-badge ${plugin.requiresKey ? '' : 'free'}">${plugin.requiresKey ? '' : 'Free'}</div>
+                    <button class="plugin-copy-btn" onclick="event.stopPropagation(); copyPluginLink('${pluginUrl}', this)">复制</button>
+                    <div class="plugin-url-detail">${pluginUrl}</div>
+                `;
+
+                card.addEventListener('click', () => card.classList.toggle('expanded'));
+                grid.appendChild(card);
+            });
+        }
+
+        // ============================================
+        // Clipboard
+        // ============================================
+        function copyToClipboard(elementId, button) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const span = button.querySelector('span');
+                const originalText = span.textContent;
+                span.textContent = '已复制';
+                button.classList.add('copied');
+                showToast('已复制到剪贴板');
+                setTimeout(() => {
+                    span.textContent = originalText;
+                    button.classList.remove('copied');
+                }, 2000);
+            }).catch(() => showToast('复制失败，请手动复制'));
+        }
+
+        function copyPluginLink(url, button) {
+            navigator.clipboard.writeText(url).then(() => {
+                const original = button.textContent;
+                button.textContent = '已复制';
+                button.classList.add('copied');
+                showToast('插件链接已复制');
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.classList.remove('copied');
+                }, 2000);
+            }).catch(() => showToast('复制失败'));
+        }
+
+        // ============================================
+        // Toast
+        // ============================================
+        let toastTimer = null;
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('visible');
+
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('visible');
+            }, 2500);
+        }
+
+        // ============================================
+        // Enter Key
+        // ============================================
+        document.getElementById('apiKey').addEventListener('keydown', e => {
+            if (e.key === 'Enter') generateLinks();
+        });
+
+        // ============================================
+        // Initialize
+        // ============================================
+        applyTheme(getPreferredTheme());
+        initSourceSelection();
+
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+            if (!localStorage.getItem('theme')) {
+                applyTheme(e.matches ? 'dark' : 'light');
+            }
+        });
+    </script>
+</body>
+</html>

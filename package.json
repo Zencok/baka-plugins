@@ -1,0 +1,15 @@
+{
+  "name": "bakamusic-plugins",
+  "version": "1.0.0",
+  "description": "BakaMusic 插件订阅服务",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
