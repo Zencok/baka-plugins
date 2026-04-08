@@ -27,6 +27,10 @@ const headers = {
   Cookie: "uin=",
 };
 
+const mobileSearchHeaders = {
+  "User-Agent": "QQMusic 14090508(android 12)",
+};
+
 const typeMap = {
   m4a: {
     s: "C400",
@@ -278,8 +282,71 @@ async function searchBase(query, page, type) {
   };
 }
 
+async function searchMusicMobile(query, page) {
+  const res = (
+    await axios_1.default({
+      url: "https://u.y.qq.com/cgi-bin/musicu.fcg",
+      method: "POST",
+      data: {
+        comm: {
+          ct: "11",
+          cv: "14090508",
+          v: "14090508",
+          tmeAppID: "qqmusic",
+          phonetype: "EBG-AN10",
+          deviceScore: "553.47",
+          devicelevel: "50",
+          newdevicelevel: "20",
+          rom: "HuaWei/EMOTION/EmotionUI_14.2.0",
+          os_ver: "12",
+          OpenUDID: "0",
+          OpenUDID2: "0",
+          QIMEI36: "0",
+          udid: "0",
+          chid: "0",
+          aid: "0",
+          oaid: "0",
+          taid: "0",
+          tid: "0",
+          wid: "0",
+          uid: "0",
+          sid: "0",
+          modeSwitch: "6",
+          teenMode: "0",
+          ui_mode: "2",
+          nettype: "1020",
+          v4ip: "",
+        },
+        req: {
+          module: "music.search.SearchCgiService",
+          method: "DoSearchForQQMusicMobile",
+          param: {
+            search_type: 0,
+            query,
+            page_num: page,
+            num_per_page: pageSize,
+            highlight: 0,
+            nqc_flag: 0,
+            multi_zhida: 0,
+            cat: 2,
+            grp: 1,
+            sin: 0,
+            sem: 0,
+          },
+        },
+      },
+      headers: mobileSearchHeaders,
+      timeout: 20000,
+    })
+  ).data;
+  return {
+    isEnd: res.req.data.meta.sum <= page * pageSize,
+    data: res.req.data.body.item_song || [],
+  };
+}
+
 async function searchMusic(query, page) {
-  const songs = await searchBase(query, page, 0);
+  const songs = await searchMusicMobile(query, page);
   return {
     isEnd: songs.isEnd,
     data: songs.data.map(formatMusicItem),
@@ -961,7 +1028,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.0",
+  version: "1.0.1",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
