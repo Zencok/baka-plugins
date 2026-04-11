@@ -79,6 +79,22 @@ function formatImgUrl(img) {
   return 'http://d.musicapp.migu.cn' + img;
 }
 
+function normalizeDurationSeconds(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+
+  if (typeof value === 'string' && value.includes(':')) {
+    const parts = value.split(':').map(part => parseInt(part, 10));
+    if (parts.some(part => Number.isNaN(part))) return undefined;
+    return parts.reduce((total, part) => total * 60 + part, 0);
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return undefined;
+
+  // Migu V3 search returns seconds directly, while some legacy fields may still be milliseconds.
+  return numericValue >= 1000 ? Math.floor(numericValue / 1000) : Math.floor(numericValue);
+}
+
 function toMD5(str) {
   return CryptoJS.MD5(str).toString();
 }
@@ -498,7 +514,7 @@ async function searchMusic(query, page) {
           singerId: item.singerId,
           qualities: qualities,
           albumId: item.albumId,
-          duration: item.duration ? Math.floor(item.duration / 1000) : undefined,
+          duration: normalizeDurationSeconds(item.duration),
           lrcUrl: item.lrcUrl,
           mrcUrl: item.mrcurl,          trcUrl: item.trcUrl,
         });
@@ -1132,7 +1148,7 @@ async function getMusicInfo(musicBase) {
               album: item.album || item.albumName,
               albumId: item.albumId,
               artwork: artwork,
-              duration: item.duration ? Math.floor(item.duration / 1000) : undefined,
+              duration: normalizeDurationSeconds(item.duration),
               qualities: qualities,
               platform: '咪咕音乐',
             };
@@ -2211,7 +2227,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.0.0",
+  version: "1.0.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "cache",

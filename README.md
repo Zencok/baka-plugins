@@ -24,7 +24,7 @@
 | QQ音乐 | `plugins/qq.js` | `1.0.2` | 音源相关 |
 | 酷狗音乐 | `plugins/kg.js` | `1.0.0` | 音源相关 |
 | 酷我音乐 | `plugins/kw.js` | `1.0.0` | 音源相关 |
-| 咪咕音乐 | `plugins/mg.js` | `1.0.0` | 音源相关 |
+| 咪咕音乐 | `plugins/mg.js` | `1.0.1` | 音源相关 |
 | Bilibili | `plugins/bilibili.js` | `1.0.0` | 免密 |
 | 汽水音乐 | `plugins/qishui.js` | `1.0.0` | 免密 |
 | GitCode | `plugins/git.js` | `1.0.0` | 免密 |
