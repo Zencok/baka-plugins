@@ -287,12 +287,9 @@ function randomInt(min, max) {
 }
 
 function getSearchId() {
-  const e = randomInt(1, 20);
-  const t = Number((e * Number("18014398509481984")).toFixed());
-  const n = randomInt(0, 4194304) * 4294967296;
-  const now = Date.now();
-  const remainder = Math.round(now * 1000) % (24 * 60 * 60 * 1000);
-  return String(t + n + remainder);
+  let guid = "";
+  for (let i = 0; i < 32; i++) guid += Math.floor(Math.random() * 16).toString(16);
+  return guid.toUpperCase() + String(Math.floor(Math.random() * 100000)).padStart(5, "0");
 }
 
 async function searchBase(query, page, type) {
@@ -323,53 +320,35 @@ async function searchBase(query, page, type) {
   };
 }
 
-async function searchMusicMobile(query, page) {
+async function searchMusicDesktop(query, page) {
   const body = {
     comm: {
-      ct: "11",
-      cv: "14090508",
-      v: "14090508",
+      _channelid: "0",
+      _os_version: "6.2.9200-2",
+      ct: "19",
+      cv: "2151",
+      guid: "1F70E520B2EAA7D25E11760783C53CA9",
+      patch: "118",
+      psrf_access_token_expiresAt: 0,
+      psrf_qqaccess_token: "",
+      psrf_qqopenid: "",
+      psrf_qqunionid: "",
       tmeAppID: "qqmusic",
-      phonetype: "EBG-AN10",
-      deviceScore: "553.47",
-      devicelevel: "50",
-      newdevicelevel: "20",
-      rom: "HuaWei/EMOTION/EmotionUI_14.2.0",
-      os_ver: "12",
-      OpenUDID: "0",
-      OpenUDID2: "0",
-      QIMEI36: "0",
-      udid: "0",
-      chid: "0",
-      aid: "0",
-      oaid: "0",
-      taid: "0",
-      tid: "0",
-      wid: "0",
-      uid: "0",
-      sid: "0",
-      modeSwitch: "6",
-      teenMode: "0",
-      ui_mode: "2",
-      nettype: "1020",
-      v4ip: "",
+      tmeLoginType: 0,
+      uin: "0",
+      wid: "7223299733393904640",
     },
-    req: {
+    "music.search.SearchCgiService": {
       module: "music.search.SearchCgiService",
-      method: "DoSearchForQQMusicMobile",
+      method: "DoSearchForQQMusicDesktop",
       param: {
+        grp: 1,
+        num_per_page: pageSize,
+        page_num: page,
+        query,
+        remoteplace: "txt.newclient.top",
         search_type: 0,
         searchid: getSearchId(),
-        query,
-        page_num: page,
-        num_per_page: pageSize,
-        highlight: 0,
-        nqc_flag: 0,
-        multi_zhida: 0,
-        cat: 2,
-        grp: 1,
-        sin: 0,
-        sem: 0,
       },
     },
   };
@@ -383,14 +362,17 @@ async function searchMusicMobile(query, page) {
       timeout: 20000,
     })
   ).data;
+  const req = res?.["music.search.SearchCgiService"] ?? res?.req;
+  const data = req.data;
+  const meta = data.meta ?? {};
   return {
-    isEnd: res.req.data.meta.sum <= page * pageSize,
-    data: res.req.data.body.item_song || [],
+    isEnd: (meta.sum ?? meta.estimate_sum ?? 0) <= page * pageSize,
+    data: data.body?.song?.list ?? data.body?.item_song ?? [],
   };
 }
 
 async function searchMusic(query, page) {
-  const songs = await searchMusicMobile(query, page);
+  const songs = await searchMusicDesktop(query, page);
   return {
     isEnd: songs.isEnd,
     data: songs.data.map(formatMusicItem),
@@ -1072,7 +1054,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.2",
+  version: "1.0.3",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

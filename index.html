@@ -1469,7 +1469,7 @@
         // Plugin Configuration
         const PLUGINS = [
             { name: '网易云音乐', file: 'wy.js', version: '1.0.0', emoji: '☁️', requiresKey: true },
-            { name: 'QQ音乐', file: 'qq.js', version: '1.0.2', emoji: '🐧', requiresKey: true },
+            { name: 'QQ音乐', file: 'qq.js', version: '1.0.3', emoji: '🐧', requiresKey: true },
             { name: '酷狗音乐', file: 'kg.js', version: '1.0.0', emoji: '🐕', requiresKey: true },
             { name: '酷我音乐', file: 'kw.js', version: '1.0.0', emoji: '🎵', requiresKey: true },
             { name: '咪咕音乐', file: 'mg.js', version: '1.0.1', emoji: '🎧', requiresKey: true },
@@ -1493,7 +1493,7 @@
 
         // 音源 → 各插件音质 (null = 使用插件默认音质)
         const SOURCE_QUALITIES = {
-            'ikun':      { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
+            'ikun':      { 'kg.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kw.js': ['128k','320k','flac','flac24bit','hires'], 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus'], 'wy.js': ['128k','320k','flac','flac24bit','hires','atmos','master'] },
             'linglan':   { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': null, 'mg.js': null },
             'suyin':     { 'wy.js': ['128k','320k','flac'] },
             'fengyu':    { 'wy.js': ['128k','320k','flac','flac24bit','hires','master'], 'qq.js': ['128k','320k','flac','flac24bit','atmos','atmos_plus','master'], 'kw.js': ['128k','320k','flac','flac24bit'], 'mg.js': ['128k','320k','flac','flac24bit'] },
