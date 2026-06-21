@@ -156,7 +156,7 @@ const SOURCE_CONFIG = {
 };
 
 // 免密插件: 始终包含，不需要 source/key 参数
-const FREE_PLUGINS = ['bilibili.js', 'qishui.js', 'git.js'];
+const FREE_PLUGINS = ['bilibili.js', 'qishui.js'];
 
 const DEFAULT_SOURCE = 'ikun';
 

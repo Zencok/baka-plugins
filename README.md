@@ -8,7 +8,7 @@
 
 ## ✨ 特性
 
-- 📦 统一分发 8 个平台插件
+- 📦 统一分发 7 个平台插件
 - 🔗 同时支持订阅导入与单插件导入
 - 🧩 按音源动态注入请求处理器
 - 🎚️ 按音源覆盖插件音质能力
@@ -27,9 +27,8 @@
 | 咪咕音乐 | `plugins/mg.js` | `1.0.1` | 音源相关 |
 | Bilibili | `plugins/bilibili.js` | `1.0.0` | 免密 |
 | 汽水音乐 | `plugins/qishui.js` | `1.0.0` | 免密 |
-| GitCode | `plugins/git.js` | `1.0.0` | 免密 |
 
-> `bilibili.js`、`qishui.js`、`git.js` 下载时不需要 `source` 或 `key`。
+> `bilibili.js`、`qishui.js` 下载时不需要 `source` 或 `key`。
 
 ---
 
@@ -135,7 +134,6 @@ baka-plugins/
 │   └── subscription.js
 ├── plugins/
 │   ├── bilibili.js
-│   ├── git.js
 │   ├── kg.js
 │   ├── kw.js
 │   ├── mg.js
