@@ -788,6 +788,37 @@ async function getArtistWorks(artistItem, page, type) {
   }
 }
 
+// 新接口 - pl3_getlist (完整数据：音质+封面)
+async function getMusicSheetResponseByIdV2(id, page, pagesize = 80) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const uid = Math.floor(Math.random() * 100000000);
+  const sid = Math.floor(Math.random() * 100000000);
+  const devid = Math.floor(Math.random() * 100000000);
+  const sig = Math.floor(Math.random() * 2000000000);
+
+  return (
+    await axios_1.default.get(`http://nplserver.kuwo.cn/pl.svc`, {
+      params: {
+        op: "pl3_getlist",
+        pid: id,
+        pn: page - 1,
+        rn: pagesize,
+        encode: "utf-8",
+        plat: "pc",
+        corp: "kuwo",
+        uid: uid,
+        sid: sid,
+        devid: devid,
+        prod: "MUSIC_9.6.0.0_W1",
+        ttime: timestamp,
+        sig: sig,
+        source: "kwmusic_web_1.exe",
+      },
+    })
+  ).data;
+}
+
+// 老接口 - getlistinfo (兼容旧版，数据不全)
 async function getMusicSheetResponseById(id, page, pagesize = 50) {
   return (
     await axios_1.default.get(`http://nplserver.kuwo.cn/pl.svc`, {
@@ -806,51 +837,140 @@ async function getMusicSheetResponseById(id, page, pagesize = 50) {
 }
 
 async function importMusicSheet(urlLike) {
-  var _a, _b;
+  var _a, _b, _c, _d, _e;
   let id;
+  let fullUrl = null;
+  let isNewApiUrl = false;
+
+  // 优先匹配完整的 pl3_getlist URL（包含所有认证参数）
+  if (!id && urlLike.includes('nplserver.kuwo.cn/pl.svc') && urlLike.includes('op=pl3_getlist')) {
+    const match = urlLike.match(/[?&]pid=(\d+)/);
+    if (match) {
+      id = match[1];
+      fullUrl = urlLike;
+      isNewApiUrl = true;
+    }
+  }
+
+  // 匹配老接口 URL 或其他 nplserver URL
   if (!id) {
     id =
-      (_a = urlLike.match(
-        /https?:\/\/www\/kuwo\.cn\/playlist_detail\/(\d+)/
-      )) === null || _a === void 0
+      (_a = urlLike.match(/nplserver\.kuwo\.cn\/pl\.svc\?.*[?&]pid=(\d+)/)) ===
+        null || _a === void 0
         ? void 0
         : _a[1];
   }
+
+  // 修正原有的正则（www/kuwo 改为 www\.kuwo）
   if (!id) {
     id =
-      (_b = urlLike.match(/https?:\/\/m\.kuwo\.cn\/h5app\/playlist\/(\d+)/)) ===
-        null || _b === void 0
+      (_b = urlLike.match(
+        /https?:\/\/www\.kuwo\.cn\/playlist_detail\/(\d+)/
+      )) === null || _b === void 0
         ? void 0
         : _b[1];
   }
+
   if (!id) {
-    id = urlLike.match(/^\s*(\d+)\s*$/);
+    id =
+      (_c = urlLike.match(/https?:\/\/m\.kuwo\.cn\/h5app\/playlist\/(\d+)/)) ===
+        null || _c === void 0
+        ? void 0
+        : _c[1];
   }
+
+  if (!id) {
+    id =
+      (_d = urlLike.match(/^\s*(\d+)\s*$/)) === null || _d === void 0
+        ? void 0
+        : _d[1];
+  }
+
   if (!id) {
     return;
   }
+
   let page = 1;
   let totalPage = 30;
   let musicList = [];
+
+  // 如果用户提供了完整的 pl3_getlist URL，直接使用（优先）
+  let useNewApi = isNewApiUrl;
+  let userProvidedUrl = fullUrl;
+
   while (page < totalPage) {
     try {
-      const data = await getMusicSheetResponseById(id, page, 80);
-      totalPage = Math.ceil(data.total / 80);
+      let data;
+
+      if (useNewApi && userProvidedUrl) {
+        // 使用用户提供的完整 URL，只替换 pn 和 rn 参数
+        const url = new URL(userProvidedUrl.startsWith('http') ? userProvidedUrl : 'http://' + userProvidedUrl);
+        url.searchParams.set('pn', String(page - 1));
+        url.searchParams.set('rn', '80');
+
+        data = (await axios_1.default.get(url.toString())).data;
+      } else if (useNewApi) {
+        // 回退：自己生成参数
+        data = await getMusicSheetResponseByIdV2(id, page, 80);
+      } else {
+        // 老接口
+        data = await getMusicSheetResponseById(id, page, 80);
+      }
+
+      // 新接口错误处理
+      if (useNewApi && data.errcode !== 0) {
+        console.log('[酷我] 新接口失败，回退到老接口');
+        useNewApi = false;
+        userProvidedUrl = null;
+        page = 1;
+        musicList = [];
+        continue;
+      }
+
+      // 新接口从 data.info 中取数据
+      const responseData = useNewApi ? data.info : data;
+
+      totalPage = Math.ceil(responseData.total / 80);
       if (isNaN(totalPage)) {
         totalPage = 1;
       }
+
+      const songs = responseData.musiclist || responseData.musicList || [];
+
       musicList = musicList.concat(
-        data.musicList.map((_) => ({
-          id: _.id,
-          title: he.decode(_.name || ""),
-          artist: he.decode(_.artist || ""),
-          album: he.decode(_.album || ""),
-          albumId: _.albumid,
-          artistId: _.artistid,
-          formats: _.formats,
-        }))
+        songs.map((_) => {
+          const qualities = parseKuWoQualityInfo(_.N_MINFO || _.n_minfo);
+          const normalizedQualities = ensureQualities(qualities);
+
+          return {
+            id: _.id,
+            artwork: _.albumpic
+              ? _.albumpic.replace('/120/', '/500/')
+              : artworkShort2Long(_.web_albumpic_short),
+            title: he.decode(_.name || _.FSONGNAME || ""),
+            artist: he.decode(_.artist || _.FARTIST || ""),
+            album: he.decode(_.album || _.FALBUM || ""),
+            albumId: _.albumid,
+            artistId: _.artistid,
+            formats: _.formats,
+            duration: getDurationSeconds(_),
+            qualities: normalizedQualities,
+            nMInfo: _.N_MINFO || _.n_minfo,
+          };
+        })
       );
-    } catch (_c) {}
+    } catch (error) {
+      // 新接口失败，回退到老接口
+      if (useNewApi) {
+        console.log('[酷我] 新接口异常，回退到老接口:', error.message);
+        useNewApi = false;
+        userProvidedUrl = null;
+        page = 1;
+        musicList = [];
+        continue;
+      }
+    }
+
     await new Promise((resolve) => {
       setTimeout(() => {
         resolve();
@@ -858,6 +978,7 @@ async function importMusicSheet(urlLike) {
     });
     ++page;
   }
+
   return musicList;
 }
 
@@ -1137,7 +1258,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.0.0",
+  version: "1.0.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
