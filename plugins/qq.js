@@ -797,21 +797,37 @@ async function getArtistWorks(artistItem, page, type) {
 
 async function importMusicSheet(urlLike) {
   let id;
+
+  // 匹配 i.y.qq.com/n2/m/share/details/taoge.html?...id=数字
   if (!id) {
     id = (urlLike.match(
       /https?:\/\/i\.y\.qq\.com\/n2\/m\/share\/details\/taoge\.html\?.*id=([0-9]+)/
     ) || [])[1];
   }
+
+  // 匹配 i2.y.qq.com/n3/other/pages/details/playlist.html?...&id=数字
+  if (!id) {
+    id = (urlLike.match(
+      /https?:\/\/i\d*\.y\.qq\.com\/n\d+\/.*\/playlist\.html\?.*[?&]id=([0-9]+)/
+    ) || [])[1];
+  }
+
+  // 匹配 y.qq.com/n/ryqq/playlist/数字
   if (!id) {
     id = (urlLike.match(/https?:\/\/y\.qq\.com\/n\/ryqq\/playlist\/([0-9]+)/) ||
       [])[1];
   }
+
+  // 匹配纯数字
   if (!id) {
     id = (urlLike.match(/^(\d+)$/) || [])[1];
   }
+
   if (!id) {
+    console.error('[QQ音乐] 无法从 URL 中提取歌单 ID:', urlLike);
     return;
   }
+
   const result = (
     await axios_1.default({
       url: `http://i.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&utf8=1&disstid=${id}&loginUin=0`,
@@ -1054,7 +1070,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.3",
+  version: "1.0.4",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
