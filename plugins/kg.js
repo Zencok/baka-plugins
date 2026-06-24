@@ -287,6 +287,86 @@ function formatArtistSongItem(_) {
   };
 }
 
+function formatGatewayImportMusicItem(_, qualityInfo = {}) {
+  const name = _.name || '';
+  let artist = _.singername || '';
+  let title = name;
+
+  if (name.includes(' - ')) {
+    const [rawArtist, ...titleParts] = name.split(' - ');
+    artist = artist || rawArtist.trim();
+    title = titleParts.join(' - ').trim();
+  }
+
+  if (!title) {
+    title = _.songname || name;
+  }
+
+  const baseQualities = qualityInfo[_.hash] || {};
+  const relateGoods = Array.isArray(_.relate_goods) ? _.relate_goods : [];
+  const qualities = { ...baseQualities };
+
+  relateGoods.forEach((item) => {
+    if (!item || !item.hash) return;
+
+    if (item.bitrate >= 999 || item.level >= 8) {
+      qualities.master = qualities.master || {
+        size: formatFileSize(item.size),
+        bitrate: item.bitrate ? item.bitrate * 1000 : undefined,
+        hash: item.hash,
+      };
+      return;
+    }
+
+    if (item.bitrate >= 500 || item.level >= 5) {
+      qualities.flac = qualities.flac || {
+        size: formatFileSize(item.size),
+        bitrate: item.bitrate ? item.bitrate * 1000 : undefined,
+        hash: item.hash,
+      };
+      return;
+    }
+
+    if (item.bitrate >= 320 || item.level >= 4) {
+      qualities['320k'] = qualities['320k'] || {
+        size: formatFileSize(item.size),
+        bitrate: item.bitrate ? item.bitrate * 1000 : undefined,
+        hash: item.hash,
+      };
+      return;
+    }
+
+    qualities['128k'] = qualities['128k'] || {
+      size: formatFileSize(item.size),
+      bitrate: item.bitrate ? item.bitrate * 1000 : undefined,
+      hash: item.hash,
+    };
+  });
+
+  if (Object.keys(qualities).length === 0) {
+    qualities['128k'] = {};
+    qualities['320k'] = {};
+    qualities.flac = {};
+  }
+
+  return {
+    id: _.hash,
+    title,
+    artist: artist || '未知歌手',
+    album: _.albuminfo?.name || _.remark || '',
+    album_id: _.album_id,
+    album_audio_id: _.audio_id || _.album_audio_id || 0,
+    artwork: _.trans_param?.union_cover
+      ? _.trans_param.union_cover.replace('{size}', '400')
+      : (_.cover ? _.cover.replace('{size}', '400') : undefined),
+    duration: _.timelen ? Math.floor(_.timelen / 1000) : _.duration,
+    "320hash": _.trans_param?.ogg_320_hash || relateGoods[1]?.hash || undefined,
+    sqhash: relateGoods.find(item => item && item.bitrate >= 500)?.hash || undefined,
+    origin_hash: _.trans_param?.hash_multitrack || _.hash,
+    qualities,
+  };
+}
+
 
 function formatRecommendSheetItem(_) {
   return {
@@ -1088,132 +1168,131 @@ async function getUserListDetail2(global_collection_id) {
   if (id.length > 1000) throw new Error('[酷狗] global_collection_id无效');
   
   try {
-    const params = 
-      'appid=1058&specialid=0&global_specialid=' + id + 
-      '&format=jsonp&srcappid=2919&clientver=20000&clienttime=1586163242519&mid=1586163242519&uuid=1586163242519&dfid=-';
-    
-    const infoRes = await axios_1.default.get(
-      `https://mobiles.kugou.com/api/v5/special/info_v2?${params}&signature=${signatureParams(params, 'web')}`,
-      {
-        headers: {
-          mid: '1586163242519',
-          Referer: 'https://m3ws.kugou.com/share/index.php',
-          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1',
-          dfid: '-',
-          clienttime: '1586163242519',
-        },
+    const gatewayHeaders = {
+      'User-Agent': 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi',
+      'kg-rc': '1',
+      'kg-thash': '5d816a0',
+      'kg-rec': '1',
+      'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
+    };
+    const fetchPageSize = 300;
+    const detailBatchSize = 200;
+    const songMap = new Map();
+    let beginIdx = 0;
+    let totalCount = null;
+    let page = 0;
+
+    while (totalCount === null || beginIdx < totalCount) {
+      page += 1;
+      const clienttime = Math.floor(Date.now() / 1000);
+      const gatewayParams =
+        `area_code=1&appid=1005&begin_idx=${beginIdx}&clienttime=${clienttime}` +
+        `&clientver=20489&extend_fields=abtags,hot_cmt,popularization&global_collection_id=${id}` +
+        `&mode=1&pagesize=${fetchPageSize}&personal_switch=1&plat=1&type=1&uuid=-`;
+
+      const pageRes = await axios_1.default.get(
+        `https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt?${gatewayParams}&signature=${signatureParams(gatewayParams, 'android')}`,
+        { headers: gatewayHeaders }
+      );
+
+      const pageData = pageRes.data?.data;
+      const songs = pageData?.songs || [];
+
+      if (!songs.length) {
+        break;
       }
-    );
-    
-    if (!infoRes.data || !infoRes.data.data) {
-      console.error('[酷狗] 获取歌单信息失败');
+
+      totalCount = pageData?.count || totalCount || songs.length;
+      const beforeSize = songMap.size;
+
+      songs.forEach((song) => {
+        if (!song?.hash) return;
+        const key = `${song.hash}|${song.audio_id || song.album_audio_id || 0}|${song.name || ''}`;
+        if (!songMap.has(key)) {
+          songMap.set(key, song);
+        }
+      });
+
+      console.log(`[酷狗] global_collection_id分页 ${page} 获取 ${songs.length} 首，去重后累计 ${songMap.size}/${totalCount}`);
+
+      const addedCount = songMap.size - beforeSize;
+      if (songs.length < fetchPageSize || addedCount <= 0) {
+        break;
+      }
+
+      beginIdx += songs.length;
+    }
+
+    const songInfos = Array.from(songMap.values());
+    if (!songInfos.length) {
       return [];
     }
-    
-    const info = infoRes.data.data;
-    const songcount = info.songcount || 100;
-    
-    const tasks = [];
-    let page = 0;
-    let total = songcount;
-    
-    while (total > 0) {
-      const limit = total > 300 ? 300 : total;
-      total -= limit;
-      page += 1;
-      
-      const pageParams = 
-        'appid=1058&global_specialid=' + id + 
-        '&specialid=0&plat=0&version=8000&page=' + page + 
-        '&pagesize=' + limit + 
-        '&srcappid=2919&clientver=20000&clienttime=1586163263991&mid=1586163263991&uuid=1586163263991&dfid=-';
-      
-      tasks.push(
-        axios_1.default.get(
-          `https://mobiles.kugou.com/api/v5/special/song_v2?${pageParams}&signature=${signatureParams(pageParams, 'web')}`,
-          {
-            headers: {
-              mid: '1586163263991',
-              Referer: 'https://m3ws.kugou.com/share/index.php',
-              'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1',
-              dfid: '-',
-              clienttime: '1586163263991',
-            },
-          }
-        ).then(res => res.data.data.info)
+
+    let qualityInfoMap = {};
+    const musicList = [];
+
+    for (let i = 0; i < songInfos.length; i += detailBatchSize) {
+      const batchSongs = songInfos.slice(i, i + detailBatchSize);
+      const resource = batchSongs.map((song) => ({
+        album_audio_id: 0,
+        album_id: "0",
+        hash: song.hash,
+        id: 0,
+        name: song.name || "",
+        page_id: 0,
+        type: "audio",
+      }));
+
+      const postData = {
+        appid: 1001,
+        area_code: "1",
+        behavior: "play",
+        clientver: "10112",
+        dfid: "2O3jKa20Gdks0LWojP3ly7ck",
+        mid: "70a02aad1ce4648e7dca77f2afa7b182",
+        need_hash_offset: 1,
+        relate: 1,
+        resource,
+        token: "",
+        userid: "0",
+        vip: 0,
+      };
+
+      const detailResult = await axios_1.default.post(
+        `https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=390523108&uuid=92691C6246F86F28B149BAA1FD370DF1`,
+        postData,
+        {
+          headers: {
+            "x-router": "media.store.kugou.com",
+          },
+        }
       );
-    }
-    
-    const songInfos = await Promise.all(tasks).then(results => results.flat());
-    
-    let resource = songInfos.map((song) => ({
-      album_audio_id: 0,
-      album_id: "0",
-      hash: song.hash,
-      id: 0,
-      name: song.filename ? song.filename.replace(".mp3", "") : "",
-      page_id: 0,
-      type: "audio",
-    }));
-    
-    let postData = {
-      appid: 1001,
-      area_code: "1",
-      behavior: "play",
-      clientver: "10112",
-      dfid: "2O3jKa20Gdks0LWojP3ly7ck",
-      mid: "70a02aad1ce4648e7dca77f2afa7b182",
-      need_hash_offset: 1,
-      relate: 1,
-      resource,
-      token: "",
-      userid: "0",
-      vip: 0,
-    };
-    
-    const detailResult = await axios_1.default.post(
-      `https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=390523108&uuid=92691C6246F86F28B149BAA1FD370DF1`,
-      postData,
-      {
-        headers: {
-          "x-router": "media.store.kugou.com",
-        },
+
+      if (detailResult.status !== 200 || !detailResult.data || detailResult.data.status !== 1 || !detailResult.data.data) {
+        console.warn(`[酷狗] global_collection_id详情批次失败，跳过区间 ${i}-${i + batchSongs.length - 1}`);
+        continue;
       }
-    );
-    
-    if (detailResult.status === 200 && detailResult.data && detailResult.data.status === 1 && detailResult.data.data) {
-      console.log(`[酷狗] 通过global_collection_id获取歌曲详情成功，数量: ${detailResult.data.data.length}`);
-      
-      const hashList = detailResult.data.data.map(item => item.hash).filter(Boolean);
-      
-      let qualityInfoMap = {};
+
+      const detailItems = detailResult.data.data;
+      const hashList = detailItems.map(item => item.hash).filter(Boolean);
+
       try {
         if (hashList.length > 0) {
-          qualityInfoMap = await getBatchMusicQualityInfo(hashList);
+          const batchQualityInfo = await getBatchMusicQualityInfo(hashList);
+          qualityInfoMap = Object.assign(qualityInfoMap, batchQualityInfo);
         }
       } catch (err) {
         console.warn('[酷狗] 获取音质信息失败，使用默认音质:', err.message);
       }
-      
-      const musicList = detailResult.data.data.map(item => {
-        const formattedItem = formatImportMusicItem(item);
-        if (qualityInfoMap[item.hash]) {
-          formattedItem.qualities = qualityInfoMap[item.hash];
-        } else {
-          formattedItem.qualities = {
-            '128k': {},
-            '320k': {},
-            'flac': {}
-          };
-        }
-        return formattedItem;
+
+      detailItems.forEach((item) => {
+        const sourceSong = batchSongs.find(song => song.hash === item.hash) || item;
+        musicList.push(formatGatewayImportMusicItem(sourceSong, qualityInfoMap));
       });
-      
-      console.log(`[酷狗] 歌单导入成功（global_collection_id），最终歌曲数量: ${musicList.length}`);
-      return musicList;
     }
-    
-    return [];
+
+    console.log(`[酷狗] 歌单导入成功（global_collection_id），最终歌曲数量: ${musicList.length}`);
+    return musicList;
   } catch (error) {
     console.error(`[酷狗] getUserListDetail2异常: ${error.message}`);
     return [];
@@ -1400,7 +1479,7 @@ async function importMusicSheet(urlLike) {
     
     console.log(`[酷狗] 歌单基本信息获取成功，类型: ${info.type}, 歌曲数量: ${info.count}`);
     
-    if (info.type === 2 && info.global_collection_id) {
+    if (info.global_collection_id) {
       console.log(`[酷狗] 检测到global_collection_id: ${info.global_collection_id}，使用特殊接口获取歌单`);
       return await getUserListDetail2(info.global_collection_id);
     }
@@ -1896,7 +1975,7 @@ async function getMusicComments(musicItem, page = 1) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.0.0",
+  version: "1.0.1",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
