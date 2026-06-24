@@ -821,11 +821,19 @@ async function getSheetMusicById(id) {
 }
 
 async function importMusicSheet(urlLike) {
+  // 改进的正则：支持多种 URL 格式（包括 # 路由）
+  // 匹配: y.music.163.com, music.163.com, music.163.com/#/, music.163.com/m/, 纯数字
   const matchResult = urlLike.match(
-    /(?:https:\/\/y\.music\.163.com\/m\/playlist\?id=([0-9]+))|(?:https?:\/\/music\.163\.com\/m\/playlist\?id=([0-9]+))|(?:https?:\/\/music\.163\.com\/playlist\/([0-9]+)\/.*)|(?:https?:\/\/music.163.com(?:\/#)?\/playlist\?id=(\d+))|(?:^\s*(\d+)\s*$)/
+    /(?:https?:\/\/(?:y\.)?music\.163\.com\/(?:#\/|m\/)?playlist[\/\?](?:.*[?&])?id=(\d+))|(?:^\s*(\d+)\s*$)/
   );
-  const id =
-    matchResult[1] || matchResult[2] || matchResult[3] || matchResult[4] || matchResult[5];
+
+  const id = matchResult?.[1] || matchResult?.[2];
+
+  if (!id) {
+    console.error('[网易云] 无法从 URL 中提取歌单 ID:', urlLike);
+    return null;
+  }
+
   return getSheetMusicById(id);
 }
 
@@ -1059,7 +1067,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.0",
+  version: "1.0.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
@@ -1067,7 +1075,8 @@ module.exports = {
   supportedQualities: ["128k", "320k", "flac", "hires", "atmos", "master"],
   hints: {
     importMusicSheet: [
-      "网易云：APP点击分享，然后复制链接", 
+      "网易云：APP点击分享，然后复制链接",
+      "短链接（163cn.tv）需手动访问展开为完整URL后再导入",
       "默认歌单无法导入，先新建一个空白歌单复制过去再导入新歌单即可",
     ],
   },
