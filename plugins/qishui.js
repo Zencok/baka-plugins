@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.0.1
+ * @version 3.0.2
  * @description 汽水音乐 PC API 原生插件，支持搜索、专辑、歌单、音乐人、逐字歌词和多音质
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -156,7 +156,74 @@ const QISHUI_FALLBACK_PLAYLISTS = [{
   "_bakaSourceType": "playlist"
 }];
 
-function buildDouyinImageUrl(uri, templatePrefix, size = '960:960') {
+function isEncryptedPlayback(playInfo) {
+  const method = String(playInfo?.EncryptionMethod || "").toLowerCase();
+  return Boolean(playInfo?.PlayAuth) || method.includes("cenc");
+}
+
+function decodeSpadeValue(ch) {
+  const code = Number(ch);
+  if (code >= 48 && code <= 57) {
+    return code - 48;
+  }
+  if (code >= 97 && code <= 122) {
+    return code - 97 + 10;
+  }
+  return 0xFF;
+}
+
+function popcount32(value) {
+  let x = value & 0xFFFFFFFF;
+  let count = 0;
+  while (x) {
+    count += x & 1;
+    x >>>= 1;
+  }
+  return count;
+}
+
+function decodeSpadePlayAuth(playAuth) {
+  if (!playAuth || typeof playAuth !== "string") {
+    return "";
+  }
+
+  let raw;
+  try {
+    raw = Buffer.from(playAuth, "base64");
+  } catch {
+    return "";
+  }
+
+  if (raw.length < 3) {
+    return "";
+  }
+
+  const pad = (raw[0] ^ raw[1] ^ raw[2]) - 48;
+  const dml = raw.length - pad - 2;
+  if (pad < 0 || dml <= 1 || raw.length < pad + 2) {
+    return "";
+  }
+
+  const end = raw.length - pad;
+  const source = raw.slice(1, end);
+  const candidate = Buffer.from(source);
+  const buff = Buffer.concat([Buffer.from([0xfa, 0x55]), source]);
+
+  for (let i = 0; i < source.length; i++) {
+    let v = (candidate[i] ^ buff[i]) - popcount32(i) - 21;
+    while (v < 0) {
+      v += 0xFF;
+    }
+    candidate[i] = v;
+  }
+
+  const skip = decodeSpadeValue(candidate[0]);
+  const decoded = candidate.slice(1, 1 + dml - skip);
+
+  return decoded.toString("utf8");
+}
+
+function buildDouyinImageUrl(uri, templatePrefix, size = "960:960") {
   return `${DOUYIN_IMAGE_BASE_URL}${uri}~${templatePrefix}-resize:${size}.png`;
 }
 
@@ -779,45 +846,68 @@ async function getMusicPlaybackSource(musicItem, quality = "128k") {
       throw new Error(`该歌曲不支持 ${quality} 音质`);
     }
 
-    const { playInfoList } = await fetchSeoTrackData(musicItem.id);
+    let lastErrorMessage = "";
+    let playUrl = "";
+    let playInfo = null;
 
-    if (!playInfoList.length) {
-      throw new Error("播放列表为空");
-    }
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { playInfoList } = await fetchSeoTrackData(musicItem.id);
 
-    const qishuiQuality = pickQishuiQuality(musicItem, quality);
-    const playInfo = getBestPlayableInfo(playInfoList, qishuiQuality, quality);
-    console.log(`[汽水音乐] 获取播放源: trackId=${musicItem.id}, quality=${quality}, qishuiQuality=${qishuiQuality}, playInfo=${JSON.stringify(playInfo, null, 2)}`);
-    const playUrl = playInfo?.MainPlayUrl;
+      if (!playInfoList.length) {
+        lastErrorMessage = "播放列表为空";
+        if (attempt < 3) {
+          continue;
+        }
+        break;
+      }
 
-    if (!playUrl) {
-      throw new Error("未找到播放地址");
-    }
+      const qishuiQuality = pickQishuiQuality(musicItem, quality);
+      playInfo = getBestPlayableInfo(playInfoList, qishuiQuality, quality);
+      console.log(`[汽水音乐] 获取播放源: trackId=${musicItem.id}, quality=${quality}, qishuiQuality=${qishuiQuality}, playInfo=${JSON.stringify(playInfo, null, 2)}`);
 
-    if (playInfo?.PlayAuth) {
-      const decryptResponse = await axios.default.post("http://qs.xiaoapi.cn/4.0/decrypt.php", {
-        "apikey": "sk_6a400fa0ba0687.778401724wNS5ACVxLqYbr9n",
-        "play_auth": playInfo.PlayAuth
-      });
+      playUrl = playInfo?.MainPlayUrl || playInfo?.BackupPlayUrl;
+      if (!playUrl) {
+        lastErrorMessage = "未找到播放地址";
+        if (attempt < 3) {
+          continue;
+        }
+        break;
+      }
 
-      if (decryptResponse?.data?.code === 200 && decryptResponse?.data?.key) {
-        const cek = decryptResponse.data.key;
+      if (isEncryptedPlayback(playInfo) && !playInfo?.PlayAuth) {
+        lastErrorMessage = "该歌曲加密但未返回 PlayAuth";
+        if (attempt < 3) {
+          continue;
+        }
+        break;
+      }
+
+      if (isEncryptedPlayback(playInfo)) {
+        const cek = decodeSpadePlayAuth(playInfo.PlayAuth);
+        if (!cek) {
+          lastErrorMessage = "解密 PlayAuth 失败";
+          if (attempt < 3) {
+            continue;
+          }
+          break;
+        }
+
         return {
-          url: playUrl.replace("audio_mp4", "audio_mp3"),
+          url: playUrl,
           headers: AUDIO_PLAYBACK_HEADERS,
           cek: cek,
           quality
         };
-      } else {
-        throw new Error("解密 PlayAuth 失败");
       }
+
+      return {
+        url: playUrl,
+        headers: AUDIO_PLAYBACK_HEADERS,
+        quality
+      };
     }
 
-    return {
-      url: playUrl.replace("audio_mp4", "audio_mp3"),
-      headers: AUDIO_PLAYBACK_HEADERS,
-      quality
-    };
+    throw new Error(lastErrorMessage || "未找到可播放源");
   } catch (error) {
     console.error(`[汽水音乐] 获取播放源错误: ${error.message}`);
     return {
@@ -1409,7 +1499,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
