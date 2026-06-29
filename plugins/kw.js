@@ -4,8 +4,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 
 const axios_1 = require("axios");
-
 const he = require("he");
+const { Buffer } = require("buffer");
+
+let pako;
+try {
+  pako = require("pako");
+} catch (e) {
+}
 
 const pageSize = 30;
 
@@ -267,6 +273,260 @@ function transformLrc(lrclist) {
   }).join("\n");
 }
 
+const kuwoLyricLineReg = /^\[([\d:.]+)\]/;
+const kuwoLyricTagReg = /\[(ver|ti|ar|al|offset|by|kuwo):\s*([^\]]*)\s*\]/;
+const kuwoWordTimeReg = /<(-?\d+),(-?\d+)(?:,-?\d+)?>/g;
+
+function normalizeBinaryData(buffer) {
+  if (buffer instanceof Uint8Array) {
+    return buffer;
+  }
+  if (buffer instanceof ArrayBuffer) {
+    return new Uint8Array(buffer);
+  }
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(buffer)) {
+    return new Uint8Array(buffer);
+  }
+  throw new Error("Unsupported binary data type");
+}
+
+function decodeBinaryText(uint8Array) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(uint8Array);
+  } catch (error) {
+    return new TextDecoder("gb18030").decode(uint8Array);
+  }
+}
+
+function findKuwoHeaderEnd(bytes) {
+  for (let i = 0; i < bytes.length - 3; i++) {
+    if (
+      bytes[i] === 0x0d &&
+      bytes[i + 1] === 0x0a &&
+      bytes[i + 2] === 0x0d &&
+      bytes[i + 3] === 0x0a
+    ) {
+      return i + 4;
+    }
+  }
+  return -1;
+}
+
+function decodeKuwoNewLyricPayload(buffer, isGetLyricx) {
+  const bytes = normalizeBinaryData(buffer);
+  const headerEnd = findKuwoHeaderEnd(bytes);
+  if (headerEnd < 0) {
+    throw new Error("Kuwo lyric header not found");
+  }
+
+  if (!pako) {
+    throw new Error("pako not available, cannot decompress lyric payload");
+  }
+
+  const inflated = pako.inflate(bytes.subarray(headerEnd));
+  if (!isGetLyricx) {
+    return decodeBinaryText(inflated);
+  }
+
+  const base64Payload = Buffer.from(inflated).toString("utf8").trim();
+  const encrypted = Buffer.from(base64Payload, "base64");
+  const key = Buffer.from("yeelion");
+  const output = Buffer.alloc(encrypted.length);
+
+  for (let i = 0; i < encrypted.length; i++) {
+    output[i] = encrypted[i] ^ key[i % key.length];
+  }
+
+  return decodeBinaryText(output);
+}
+
+function parseKuwoTimeToSeconds(timeText) {
+  const parts = String(timeText || "").split(":");
+  let result = 0;
+  for (const part of parts) {
+    result = result * 60 + parseFloat(part);
+  }
+  return Number.isFinite(result) ? result : 0;
+}
+
+function formatWordLrcTimestamp(seconds) {
+  let totalMs = Math.max(0, Math.round(seconds * 1000));
+  const minutes = Math.floor(totalMs / 60000);
+  totalMs -= minutes * 60000;
+  const wholeSeconds = Math.floor(totalMs / 1000);
+  const ms = totalMs - wholeSeconds * 1000;
+
+  return `[${minutes.toString().padStart(2, "0")}:${wholeSeconds
+    .toString()
+    .padStart(2, "0")}.${ms.toString().padStart(3, "0")}]`;
+}
+
+function stripKuwoWordTags(text) {
+  return (text || "").replace(kuwoWordTimeReg, "");
+}
+
+function splitKuwoLyricLines(lines) {
+  const lineSet = new Set();
+  const mainLines = [];
+  const translationLines = [];
+
+  for (const item of lines) {
+    if (lineSet.has(item.time)) {
+      if (mainLines.length < 2) {
+        continue;
+      }
+      const translationItem = mainLines.pop();
+      translationItem.time = mainLines[mainLines.length - 1].time;
+      translationLines.push(translationItem);
+      mainLines.push(item);
+    } else {
+      mainLines.push(item);
+      lineSet.add(item.time);
+    }
+  }
+
+  return {
+    mainLines,
+    translationLines,
+  };
+}
+
+function parseKuwoRichLyric(rawLyric) {
+  const tags = [];
+  const lines = [];
+
+  for (const rawLine of String(rawLyric || "").split(/\r\n|\r|\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    const timeMatch = kuwoLyricLineReg.exec(line);
+    if (timeMatch) {
+      let time = timeMatch[1];
+      if (/\.\d\d$/.test(time)) {
+        time += "0";
+      }
+      lines.push({
+        time,
+        text: line.slice(timeMatch[0].length).trim(),
+      });
+      continue;
+    }
+
+    if (kuwoLyricTagReg.test(line)) {
+      tags.push(line);
+    }
+  }
+
+  const { mainLines, translationLines } = splitKuwoLyricLines(lines);
+  return {
+    tags,
+    mainLines,
+    translationLines,
+  };
+}
+
+function resolveKuwoWordTiming(rawStart, rawEnd, offset1, offset2) {
+  const startBase = Math.max(1, offset1 || 1);
+  const endBase = Math.max(1, offset2 || 1);
+  const startValue = Number(rawStart);
+  const endValue = Number(rawEnd);
+
+  let startMs = Math.abs((startValue + endValue) / (startBase * 2));
+  let endMs = Math.abs((startValue - endValue) / (endBase * 2)) + startMs;
+
+  if (!Number.isFinite(startMs)) {
+    startMs = 0;
+  }
+  if (!Number.isFinite(endMs)) {
+    endMs = startMs + 1;
+  }
+
+  startMs = Math.max(0, startMs);
+  endMs = Math.max(startMs + 1, endMs);
+
+  return {
+    startMs,
+    endMs,
+  };
+}
+
+function convertKuwoLineToWordLrc(line, offset1, offset2) {
+  const matches = Array.from((line.text || "").matchAll(kuwoWordTimeReg));
+  if (!matches.length) {
+    return `${formatWordLrcTimestamp(parseKuwoTimeToSeconds(line.time))}${stripKuwoWordTags(line.text)}`;
+  }
+
+  const lineStartSeconds = parseKuwoTimeToSeconds(line.time);
+  const words = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+    const nextIndex = i + 1 < matches.length ? matches[i + 1].index : line.text.length;
+    const text = line.text.slice(match.index + match[0].length, nextIndex);
+    if (!text) {
+      continue;
+    }
+
+    const timing = resolveKuwoWordTiming(match[1], match[2], offset1, offset2);
+    if (words.length > 0 && timing.startMs < words[words.length - 1].endMs) {
+      words[words.length - 1].endMs = timing.startMs;
+    }
+
+    words.push({
+      text,
+      startMs: timing.startMs,
+      endMs: timing.endMs,
+    });
+  }
+
+  if (!words.length) {
+    return `${formatWordLrcTimestamp(lineStartSeconds)}${stripKuwoWordTags(line.text)}`;
+  }
+
+  const parts = words.map((word) =>
+    `${formatWordLrcTimestamp(lineStartSeconds + word.startMs / 1000)}${word.text}`
+  );
+  parts.push(
+    formatWordLrcTimestamp(lineStartSeconds + words[words.length - 1].endMs / 1000)
+  );
+  return parts.join("");
+}
+
+function buildKuwoWordLyric(rawLyric) {
+  const parsed = parseKuwoRichLyric(rawLyric);
+  let offset1 = 1;
+  let offset2 = 1;
+
+  const kuwoTag = parsed.tags.find((tag) => tag.startsWith("[kuwo:"));
+  if (kuwoTag) {
+    const match = kuwoTag.match(/\[kuwo:\s*([0-7]+)\s*\]/i);
+    if (match) {
+      const value = parseInt(match[1], 8);
+      const nextOffset1 = Math.trunc(value / 10);
+      const nextOffset2 = Math.trunc(value % 10);
+      if (nextOffset1 > 0 && nextOffset2 > 0) {
+        offset1 = nextOffset1;
+        offset2 = nextOffset2;
+      }
+    }
+  }
+
+  const outputTags = parsed.tags.filter((tag) => !tag.startsWith("[kuwo:"));
+  const rawLines = parsed.mainLines.map((line) => convertKuwoLineToWordLrc(line, offset1, offset2));
+  const translationLines = parsed.translationLines.map((line) =>
+    `${formatWordLrcTimestamp(parseKuwoTimeToSeconds(line.time))}${stripKuwoWordTags(line.text)}`
+  );
+
+  return {
+    rawLrc: [...outputTags, ...rawLines].join("\n"),
+    translation: translationLines.length
+      ? [...outputTags, ...translationLines].join("\n")
+      : undefined,
+  };
+}
+
 function buildParams(id, isGetLyricx) {
   try {
     let params = `user=12345,web,web,web&requester=localhost&req=1&rid=MUSIC_${id}`;
@@ -305,48 +565,6 @@ function buildParams(id, isGetLyricx) {
     }
   } catch (error) {
     console.error('[酷我] buildParams 失败:', error);
-    throw error;
-  }
-}
-
-function arrayBufferToBase64(buffer) {
-  try {
-    let uint8Array;
-    if (buffer instanceof ArrayBuffer) {
-      uint8Array = new Uint8Array(buffer);
-    } else if (buffer instanceof Uint8Array) {
-      uint8Array = buffer;
-    } else if (typeof buffer === 'string') {
-      const encoder = new TextEncoder();
-      uint8Array = encoder.encode(buffer);
-    } else if (typeof Buffer !== 'undefined' && buffer instanceof Buffer) {
-      uint8Array = new Uint8Array(buffer);
-    } else {
-      throw new Error('Unsupported data type');
-    }
-
-    if (typeof btoa !== 'undefined') {
-      const binary = String.fromCharCode.apply(null, uint8Array);
-      return btoa(binary);
-    } else if (typeof Buffer !== 'undefined') {
-      return Buffer.from(uint8Array).toString('base64');
-    } else {
-      const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-      let result = '';
-      for (let i = 0; i < uint8Array.length; i += 3) {
-        const a = uint8Array[i];
-        const b = i + 1 < uint8Array.length ? uint8Array[i + 1] : 0;
-        const c = i + 2 < uint8Array.length ? uint8Array[i + 2] : 0;
-
-        result += base64Chars[(a >> 2) & 0x3F];
-        result += base64Chars[((a << 4) | (b >> 4)) & 0x3F];
-        result += i + 1 < uint8Array.length ? base64Chars[((b << 2) | (c >> 6)) & 0x3F] : '=';
-        result += i + 2 < uint8Array.length ? base64Chars[c & 0x3F] : '=';
-      }
-      return result;
-    }
-  } catch (error) {
-    console.error('[酷我] arrayBufferToBase64 失败:', error);
     throw error;
   }
 }
@@ -605,24 +823,46 @@ async function getMusicInfo(musicBase) {
 async function getLyric(musicItem) {
   const songId = musicItem.id;
 
-  const encryptedParams = buildParams(songId, false);
-
+  // 优先尝试逐字歌词（lrcx=1）
   try {
+    const richParams = buildParams(songId, true);
     const res = await axios_1.default.get(
-      `http://newlyric.kuwo.cn/newlyric.lrc?${encryptedParams}`,
+      `http://newlyric.kuwo.cn/newlyric.lrc?${richParams}`,
       {
         responseType: 'arraybuffer',
         timeout: 10000
       }
     );
 
-    const base64Data = arrayBufferToBase64(res.data);
-
-    return { rawLrc: base64Data };
+    const decodedLyric = decodeKuwoNewLyricPayload(res.data, true);
+    const richLyric = buildKuwoWordLyric(decodedLyric);
+    if (richLyric.rawLrc && /\[\d{2}:\d{2}\.\d{3}\]/.test(richLyric.rawLrc)) {
+      return richLyric;
+    }
   } catch (error) {
-    console.error(`[酷我] 新歌词接口获取失败: ${error.message}`);
+    console.error(`[酷我] 新歌词逐字接口获取失败: ${error.message}`);
   }
 
+  // 回退到普通歌词（lrcx=0）
+  try {
+    const plainParams = buildParams(songId, false);
+    const res = await axios_1.default.get(
+      `http://newlyric.kuwo.cn/newlyric.lrc?${plainParams}`,
+      {
+        responseType: 'arraybuffer',
+        timeout: 10000
+      }
+    );
+
+    const decodedLyric = decodeKuwoNewLyricPayload(res.data, false);
+    if (decodedLyric && /\[\d{2}:\d{2}/.test(decodedLyric)) {
+      return { rawLrc: decodedLyric };
+    }
+  } catch (error) {
+    console.error(`[酷我] 新歌词普通接口获取失败: ${error.message}`);
+  }
+
+  // 最后回退到旧歌词接口
   try {
     const res = (
       await axios_1.default.get("http://m.kuwo.cn/newh5/singles/songinfoandlrc", {
@@ -1258,7 +1498,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.0.1",
+  version: "1.0.2",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
