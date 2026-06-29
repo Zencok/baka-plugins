@@ -435,6 +435,7 @@ function parseKrc(krcContent) {
     const lines = content.split('\n');
     const lrcLines = [];
     const translationLines = [];
+    const romajiLines = [];
 
     let lineIndex = 0;
     for (const line of lines) {
@@ -466,6 +467,13 @@ function parseKrc(krcContent) {
           translationLines.push(`${timeTag}${transText}`);
         }
 
+        if (romaji && Array.isArray(romaji) && romaji[lineIndex]) {
+          const romajiText = Array.isArray(romaji[lineIndex])
+            ? romaji[lineIndex].join('')
+            : romaji[lineIndex];
+          romajiLines.push(`${timeTag}${romajiText}`);
+        }
+
         lineIndex++;
       }
     }
@@ -473,6 +481,7 @@ function parseKrc(krcContent) {
     return {
       lyric: lrcLines.join('\n'),
       translation: translationLines.length > 0 ? translationLines.join('\n') : '',
+      romaji: romajiLines.length > 0 ? romajiLines.join('\n') : '',
     };
   } catch (error) {
     console.error('[酷狗] KRC解析失败:', error);
@@ -987,6 +996,7 @@ async function getLyricDownload(lyrdata) {
           return {
             rawLrc: parsed.lyric,
             translation: parsed.translation || undefined,
+            romanization: parsed.romaji || undefined,
           };
         }
       }
@@ -1984,7 +1994,7 @@ async function getMusicComments(musicItem, page = 1) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.0.2",
+  version: "1.0.3",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
