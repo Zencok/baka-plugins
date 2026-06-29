@@ -1067,10 +1067,15 @@ async function getMusicComments(musicItem, page = 1) {
   }
 }
 
+function getMusicDetailPageUrl(musicItem) {
+  const songmid = musicItem.songmid || musicItem.mid;
+  return songmid ? `https://y.qq.com/n/yqq/song/${songmid}.html` : "";
+}
+
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.4",
+  version: "1.0.5",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
@@ -1102,6 +1107,7 @@ module.exports = {
   },
   getMediaSource,
   getMusicInfo,
+  getMusicDetailPageUrl,
   getLyric,
   getAlbumInfo,
   getArtistWorks,

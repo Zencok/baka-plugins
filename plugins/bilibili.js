@@ -800,10 +800,22 @@ async function getMusicComments(musicItem) {
     };
 }
 
+function getMusicDetailPageUrl(musicItem) {
+    const bvid = musicItem.bvid || musicItem._bilibiliData?.bvid ||
+        (typeof musicItem.id === "string" && musicItem.id.startsWith("BV") ? musicItem.id : "");
+    if (bvid) {
+        return `https://www.bilibili.com/video/${bvid}`;
+    }
+
+    const aid = musicItem.aid || musicItem._bilibiliData?.aid ||
+        (musicItem.id && /^\d+$/.test(String(musicItem.id)) ? musicItem.id : "");
+    return aid ? `https://www.bilibili.com/video/av${aid}` : "";
+}
+
 module.exports = {
     platform: "bilibili",
     author: "Toskysun",
-    version: "1.0.0",
+    version: "1.0.1",
     appVersion: ">=0.0",
     srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
     cacheControl: "no-cache",
@@ -835,6 +847,7 @@ module.exports = {
     },
     getMediaSource,
     getMusicInfo,
+    getMusicDetailPageUrl,
     async getAlbumInfo(albumItem) {
         var _a;
         const cidRes = await getCid(albumItem.bvid, albumItem.aid);

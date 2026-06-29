@@ -2224,10 +2224,15 @@ async function getMusicComments(musicItem, page = 1) {
   }
 }
 
+function getMusicDetailPageUrl(musicItem) {
+  const copyrightId = musicItem.copyrightId || musicItem.copyright_id || musicItem.id;
+  return copyrightId ? `http://music.migu.cn/v3/music/song/${copyrightId}` : "";
+}
+
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.0.1",
+  version: "1.0.2",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "cache",
@@ -2260,6 +2265,7 @@ module.exports = {
   },
   getMediaSource,
   getMusicInfo,
+  getMusicDetailPageUrl,
   getLyric: getLyric,
   async getAlbumInfo(albumItem) {
     async function findCorrectAlbumId(albumName, artistName) {

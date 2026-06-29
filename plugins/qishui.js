@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.0.2
+ * @version 3.0.3
  * @description 汽水音乐 PC API 原生插件，支持搜索、专辑、歌单、音乐人、逐字歌词和多音质
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -1496,10 +1496,17 @@ async function getMusicComments(musicItem, page = 1) {
   };
 }
 
+function getMusicDetailPageUrl(musicItem) {
+  const songId = musicItem.id || musicItem.item_id || musicItem.track_id;
+  return songId
+    ? `https://music.douyin.com/qishui/share/track?track_id=${songId}&hybrid_sdk_version=bullet&auto_play_bgm=1`
+    : "";
+}
+
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
@@ -1530,6 +1537,7 @@ module.exports = {
 
   "getMediaSource": getMusicPlaybackSource,
   "getMusicInfo": getMusicInfo,
+  "getMusicDetailPageUrl": getMusicDetailPageUrl,
   "getLyric": getMusicDetailInfo,
   "getAlbumInfo": getAlbumInfo,
   "getArtistWorks": getArtistWorks,

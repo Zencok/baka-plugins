@@ -20,13 +20,13 @@
 
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
-| 网易云音乐 | `plugins/wy.js` | `1.0.1` | 音源相关 |
-| QQ音乐 | `plugins/qq.js` | `1.0.4` | 音源相关 |
-| 酷狗音乐 | `plugins/kg.js` | `1.0.3` | 音源相关 |
-| 酷我音乐 | `plugins/kw.js` | `1.0.3` | 音源相关 |
-| 咪咕音乐 | `plugins/mg.js` | `1.0.1` | 音源相关 |
-| Bilibili | `plugins/bilibili.js` | `1.0.0` | 免密 |
-| 汽水音乐 | `plugins/qishui.js` | `3.0.2` | 免密 |
+| 网易云音乐 | `plugins/wy.js` | `1.0.2` | 音源相关 |
+| QQ音乐 | `plugins/qq.js` | `1.0.5` | 音源相关 |
+| 酷狗音乐 | `plugins/kg.js` | `1.0.4` | 音源相关 |
+| 酷我音乐 | `plugins/kw.js` | `1.0.4` | 音源相关 |
+| 咪咕音乐 | `plugins/mg.js` | `1.0.2` | 音源相关 |
+| Bilibili | `plugins/bilibili.js` | `1.0.1` | 免密 |
+| 汽水音乐 | `plugins/qishui.js` | `3.0.3` | 免密 |
 
 > `bilibili.js`、`qishui.js` 下载时不需要 `source` 或 `key`。
 

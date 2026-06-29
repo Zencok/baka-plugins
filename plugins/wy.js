@@ -1064,10 +1064,15 @@ async function getMusicComments(musicItem, page = 1) {
   }
 }
 
+function getMusicDetailPageUrl(musicItem) {
+  const songId = musicItem.songmid || musicItem.id;
+  return songId ? `https://music.163.com/#/song?id=${songId}` : "";
+}
+
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.1",
+  version: "1.0.2",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
@@ -1100,6 +1105,7 @@ module.exports = {
   },
   getMediaSource,
   getMusicInfo,
+  getMusicDetailPageUrl,
   getLyric,
   getAlbumInfo,
   getArtistWorks,

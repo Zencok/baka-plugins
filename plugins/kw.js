@@ -1499,10 +1499,15 @@ async function getMusicComments(musicItem, page = 1) {
   }
 }
 
+function getMusicDetailPageUrl(musicItem) {
+  const songId = musicItem.songmid || musicItem.mid || musicItem.id;
+  return songId ? `http://www.kuwo.cn/play_detail/${songId}` : "";
+}
+
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.0.3",
+  version: "1.0.4",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
@@ -1534,6 +1539,7 @@ module.exports = {
   },
   getMediaSource,
   getMusicInfo,
+  getMusicDetailPageUrl,
   getLyric,
   getAlbumInfo,
   getArtistWorks,

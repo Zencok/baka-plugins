@@ -1992,9 +1992,19 @@ async function getMusicComments(musicItem, page = 1) {
   }
 }
 
+function getMusicDetailPageUrl(musicItem) {
+  const hash = musicItem.hash || musicItem.id;
+  if (!hash) {
+    return "";
+  }
+
+  const albumId = musicItem.albumId || musicItem.album_id || musicItem.albumid || 0;
+  return `https://www.kugou.com/song/#hash=${hash}&album_id=${albumId}`;
+}
+
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.0.3",
+  version: "1.0.4",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
@@ -2023,6 +2033,7 @@ module.exports = {
   },
   getMediaSource,
   getMusicInfo,
+  getMusicDetailPageUrl,
   getTopLists,
   getLyric,
   getTopListDetail,
