@@ -292,9 +292,9 @@ function normalizeBinaryData(buffer) {
 
 function decodeBinaryText(uint8Array) {
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(uint8Array);
-  } catch (error) {
     return new TextDecoder("gb18030").decode(uint8Array);
+  } catch (error) {
+    return new TextDecoder("utf-8").decode(uint8Array);
   }
 }
 
@@ -359,6 +359,10 @@ function formatWordLrcTimestamp(seconds) {
   return `[${minutes.toString().padStart(2, "0")}:${wholeSeconds
     .toString()
     .padStart(2, "0")}.${ms.toString().padStart(3, "0")}]`;
+}
+
+function formatWordTimeTag(seconds) {
+  return formatWordLrcTimestamp(seconds).replace("[", "<").replace("]", ">");
 }
 
 function stripKuwoWordTags(text) {
@@ -486,12 +490,12 @@ function convertKuwoLineToWordLrc(line, offset1, offset2) {
   }
 
   const parts = words.map((word) =>
-    `${formatWordLrcTimestamp(lineStartSeconds + word.startMs / 1000)}${word.text}`
+    `${formatWordTimeTag(lineStartSeconds + word.startMs / 1000)}${word.text}`
   );
   parts.push(
-    formatWordLrcTimestamp(lineStartSeconds + words[words.length - 1].endMs / 1000)
+    formatWordTimeTag(lineStartSeconds + words[words.length - 1].endMs / 1000)
   );
-  return parts.join("");
+  return `${formatWordLrcTimestamp(lineStartSeconds)}${parts.join("")}`;
 }
 
 function buildKuwoWordLyric(rawLyric) {
@@ -1498,7 +1502,7 @@ async function getMusicComments(musicItem, page = 1) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.0.2",
+  version: "1.0.3",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
