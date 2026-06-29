@@ -438,17 +438,26 @@ function parseKrc(krcContent) {
 
     let lineIndex = 0;
     for (const line of lines) {
-      const match = line.match(/^\[((\d+),\d+)\].*/);
+      const match = line.match(/^\[(\d+),(\d+)\](.*)/);
       if (match) {
-        const time = parseInt(match[2]);
-        let ms = time % 1000;
-        let totalSeconds = Math.floor(time / 1000);
+        const lineStartMs = parseInt(match[1]);
+        const lineDurMs = parseInt(match[2]);
+        const body = match[3] || '';
+
+        let ms = lineStartMs % 1000;
+        let totalSeconds = Math.floor(lineStartMs / 1000);
         let m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
         let s = (totalSeconds % 60).toString().padStart(2, '0');
         const timeTag = `[${m}:${s}.${ms}]`;
 
-        const text = line.replace(/^\[\d+,\d+\]/, '').replace(/<[^>]+>/g, '');
-        lrcLines.push(`${timeTag}${text}`);
+        // 保留逐字时间轴: <relStartMs,durMs,extra>text → text(absStartMs,durMs)
+        // KRC word tag 是相对行首偏移，需加上行首绝对时间转为全局绝对时间
+        // 格式必须是 text(startMs,durMs)，BakaMusic 的 wordRegex 期望文字在括号前
+        const richLine = body.replace(/<(\d+),(\d+),\d+>([^<]*)/g, (_, relStart, dur, text) => {
+          const absStart = parseInt(relStart) + lineStartMs;
+          return `${text}(${absStart},${dur})`;
+        });
+        lrcLines.push(`[${lineStartMs},${lineDurMs}]${richLine}`);
 
         if (translation && Array.isArray(translation) && translation[lineIndex]) {
           const transText = Array.isArray(translation[lineIndex])
@@ -1975,7 +1984,7 @@ async function getMusicComments(musicItem, page = 1) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.0.1",
+  version: "1.0.2",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
