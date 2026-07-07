@@ -522,6 +522,34 @@ function parseYrcTrans(yrcContent) {
   return lrcLines.length > 0 ? lrcLines.join('\n') : null;
 }
 
+function formatLyricTimeTag(timeMs) {
+  const ms = timeMs % 1000;
+  const totalSec = Math.floor(timeMs / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `[${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}]`;
+}
+
+function parseWyJsonLyricLine(line) {
+  const trimmedLine = line.trim();
+  if (!trimmedLine.startsWith('{"') || !trimmedLine.endsWith('}')) return null;
+
+  try {
+    const info = JSON.parse(trimmedLine);
+    if (typeof info.t !== 'number' || !Array.isArray(info.c)) return null;
+
+    const text = info.c.map(word => word.tx || '').join('').trim();
+    if (!text) return null;
+
+    return {
+      timeMs: info.t,
+      text,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 // 非标准时间戳修正 [mm:ss:cc] -> [mm:ss.ccc]
 
 function normalizeColonTimeTag(lrcContent) {
@@ -537,6 +565,25 @@ function normalizeColonTimeTag(lrcContent) {
     else if (ms.length > 3) ms = ms.slice(0, 3);
     return `[${min}:${sec}.${ms}]`;
   });
+}
+
+function normalizeWyLyricText(lrcContent) {
+  if (!lrcContent) return lrcContent;
+
+  const normalizedContent = normalizeColonTimeTag(lrcContent);
+  const normalizedLines = [];
+
+  for (const line of normalizedContent.split(/\r?\n/)) {
+    const jsonLine = parseWyJsonLyricLine(line);
+    if (jsonLine) {
+      normalizedLines.push(`${formatLyricTimeTag(jsonLine.timeMs)}${jsonLine.text}`);
+      continue;
+    }
+
+    normalizedLines.push(line);
+  }
+
+  return normalizedLines.join('\n');
 }
 
 async function getMediaSource(musicItem, quality) {
@@ -670,21 +717,21 @@ async function getLyric(musicItem) {
       rawLrc = parseYrcToQrc(result.yrc.lyric);
     }
     if (!rawLrc && result.lrc?.lyric) {
-      rawLrc = normalizeColonTimeTag(result.lrc.lyric);
+      rawLrc = normalizeWyLyricText(result.lrc.lyric);
     }
 
     if (result.ytlrc?.lyric) {
       translation = parseYrcTrans(result.ytlrc.lyric);
     }
     if (!translation && result.tlyric?.lyric) {
-      translation = normalizeColonTimeTag(result.tlyric.lyric);
+      translation = normalizeWyLyricText(result.tlyric.lyric);
     }
 
     if (result.yromalrc?.lyric) {
       romanization = parseYrcTrans(result.yromalrc.lyric);
     }
     if (!romanization && result.romalrc?.lyric) {
-      romanization = normalizeColonTimeTag(result.romalrc.lyric);
+      romanization = normalizeWyLyricText(result.romalrc.lyric);
     }
 
     return { rawLrc, translation, romanization };
@@ -707,9 +754,9 @@ async function getLyric(musicItem) {
     ).data;
 
     return {
-      rawLrc: normalizeColonTimeTag(result.lrc?.lyric),
-      translation: normalizeColonTimeTag(result.tlyric?.lyric),
-      romanization: normalizeColonTimeTag(result.romalrc?.lyric),
+      rawLrc: normalizeWyLyricText(result.lrc?.lyric),
+      translation: normalizeWyLyricText(result.tlyric?.lyric),
+      romanization: normalizeWyLyricText(result.romalrc?.lyric),
     };
   }
 }
@@ -1072,7 +1119,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.2",
+  version: "1.0.3",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
