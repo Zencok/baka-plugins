@@ -99,6 +99,64 @@ function parseQualities(file) {
   return qualities;
 }
 
+function normalizeQqPmid(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function getQqCoverUrl(prefix, pmid, size = 800) {
+  const id = normalizeQqPmid(pmid);
+  if (!id) return undefined;
+  const sizePart = size ? `R${size}x${size}` : "";
+  return `https://y.gtimg.cn/music/photo_new/${prefix}${sizePart}M000${id}.jpg`;
+}
+
+function getQqSongCoverPmid(track) {
+  if (!track) return "";
+
+  // QQ 音乐客户端将单曲独立封面 pmid 用 T062 前缀拼图。
+  // musicu.fcg/search 返回中这个值通常落在 vs[1]；为空时才回退专辑封面。
+  if (Array.isArray(track.vs)) {
+    const vsPmid = normalizeQqPmid(track.vs[1]);
+    if (vsPmid) return vsPmid;
+  }
+
+  return (
+    normalizeQqPmid(track.radio_pmid) ||
+    normalizeQqPmid(track.radioPmid) ||
+    normalizeQqPmid(track.album_mv_pic_mid) ||
+    normalizeQqPmid(track.albumMvPicMid) ||
+    normalizeQqPmid(track.albumMVPicMid) ||
+    normalizeQqPmid(track.album_mv_pmid)
+  );
+}
+
+function buildQqArtwork(track, size = 800) {
+  const songCoverPmid = getQqSongCoverPmid(track);
+  if (songCoverPmid) return getQqCoverUrl("T062", songCoverPmid, size);
+
+  const album = (track && track.album) || {};
+  const albumPmid =
+    normalizeQqPmid(album.pmid) ||
+    normalizeQqPmid(album.pMid) ||
+    normalizeQqPmid(album.picMid) ||
+    normalizeQqPmid(track && track.albumpmid) ||
+    normalizeQqPmid(track && track.albumPmid) ||
+    normalizeQqPmid(album.mid) ||
+    normalizeQqPmid(track && track.albummid) ||
+    normalizeQqPmid(track && track.albumMid);
+  if (albumPmid) return getQqCoverUrl("T002", albumPmid, size);
+
+  const singers = (track && (track.singer || track.singers)) || [];
+  const singer = singers[0] || {};
+  const singerPmid =
+    normalizeQqPmid(singer.pmid) ||
+    normalizeQqPmid(singer.pMid) ||
+    normalizeQqPmid(singer.picMid) ||
+    normalizeQqPmid(singer.mid) ||
+    normalizeQqPmid(track && track.singermid);
+  return singerPmid ? getQqCoverUrl("T001", singerPmid, 300) : undefined;
+}
+
 async function getBatchQualities(songList) {
   if (!songList || songList.length === 0) return {};
 
@@ -157,15 +215,10 @@ function formatMusicItem(_, qualityInfo = {}) {
     id: s.id,
     mid: s.mid,
     name: s.name,
-    avatar: s.mid ? `https://y.gtimg.cn/music/photo_new/T001R300x300M000${s.mid}.jpg` : "",
+    avatar: (s.pmid || s.mid) ? `https://y.gtimg.cn/music/photo_new/T001R300x300M000${s.pmid || s.mid}.jpg` : "",
   }));
 
-  const singerMid = _.singer && _.singer[0] && _.singer[0].mid;
-  const artwork = albummid
-    ? `https://y.gtimg.cn/music/photo_new/T002R800x800M000${albummid}.jpg`
-    : singerMid
-      ? `https://y.gtimg.cn/music/photo_new/T001R300x300M000${singerMid}.jpg`
-      : undefined;
+  const artwork = buildQqArtwork(_);
 
   return {
     id: _.id || _.songid,
@@ -554,7 +607,6 @@ async function getMusicInfo(musicBase) {
         name: s.name,
       }));
 
-      const singerMid = singers[0] && singers[0].mid;
       return {
         id: track.id,
         songid: track.id,
@@ -566,11 +618,7 @@ async function getMusicInfo(musicBase) {
         album: album.title || album.name,
         albumid: album.id,
         albummid: album.mid,
-        artwork: album.mid
-          ? `https://y.gtimg.cn/music/photo_new/T002R800x800M000${album.mid}.jpg`
-          : singerMid
-            ? `https://y.gtimg.cn/music/photo_new/T001R300x300M000${singerMid}.jpg`
-            : undefined,
+        artwork: buildQqArtwork(track),
         duration: track.interval,
         qualities: parseQualities(track.file),
         platform: 'QQ音乐',
@@ -1075,7 +1123,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.5",
+  version: "1.0.6",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
