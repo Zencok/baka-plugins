@@ -1,11 +1,31 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>BakaMusic - Plugin Subscription</title>
     <link rel="icon" type="image/svg+xml" href="/music.svg">
     <meta name="description" content="BakaMusic Plugin Subscription Service - 7 Music Platforms">
+    <!-- 尽早应用主题，避免闪白；仅用户手动切换时持久化 -->
+    <script>
+        (function () {
+            try {
+                var KEY = 'theme-user';
+                var stored = localStorage.getItem(KEY);
+                // 清理旧逻辑误写入的 theme 键（会锁死系统偏好）
+                localStorage.removeItem('theme');
+                var theme = (stored === 'light' || stored === 'dark')
+                    ? stored
+                    : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) {
+                document.documentElement.setAttribute(
+                    'data-theme',
+                    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+                );
+            }
+        })();
+    </script>
     <style>
         /* ============================================
            1. Reset & Base
@@ -1542,21 +1562,35 @@
 
         // ============================================
         // Theme
+        // - 默认跟随系统 prefers-color-scheme
+        // - 仅用户点击切换时写入 localStorage('theme-user')
         // ============================================
-        function getPreferredTheme() {
-            const stored = localStorage.getItem('theme');
-            if (stored) return stored;
+        const THEME_USER_KEY = 'theme-user';
+
+        function getSystemTheme() {
             return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
 
-        function applyTheme(theme) {
+        function getPreferredTheme() {
+            try {
+                const stored = localStorage.getItem(THEME_USER_KEY);
+                if (stored === 'light' || stored === 'dark') return stored;
+            } catch (e) {}
+            return getSystemTheme();
+        }
+
+        function applyTheme(theme, persist) {
             document.documentElement.setAttribute('data-theme', theme);
-            localStorage.setItem('theme', theme);
+            if (persist) {
+                try {
+                    localStorage.setItem(THEME_USER_KEY, theme);
+                } catch (e) {}
+            }
         }
 
         function toggleTheme() {
-            const current = document.documentElement.getAttribute('data-theme');
-            applyTheme(current === 'dark' ? 'light' : 'dark');
+            const current = document.documentElement.getAttribute('data-theme') || getSystemTheme();
+            applyTheme(current === 'dark' ? 'light' : 'dark', true);
         }
 
         // ============================================
@@ -1745,15 +1779,18 @@
         // ============================================
         // Initialize
         // ============================================
-        applyTheme(getPreferredTheme());
+        // head 里已同步应用一次；此处再对齐（无用户偏好时跟系统）
+        applyTheme(getPreferredTheme(), false);
         initSourceSelection();
 
-        // Listen for system theme changes
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-            if (!localStorage.getItem('theme')) {
-                applyTheme(e.matches ? 'dark' : 'light');
-            }
-        });
+        // 用户未手动选主题时，跟随系统深浅色变化
+        try {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+                if (!localStorage.getItem(THEME_USER_KEY)) {
+                    applyTheme(e.matches ? 'dark' : 'light', false);
+                }
+            });
+        } catch (e) {}
     </script>
 </body>
 </html>
