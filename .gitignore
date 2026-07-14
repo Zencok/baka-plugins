@@ -41,6 +41,9 @@ Thumbs.db
 .vercel/
 node_modules/
 
+# Local probe / temp scripts
+tools/
+
 # Markdown (except README)
 *.md
 !README.md

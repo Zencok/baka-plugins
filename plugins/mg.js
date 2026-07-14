@@ -1,5 +1,8 @@
-// {{REQUEST_HANDLER}}
-
+/**
+ * 咪咕音乐 BakaMusic 免密插件
+ * 内置官方听歌线路，无需 source/key；仅 128k（PQ）
+ * @version 1.1.1
+ */
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
@@ -12,6 +15,127 @@ const CryptoJS = require("crypto-js");
 const { Buffer } = require('buffer');
 
 const searchRows = 20;
+
+/** 官方 toneFlag：仅免费 128k / PQ */
+const qualityLevels = {
+  "128k": "PQ",
+};
+
+/**
+ * 官方线路：copyrightId → resourceinfo → listen-url v2.0（PQ）
+ * 返回 { code: 200, url } 或抛错
+ */
+async function requestMusicUrl(_source, songId, quality) {
+  const copyrightId = String(songId || "");
+  if (!copyrightId) throw new Error("缺少 copyrightId");
+  if (quality && quality !== "128k" && quality !== "PQ") {
+    throw new Error("咪咕免密插件仅支持 128k");
+  }
+
+  const toneFlag = "PQ";
+  const headersC = {
+    channel: "0140210",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    Referer: "https://m.music.migu.cn/",
+  };
+
+  let contentId = null;
+  let miguSongId = null;
+
+  try {
+    const info = await axios_1.default.get(
+      "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2&copyrightId=" +
+        encodeURIComponent(copyrightId),
+      { headers: headersC, timeout: 10000 }
+    );
+    const res = info.data && info.data.resource && info.data.resource[0];
+    if (res) {
+      contentId = res.contentId || null;
+      miguSongId = res.songId || null;
+    }
+  } catch (e) {
+    console.error("[咪咕] resourceinfo 失败:", e.message);
+  }
+
+  const extractUrl = (body) => {
+    if (!body) return null;
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch (_) {
+        return null;
+      }
+    }
+    let url =
+      (body.data &&
+        (body.data.url ||
+          body.data.playUrl ||
+          body.data.listenUrl ||
+          (body.data.songItem && body.data.songItem.url))) ||
+      body.playUrl ||
+      body.listenUrl ||
+      body.url;
+    if (!url && body.data) {
+      const s = JSON.stringify(body.data);
+      const m = s.match(/https?:\/\/[^"'\\]+?\.(?:mp3|m4a|aac)[^"'\\]*/i);
+      if (m) url = m[0];
+    }
+    if (!url) return null;
+    if (url.startsWith("//")) url = "https:" + url;
+    return String(url).replace(/\+/g, "%2B");
+  };
+
+  // 实测可用：MIGUM2.0/v2.0/content/listen-url + toneFlag=PQ
+  if (miguSongId && contentId) {
+    try {
+      const r = await axios_1.default.get(
+        "https://c.musicapp.migu.cn/MIGUM2.0/v2.0/content/listen-url?netType=00&resourceType=2&songId=" +
+          encodeURIComponent(miguSongId) +
+          "&toneFlag=" +
+          toneFlag +
+          "&copyrightId=" +
+          encodeURIComponent(copyrightId) +
+          "&contentId=" +
+          encodeURIComponent(contentId),
+        { headers: headersC, timeout: 10000 }
+      );
+      const url = extractUrl(r.data);
+      if (url) return { code: 200, url };
+      if (r.data && r.data.data && r.data.data.dialogInfo) {
+        throw new Error(r.data.data.dialogInfo.text || "无法获取播放链接");
+      }
+    } catch (e) {
+      if (e.message && e.message.indexOf("无法获取") !== -1) throw e;
+      console.error("[咪咕] listen-url v2.0 失败:", e.message);
+    }
+  }
+
+  // 兜底：仅 contentId
+  if (contentId || copyrightId) {
+    try {
+      const cid = contentId || copyrightId;
+      const sid = miguSongId || "";
+      const r = await axios_1.default.get(
+        "https://c.musicapp.migu.cn/MIGUM2.0/v2.0/content/listen-url?netType=00&resourceType=2" +
+          (sid ? "&songId=" + encodeURIComponent(sid) : "") +
+          "&toneFlag=" +
+          toneFlag +
+          "&copyrightId=" +
+          encodeURIComponent(copyrightId) +
+          "&contentId=" +
+          encodeURIComponent(cid),
+        { headers: headersC, timeout: 10000 }
+      );
+      const url = extractUrl(r.data);
+      if (url) return { code: 200, url };
+    } catch (e) {
+      console.error("[咪咕] listen-url 兜底失败:", e.message);
+    }
+  }
+
+  throw new Error("咪咕官方线路获取失败");
+}
 
 const DELTA = 2654435769n;
 
@@ -56,13 +180,6 @@ const UA =
   "Mozilla/5.0 (Linux; Android 6.0.1; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Mobile Safari/537.36 Edg/89.0.774.68";
 
 const By = CryptoJS.MD5(UA).toString();
-
-const qualityLevels = {
-  "128k": "128k",
-  "320k": "320k",
-  "flac": "flac",
-  "hires": "hires",
-};
 
 function sizeFormate(size) {
   if (!size || size === 0) return '0B';
@@ -113,60 +230,23 @@ function musicCanPlayFilter(_) {
 }
 
 function getMiGuQualitiesFromSong(songData) {
+  // 免密官方线路仅暴露 128k（PQ）
   const qualities = {};
+  let size128 = null;
 
   if (songData.audioFormats && Array.isArray(songData.audioFormats)) {
     songData.audioFormats.forEach((format) => {
-      const size = format.asize || format.isize || format.fileSize;
-      switch (format.formatType) {
-        case 'PQ':
-          qualities['128k'] = { size: sizeFormate(size), bitrate: format.bitRate || 128000 };
-          break;
-        case 'HQ':
-          qualities['320k'] = { size: sizeFormate(size), bitrate: format.bitRate || 320000 };
-          break;
-        case 'SQ':
-          qualities['flac'] = { size: sizeFormate(size), bitrate: format.bitRate || 1411000 };
-          break;
-        case 'ZQ24':
-          qualities['hires'] = { size: sizeFormate(size), bitrate: format.bitRate || 2304000 };
-          break;
+      if (format.formatType === 'PQ') {
+        size128 = format.asize || format.isize || format.fileSize;
       }
     });
+  }
 
-    if (Object.keys(qualities).length > 0) {
-      return qualities;
-    }
-  }
-  
-  if (songData.mp3 || songData.listenUrl || musicCanPlayFilter(songData)) {
-    qualities['128k'] = {
-      size: 'N/A',
-      bitrate: 128000,
-    };
-  }
-  
-  if (songData.lisQq || songData.hqUrl) {
-    qualities['320k'] = {
-      size: 'N/A',
-      bitrate: 320000,
-    };
-  }
-  
-  if (songData.lisCr || songData.sqUrl) {
-    qualities['flac'] = {
-      size: 'N/A',
-      bitrate: 1411000,
-    };
-  }
-  
-  if (Object.keys(qualities).length === 0 && musicCanPlayFilter(songData)) {
-    qualities['128k'] = {
-      size: 'N/A',
-      bitrate: 128000,
-    };
-  }
-  
+  qualities['128k'] = {
+    size: size128 ? sizeFormate(size128) : 'N/A',
+    bitrate: 128000,
+  };
+
   return qualities;
 }
 
@@ -1019,23 +1099,20 @@ async function searchLyric(query, page) {
 
 async function getMediaSource(musicItem, quality) {
   try {
-    if (musicItem.qualities && Object.keys(musicItem.qualities).length > 0) {
-      if (!musicItem.qualities[quality]) {
-        console.error(`[咪咕] 歌曲不支持音质 ${quality}`);
-        throw new Error(`该歌曲不支持 ${quality} 音质`);
-      }
+    if (quality && quality !== '128k') {
+      throw new Error('咪咕免密插件仅支持 128k');
     }
-    
-    const res = await requestMusicUrl('mg', musicItem.copyrightId, qualityLevels[quality] || quality);
-    
-    if (res.code === 200 && res.url) {
-      return {
-        url: res.url
-      };
-    } else {
-      console.error(`[咪咕] 获取播放链接失败: ${res.msg || '未知错误'}`);
-      return null;
+    const id =
+      musicItem.copyrightId ||
+      musicItem.copyright_id ||
+      musicItem.contentId ||
+      musicItem.id;
+    const res = await requestMusicUrl('mg', id, '128k');
+    if (res && res.code === 200 && res.url) {
+      return { url: res.url };
     }
+    console.error(`[咪咕] 获取播放链接失败: ${(res && res.msg) || '未知错误'}`);
+    return null;
   } catch (error) {
     console.error(`[咪咕] 获取播放源错误: ${error.message}`);
     throw error;
@@ -2232,12 +2309,12 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.0.2",
+  version: "1.1.1",
   appVersion: ">0.1.0-alpha.0",
-  srcUrl: UPDATE_URL,
-  cacheControl: "cache",
+  srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
+  cacheControl: "no-cache",
   primaryKey: ["copyrightId"],
-  supportedQualities: ["128k", "320k", "flac", "hires"],
+  supportedQualities: ["128k"],
   hints: {
     importMusicSheet: [
       "咪咕APP：自建歌单-分享-复制链接，直接粘贴即可",

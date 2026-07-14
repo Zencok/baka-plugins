@@ -24,11 +24,11 @@
 | QQ音乐 | `plugins/qq.js` | `1.0.6` | 音源相关 |
 | 酷狗音乐 | `plugins/kg.js` | `1.0.4` | 音源相关 |
 | 酷我音乐 | `plugins/kw.js` | `1.0.4` | 音源相关 |
-| 咪咕音乐 | `plugins/mg.js` | `1.0.2` | 音源相关 |
+| 咪咕音乐 | `plugins/mg.js` | `1.1.1` | 免密 |
 | Bilibili | `plugins/bilibili.js` | `1.0.1` | 免密 |
 | 汽水音乐 | `plugins/qishui.js` | `3.0.3` | 免密 |
 
-> `bilibili.js`、`qishui.js` 下载时不需要 `source` 或 `key`。
+> `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 
 ---
 
@@ -39,14 +39,11 @@
 | 名称 | 标识 | Key | 支持插件 |
 |---|---|---:|---|
 | ikun 音源 | `ikun` | 需要 | wy / qq / kg / kw |
-| 聆澜音源 | `linglan` | 需要 | wy / qq / kg / kw / mg |
-| 溯音音源 | `suyin` | 内置 | wy |
-| GD音乐台 | `xinghai` | 内置 | wy / kw |
-| Huibq 音源 | `huibq` | 内置 | kw / qq |
-| 长青音源 | `changqing` | 内置 | wy / qq / kg / kw / mg |
-| 枫雨音源 | `fengyu` | 内置 | wy / qq / kw / mg |
-| 何意味音源 | `hyw` | 内置 | wy / qq / kg / kw / mg |
-| 念心音源 | `nianxin` | 内置 | 暂停 |
+| 聆澜音源 | `linglan` | 需要 | wy / qq / kg / kw |
+| 何意味 | `hyw` | 内置 charity | wy / qq / kg / kw |
+| 全豆要 | `quandouyao` | 内置 | wy / qq / kg / kw |
+| 次合代 | `cihedai` | 内置 | wy / qq / kw（wy=GD） |
+| 长青音源 | `changqing` | 内置 | wy / qq / kg / kw |
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
 
@@ -65,7 +62,7 @@ https://music.cwo.cc.cd/api/subscription.json?source=ikun&key=YOUR_KEY.json
 **内置 Key**
 
 ```text
-https://music.cwo.cc.cd/api/subscription.json?source=suyin.json
+https://music.cwo.cc.cd/api/subscription.json?source=cihedai.json
 ```
 
 > BakaMusic 要求订阅链接以 `.json` 结尾。  

@@ -9,6 +9,7 @@ const {
   SOURCE_CONFIG,
   FREE_PLUGINS,
   DEFAULT_SOURCE,
+  resolveSourceId,
   isSourcePlugin,
   sourceSupportsPlugin,
   getQualityOverride,
@@ -121,18 +122,31 @@ ${sourceMapCode}async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
-    // ── suyin: oiapi.net 分平台端点 (wy 用 /api/Music_163?id=, 其余各异) ──
-    case 'suyin': {
+    // ── cihedai 次合代: wy=GD音乐台, qq=s01s链, kw=念心酷我 ──
+    case 'cihedai': {
       code += `
+var _CHD_GD_BR = {"128k":"128","192k":"192","320k":"320","flac":"740","flac24bit":"999"};
+var _CHD_QQ_Q = {"128k":"10","320k":"8","flac":"5","flac24bit":"5","atmos":"1","atmos_plus":"1","master":"0"};
+var _CHD_KW_Q = {"128k":"standard","320k":"exhigh","flac":"lossless","flac24bit":"lossless","hires":"lossless"};
 async function requestMusicUrl(source, songId, quality) {
   if (source === "wy") {
-    var resp = await axios_1.default.get(API_URL + "?id=" + encodeURIComponent(songId), { timeout: 10000 });
+    var br = _CHD_GD_BR[quality] || "128";
+    var resp = await axios_1.default.get(API_URL + "&types=url&source=netease&id=" + encodeURIComponent(songId) + "&br=" + br, { timeout: 10000 });
     var body = resp.data;
-    if (body && body.code === 0 && Array.isArray(body.data) && body.data[0] && body.data[0].url)
-      return { code: 200, url: body.data[0].url };
-    return { code: 500, msg: (body && body.message) || "No URL" };
+    if (body && body.url) return { code: 200, url: body.url };
+    return { code: 500, msg: (body && body.detail) || "No URL" };
   }
-  throw new Error("Suyin: platform " + source + " not supported");
+  if (source === "tx" || source === "qq") {
+    var q = _CHD_QQ_Q[quality] || "10";
+    try { var r = await axios_1.default.get("https://www.littleyouzi.com/api/v2/qqmusic?quality=" + q + "&mid=" + songId, {timeout:10000}); if (r.data && r.data.retcode === 0 && r.data.data && r.data.data.audio) return {code:200,url:r.data.data.audio}; } catch(e) {}
+    try { var r2 = await axios_1.default.get("https://tang.api.s01s.cn/music_open_api.php?mid=" + songId, {timeout:10000}); if (r2.data && r2.data.song_play_url_sq) return {code:200,url:r2.data.song_play_url_sq}; if (r2.data && r2.data.song_play_url) return {code:200,url:r2.data.song_play_url}; } catch(e) {}
+    throw new Error("次合代 QQ 接口获取失败");
+  }
+  if (source === "kw") {
+    var level = _CHD_KW_Q[quality] || "standard";
+    return { code: 200, url: "http://music.nxinxz.com/kw.php?id=" + encodeURIComponent(songId) + "&level=" + encodeURIComponent(level) + "&type=mp3" };
+  }
+  throw new Error("次合代: platform " + source + " not supported");
 }`;
       break;
     }
@@ -156,69 +170,53 @@ async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
-    // ── gdstudio: GD音乐台 /api.php?types=url&source=netease&id=...&br=... ──
-    case 'gdstudio': {
-      code += `
-var _GD_SRC = {"wy":"netease","kw":"kuwo","kg":"kugou","tx":"tencent","mg":"migu"};
-var _GD_BR  = {"128k":"128","192k":"192","320k":"320","flac":"740","flac24bit":"999"};
-async function requestMusicUrl(source, songId, quality) {
-  var apiSource = _GD_SRC[source] || source;
-  var br = _GD_BR[quality] || "128";
-  var resp = await axios_1.default.get(API_URL + "&types=url&source=" + apiSource + "&id=" + songId + "&br=" + br, {
-    timeout: 10000
-  });
-  var body = resp.data;
-  if (body && body.url) return { code: 200, url: body.url };
-  return { code: 500, msg: (body && body.detail) || "No URL returned" };
-}`;
-      break;
-    }
-
-    // ── fengyu: 多端点聚合免费音源, 按平台独立处理 ──
-    case 'fengyu': {
+    // ── quandouyao: 全豆要，QQ 用 vkeys，其余多端点 ──
+    case 'quandouyao': {
       switch (pluginName) {
         case 'qq.js':
+          // vkeys（洛雪主链）替换原 littleyouzi/s01s
           code += `
-var _FY_QQ_Q = {"128k":"10","320k":"8","flac":"5","flac24bit":"5","atmos":"1","atmos_plus":"1","master":"0"};
+var _QDY_QQ_Q = {"128k":"6","320k":"8","flac":"10","flac24bit":"11","atmos":"11","atmos_plus":"11","master":"11"};
 async function requestMusicUrl(source, songId, quality) {
-  var q = _FY_QQ_Q[quality] || "10";
-  try { var r = await axios_1.default.get("https://www.littleyouzi.com/api/v2/qqmusic?quality=" + q + "&mid=" + songId, {timeout:10000}); if (r.data && r.data.retcode === 0 && r.data.data && r.data.data.audio) return {code:200,url:r.data.data.audio}; } catch(e) {}
-  try { var r2 = await axios_1.default.get("https://tang.api.s01s.cn/music_open_api.php?mid=" + songId, {timeout:10000}); if (r2.data && r2.data.song_play_url_sq) return {code:200,url:r2.data.song_play_url_sq}; } catch(e) {}
+  var q = _QDY_QQ_Q[quality] || "6";
+  var r = await axios_1.default.get("https://api.vkeys.cn/v2/music/tencent/geturl?mid=" + encodeURIComponent(songId) + "&quality=" + q, {timeout:10000});
+  var body = r.data;
+  if (body && body.code === 200 && body.data && body.data.url) return {code:200,url:body.data.url};
+  if (body && body.data && body.data.url) return {code:200,url:body.data.url};
+  if (body && body.url) return {code:200,url:body.url};
   throw new Error("QQ音乐接口获取失败");
 }`;
           break;
         case 'wy.js':
           code += `
-var _FY_WY_Q1 = {"128k":"7","320k":"6","flac":"4","flac24bit":"3","hires":"3","master":"1"};
-var _FY_WY_Q2 = {"128k":"standard","320k":"exhigh","flac":"lossless","flac24bit":"hires","hires":"hires","master":"jymaster"};
+var _QDY_WY_Q1 = {"128k":"7","320k":"6","flac":"4","flac24bit":"3","hires":"3","master":"1"};
+var _QDY_WY_Q2 = {"128k":"standard","320k":"exhigh","flac":"lossless","flac24bit":"hires","hires":"hires","master":"jymaster"};
 async function requestMusicUrl(source, songId, quality) {
-  try { var q1 = _FY_WY_Q1[quality] || "7"; var r = await axios_1.default.get("https://www.littleyouzi.com/api/v2/netmusic?mid=" + songId + "&type=json&quality=" + q1, {timeout:10000}); if (r.data && r.data.retcode === 0 && r.data.data && r.data.data.audio) { var a = r.data.data.audio.trim(); if (a) return {code:200,url:a}; } } catch(e) {}
-  try { var q2 = _FY_WY_Q2[quality] || "lossless"; var r2 = await axios_1.default.get("https://api.bugpk.com/api/163_music?ids=" + songId + "&type=json&level=" + q2, {timeout:10000}); if (r2.data && r2.data.status == 200 && r2.data.url) { var u = r2.data.url.trim(); if (u) return {code:200,url:u}; } } catch(e) {}
+  try { var q1 = _QDY_WY_Q1[quality] || "7"; var r = await axios_1.default.get("https://www.littleyouzi.com/api/v2/netmusic?mid=" + songId + "&type=json&quality=" + q1, {timeout:10000}); if (r.data && r.data.retcode === 0 && r.data.data && r.data.data.audio) { var a = r.data.data.audio.trim(); if (a) return {code:200,url:a}; } } catch(e) {}
+  try { var q2 = _QDY_WY_Q2[quality] || "lossless"; var r2 = await axios_1.default.get("https://api.bugpk.com/api/163_music?ids=" + songId + "&type=json&level=" + q2, {timeout:10000}); if (r2.data && r2.data.status == 200 && r2.data.url) { var u = r2.data.url.trim(); if (u) return {code:200,url:u}; } } catch(e) {}
   try { var r3 = await axios_1.default.get("https://oiapi.net/api/Music_163?id=" + songId, {timeout:10000}); if (r3.data && r3.data.code === 0 && r3.data.data && r3.data.data[0] && r3.data.data[0].url) { var v = r3.data.data[0].url.trim(); if (v) return {code:200,url:v}; } } catch(e) {}
   throw new Error("网易云接口获取失败");
 }`;
           break;
-        case 'mg.js':
-          code += `
-var _FY_MG_Q = {"128k":"PQ","320k":"HQ","flac":"SQ","flac24bit":"ZQ"};
-async function requestMusicUrl(source, songId, quality) {
-  var tf = _FY_MG_Q[quality] || "PQ";
-  var r = await axios_1.default.get("https://app.c.nf.migu.cn/MIGUM2.0/strategy/listen-url/v2.4?netType=01&resourceType=E&songId=" + songId + "&toneFlag=" + tf, {headers:{channel:"014000D",aversionid:"DF94898993A5A28A64968A9FD0ADA0749397878BC39DD7BC68C584A1BAAFC96EC5938D8D8ED1A490949A8F9EB680997296DFD0D391D6ABBC69928AD0B57D99779CC8B88CDDECEE89628F89A1827E986F94978AD392A7A2916A928AA4878199779C","User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},timeout:10000});
-  var body = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-  if (body && body.code === "000000") { var url = (body.data && body.data.url) || body.playUrl || body.listenUrl; if (url) { if (url.startsWith("//")) url = "https:" + url; return {code:200,url:url.replace(/\\+/g,"%2B")}; } }
-  throw new Error("咪咕音乐获取失败");
-}`;
-          break;
         case 'kw.js':
           code += `
-var _FY_KW_Q = {"128k":"128kmp3","320k":"320kmp3","flac":"2000kflac","flac24bit":"2000kflac"};
+var _QDY_KW_Q = {"128k":"128kmp3","320k":"320kmp3","flac":"2000kflac","flac24bit":"2000kflac"};
 async function requestMusicUrl(source, songId, quality) {
-  var br = _FY_KW_Q[quality] || "2000kflac";
+  var br = _QDY_KW_Q[quality] || "2000kflac";
   var u = Math.floor(Math.random() * 4294967295);
   var uid = Math.floor(Math.random() * 4294967295);
   var r = await axios_1.default.get("https://nmobi.kuwo.cn/mobi.s?f=web&source=kwplayercar_ar_6.0.0.9_B_jiakong_vh.apk&type=convert_url_with_sign&rid=" + songId + "&br=" + br + "&user=" + u + "&loginUid=" + uid, {timeout:10000});
   if (r.data && r.data.code === 200 && r.data.data && r.data.data.url) return {code:200,url:r.data.data.url};
   throw new Error("酷我音乐获取失败");
+}`;
+          break;
+        case 'kg.js':
+          // 长青酷狗模板
+          code += `
+var _QDY_KG_Q = {"128k":"standard","320k":"exhigh","flac":"lossless"};
+async function requestMusicUrl(source, songId, quality) {
+  var level = _QDY_KG_Q[quality] || "standard";
+  return { code: 200, url: "https://music.haitangw.cc/kgqq/kg.php?type=mp3&id=" + encodeURIComponent(songId) + "&level=" + encodeURIComponent(level) };
 }`;
           break;
         default:
@@ -227,19 +225,22 @@ async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
-    // ── hyw: GET ${url}/api/music/url?source=&songId=&quality=, X-Script-* + X-Card-Key ──
+    // ── hyw: Koneko Charity GET ${url}/api/music/url?key=  header: X-Script-Version + X-Card-Key ──
     case 'hyw': {
-      const scriptVersion = sourceConfig.scriptVersion || '';
-      const scriptId = sourceConfig.scriptId || '';
+      const scriptVersion = sourceConfig.scriptVersion || 'HYW\u00d7Koneko-API-Charity_v1.0.0';
       code += `
 async function requestMusicUrl(source, songId, quality) {
-  return (await axios_1.default.get(\`\${API_URL}/api/music/url?source=\${source}&songId=\${songId}&quality=\${quality}\`, {
+  var resp = await axios_1.default.get(\`\${API_URL}/api/music/url?source=\${source}&songId=\${encodeURIComponent(songId)}&quality=\${quality}&key=\${encodeURIComponent(API_KEY)}\`, {
     headers: {
       "X-Script-Version": ${JSON.stringify(scriptVersion)},
-      "X-Script-ID": ${JSON.stringify(scriptId)},
       "X-Card-Key": API_KEY
-    }
-  })).data;
+    },
+    timeout: 25000
+  });
+  var body = resp.data;
+  if (body && body.code === 200 && body.url) return { code: 200, url: body.url };
+  if (body && body.url) return { code: 200, url: body.url };
+  return body;
 }`;
       break;
     }
@@ -328,12 +329,7 @@ exports.handler = async (event, context) => {
     }
 
     // ── 音源相关插件: 需要 source 参数 ──
-    let source = event.queryStringParameters?.source || DEFAULT_SOURCE;
-
-    // 剥离 .json 后缀 (BakaMusic 会自动追加)
-    if (source.endsWith('.json')) {
-      source = source.slice(0, -5);
-    }
+    let source = resolveSourceId(event.queryStringParameters?.source || DEFAULT_SOURCE);
 
     const sourceConfig = SOURCE_CONFIG[source];
     if (!sourceConfig) {

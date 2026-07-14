@@ -7,7 +7,7 @@
  * - url:          API 基础地址
  * - requiresKey:  用户是否需要提供 API Key
  * - builtinKey:   内置 Key (仅 requiresKey=false 时使用)
- * - apiType:      请求类型 (ikun|query|lxmusic|changqing)
+ * - apiType:      请求类型 (ikun|query|changqing|cihedai|quandouyao|hyw)
  * - authHeader:   自定义认证头名称 (默认 X-API-Key)
  * - qualityMap:   音质键映射 (仅 changqing 类型)
  * - platformUrls: 按插件文件的平台 URL (仅 changqing 类型)
@@ -16,12 +16,13 @@
  *                 数组 = 覆盖插件的 supportedQualities
  *
  * apiType 说明:
- *   ikun     - POST ${url}/music/url  body: {source, musicId, quality}  header: X-API-Key
- *   query    - GET  ${url}/url?source=&songId=&quality=                 header: X-API-Key
- *   lxmusic  - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
- *   changqing- 按平台独立 URL, 音质键映射 (standard/exhigh/lossless)
- *   fengyu   - 多端点聚合免费音源, 按平台独立处理 (littleyouzi/bugpk/oiapi/migu/kuwo)
- *   hyw      - GET  ${url}/api/music/url?source=&songId=&quality=       header: X-Script-* + X-Card-Key
+ *   ikun       - POST ${url}/music/url  body: {source, musicId, quality}  header: X-API-Key
+ *   query      - GET  ${url}/url?source=&songId=&quality=                 header: X-API-Key
+ *   lxmusic    - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
+ *   changqing  - 按平台独立 URL, 音质键映射 (standard/exhigh/lossless)
+ *   cihedai    - 次合代多端点: wy=GD音乐台, qq=s01s链, kw=念心酷我
+ *   quandouyao - 全豆要聚合: wy/kw 多端点, qq=vkeys, kg=长青
+ *   hyw        - GET  ${url}/api/music/url?source=&songId=&quality=&key=  header: X-Script-Version + X-Card-Key
  */
 
 const SOURCE_CONFIG = {
@@ -36,7 +37,6 @@ const SOURCE_CONFIG = {
       'kg.js':  null,
       'kw.js':  ['128k', '320k', 'flac', 'atmos', 'atmos_plus', 'master'],
     }
-    // 不支持: mg.js (咪咕)
   },
   'linglan': {
     name: '聆澜音源',
@@ -48,59 +48,21 @@ const SOURCE_CONFIG = {
       'qq.js':  null,
       'kg.js':  null,
       'kw.js':  null,
-      'mg.js':  null,
     }
   },
-  'suyin': {
-    name: '溯音音源',
-    // wy: GET https://oiapi.net/api/Music_163?id={id} → {code:0, data:[{url}]}
-    // qq: -403 维护中; kw/mg: 按关键词搜索，不适合 ID 直查
-    url: 'https://oiapi.net/api/Music_163',
-    requiresKey: false,
-    builtinKey: '',
-    apiType: 'suyin',
-    plugins: {
-      'wy.js': ['128k', '320k', 'flac'],
-      // qq/kw/mg: 暂不可用 (qq维护中, kw/mg仅支持关键词搜索)
-    }
-  },
-  'xinghai': {
-    name: 'GD音乐台',
-    // API 格式: /api.php?types=url&source=netease&id=...&br=128|320|740|999
+  'cihedai': {
+    name: '次合代',
+    // wy: GD音乐台
+    // qq: littleyouzi + s01s
+    // kw: 念心酷我模板 URL
     url: 'https://music-api.gdstudio.xyz/api.php?use_xbridge3=true&loader_name=forest',
     requiresKey: false,
-    apiType: 'gdstudio',
+    builtinKey: '',
+    apiType: 'cihedai',
     plugins: {
       'wy.js': ['128k', '192k', '320k', 'flac', 'flac24bit'],
-      // kw.js: kuwo 暂时返回空 URL，保留以备 API 恢复
-      'kw.js': ['128k', '192k', '320k', 'flac'],
-      // qq/kg/mg: GD API 不支持 tencent/kugou/migu
-    }
-  },
-  'huibq': {
-    name: 'Huibq 音源',
-    url: 'https://lxmusicapi.onrender.com',
-    requiresKey: false,
-    builtinKey: 'share-v3',
-    apiType: 'lxmusic',
-    authHeader: 'X-Request-Key',
-    // API 只支持 kw 和 tx，qq 插件需映射为 tx
-    sourceMap: { 'qq': 'tx' },
-    plugins: {
-      'kw.js': ['128k', '320k'],
-      'qq.js': ['128k', '320k'],
-      // wy/kg/mg: API 明确不支持
-    }
-  },
-  'nianxin': {
-    name: '念心音源',
-    // 实际端点为 /wy.php?id=...&level=lossless&type=mp3 等 PHP 路径
-    // 当前全部无响应 (2026-02-20 测试)，暂时禁用所有插件
-    url: 'https://music.nxinxz.com',
-    requiresKey: false,
-    apiType: 'lxmusic',
-    plugins: {
-      // 所有平台端点当前无响应，待恢复后重新开放
+      'qq.js': ['128k', '320k', 'flac', 'flac24bit', 'atmos', 'atmos_plus', 'master'],
+      'kw.js': ['128k', '320k', 'flac'],
     }
   },
   'changqing': {
@@ -114,51 +76,58 @@ const SOURCE_CONFIG = {
       'qq.js': 'http://175.27.166.236/kgqq/qq.php',
       'kg.js': 'https://music.haitangw.cc/kgqq/kg.php',
       'kw.js': 'https://musicapi.haitangw.net/music/kw.php',
-      'mg.js': 'https://music.haitangw.cc/musicapi/mg.php',
     },
     plugins: {
       'wy.js':  ['128k', '320k', 'flac'],
       'qq.js':  ['128k', '320k', 'flac'],
       'kg.js':  ['128k', '320k', 'flac'],
       'kw.js':  ['128k', '320k', 'flac'],
-      'mg.js':  ['128k', '320k', 'flac'],
     }
   },
-  'fengyu': {
-    name: '枫雨音源',
+  'quandouyao': {
+    name: '全豆要',
+    // 多端点聚合；QQ=vkeys；酷狗=长青 kg 模板
     url: '',
     requiresKey: false,
-    apiType: 'fengyu',
+    apiType: 'quandouyao',
     plugins: {
       'wy.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'master'],
       'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'atmos', 'atmos_plus', 'master'],
+      'kg.js':  ['128k', '320k', 'flac'],
       'kw.js':  ['128k', '320k', 'flac', 'flac24bit'],
-      'mg.js':  ['128k', '320k', 'flac', 'flac24bit'],
     }
-    // 不支持: kg.js (酷狗)
   },
   'hyw': {
     name: '何意味',
-    url: 'https://music.bxa241d4.shop',
+    // HYW×Koneko-API-Charity 公益卡密
+    url: 'http://hywmusicsource.xn--9tra.work',
     requiresKey: false,
     apiType: 'hyw',
-    builtinKey: 'TF-584W-L51Z-BDNM-OILB',
-    scriptVersion: 'HYWmusic_beta_v0.15.114514',
-    scriptId: 'cmnkd5d5x0002s98hxpthzw8r',
+    builtinKey: 'charity',
+    scriptVersion: 'HYW\u00d7Koneko-API-Charity_v1.0.0',
     plugins: {
-      'wy.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
-      'qq.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
-      'kg.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
-      'kw.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
-      'mg.js': ['128k', '320k', 'flac'],
+      'wy.js': ['128k', '320k', 'flac'],
+      'qq.js': ['128k', '320k', 'flac'],
+      'kg.js': ['128k', '320k', 'flac'],
+      'kw.js': ['128k', '320k', 'flac'],
     }
   }
 };
 
-// 免密插件: 始终包含，不需要 source/key 参数
-const FREE_PLUGINS = ['bilibili.js', 'qishui.js'];
+// 免密插件: 始终包含，不需要 source/key（mg 内置官方线路）
+const FREE_PLUGINS = ['bilibili.js', 'qishui.js', 'mg.js'];
 
 const DEFAULT_SOURCE = 'ikun';
+
+/**
+ * 解析音源标识 (剥离 .json 后缀)
+ */
+function resolveSourceId(source) {
+  if (!source) return DEFAULT_SOURCE;
+  let id = String(source);
+  if (id.endsWith('.json')) id = id.slice(0, -5);
+  return id;
+}
 
 /**
  * 判断插件是否为音源相关插件 (非免密)
@@ -172,7 +141,7 @@ function isSourcePlugin(pluginName) {
  */
 function sourceSupportsPlugin(source, pluginName) {
   if (FREE_PLUGINS.includes(pluginName)) return true;
-  const config = SOURCE_CONFIG[source];
+  const config = SOURCE_CONFIG[resolveSourceId(source)];
   if (!config) return false;
   return pluginName in config.plugins;
 }
@@ -182,7 +151,7 @@ function sourceSupportsPlugin(source, pluginName) {
  * 返回 null 表示使用插件默认音质
  */
 function getQualityOverride(source, pluginName) {
-  const config = SOURCE_CONFIG[source];
+  const config = SOURCE_CONFIG[resolveSourceId(source)];
   if (!config || !(pluginName in config.plugins)) return null;
   return config.plugins[pluginName];
 }
@@ -191,6 +160,7 @@ module.exports = {
   SOURCE_CONFIG,
   FREE_PLUGINS,
   DEFAULT_SOURCE,
+  resolveSourceId,
   isSourcePlugin,
   sourceSupportsPlugin,
   getQualityOverride,

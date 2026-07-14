@@ -4,7 +4,7 @@
  *
  * BakaMusic 要求订阅 URL 以 .json 结尾:
  *   有 Key:  ?source=ikun&key=YOUR_KEY.json   (key 尾部带 .json)
- *   无 Key:  ?source=suyin.json               (source 尾部带 .json)
+ *   无 Key:  ?source=cihedai.json             (source 尾部带 .json)
  */
 
 const fs = require('fs');
@@ -13,6 +13,7 @@ const {
   SOURCE_CONFIG,
   FREE_PLUGINS,
   DEFAULT_SOURCE,
+  resolveSourceId,
   sourceSupportsPlugin,
 } = require('./source-config');
 
@@ -104,10 +105,7 @@ exports.handler = async (event, context) => {
 
   try {
     // ── 解析 source ──
-    let source = event.queryStringParameters?.source || DEFAULT_SOURCE;
-    if (source.endsWith('.json')) {
-      source = source.slice(0, -5);
-    }
+    let source = resolveSourceId(event.queryStringParameters?.source || DEFAULT_SOURCE);
 
     const sourceConfig = SOURCE_CONFIG[source];
     if (!sourceConfig) {
