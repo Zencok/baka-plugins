@@ -6,24 +6,28 @@
     <title>BakaMusic - Plugin Subscription</title>
     <link rel="icon" type="image/svg+xml" href="/music.svg">
     <meta name="description" content="BakaMusic Plugin Subscription Service - 7 Music Platforms">
-    <!-- 尽早应用主题，避免闪白；仅用户手动切换时持久化 -->
+    <!--
+      主题策略：
+      - 默认不设 data-theme，靠 CSS @media (prefers-color-scheme) 跟随系统
+      - 仅用户点切换时写入 theme-user 并设置 data-theme 覆盖
+    -->
     <script>
         (function () {
             try {
-                var KEY = 'theme-user';
-                var stored = localStorage.getItem(KEY);
-                // 清理旧逻辑误写入的 theme 键（会锁死系统偏好）
+                // 一次性迁移：清掉旧逻辑写入的锁死键
+                if (!localStorage.getItem('theme-follow-v3')) {
+                    localStorage.removeItem('theme');
+                    localStorage.removeItem('theme-user');
+                    localStorage.setItem('theme-follow-v3', '1');
+                }
                 localStorage.removeItem('theme');
-                var theme = (stored === 'light' || stored === 'dark')
-                    ? stored
-                    : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-                document.documentElement.setAttribute('data-theme', theme);
-            } catch (e) {
-                document.documentElement.setAttribute(
-                    'data-theme',
-                    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-                );
-            }
+                var stored = localStorage.getItem('theme-user');
+                if (stored === 'light' || stored === 'dark') {
+                    document.documentElement.setAttribute('data-theme', stored);
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            } catch (e) {}
         })();
     </script>
     <style>
@@ -94,7 +98,37 @@
             --color-toast-text: #F5F5F7;
         }
 
-        [data-theme="dark"] {
+        /* 系统深色：无 data-theme 时默认跟随 OS */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --color-bg: #000000;
+                --color-surface: #1C1C1E;
+                --color-surface-secondary: #2C2C2E;
+                --color-text-primary: #F5F5F7;
+                --color-text-secondary: #98989D;
+                --color-text-tertiary: #6E6E73;
+                --color-accent: #2997FF;
+                --color-accent-hover: #40A9FF;
+                --color-accent-subtle: rgba(41, 151, 255, 0.12);
+                --color-green: #30D158;
+                --color-green-subtle: rgba(48, 209, 88, 0.16);
+                --color-orange: #FF9F0A;
+                --color-orange-subtle: rgba(255, 159, 10, 0.16);
+                --color-red: #FF453A;
+                --color-separator: rgba(255, 255, 255, 0.08);
+                --color-border: rgba(255, 255, 255, 0.1);
+                --color-shadow: rgba(0, 0, 0, 0.2);
+                --color-shadow-lg: rgba(0, 0, 0, 0.4);
+                --color-code-bg: #2C2C2E;
+                --color-nav-bg: rgba(0, 0, 0, 0.72);
+                --color-toast-bg: #2C2C2E;
+                --color-toast-text: #F5F5F7;
+                color-scheme: dark;
+            }
+        }
+
+        /* 用户手动强制深色 */
+        html[data-theme="dark"] {
             --color-bg: #000000;
             --color-surface: #1C1C1E;
             --color-surface-secondary: #2C2C2E;
@@ -117,6 +151,34 @@
             --color-nav-bg: rgba(0, 0, 0, 0.72);
             --color-toast-bg: #2C2C2E;
             --color-toast-text: #F5F5F7;
+            color-scheme: dark;
+        }
+
+        /* 用户手动强制浅色（覆盖系统深色） */
+        html[data-theme="light"] {
+            --color-bg: #F5F5F7;
+            --color-surface: #FFFFFF;
+            --color-surface-secondary: #F2F2F7;
+            --color-text-primary: #1D1D1F;
+            --color-text-secondary: #6E6E73;
+            --color-text-tertiary: #86868B;
+            --color-accent: #0071E3;
+            --color-accent-hover: #0077ED;
+            --color-accent-subtle: rgba(0, 113, 227, 0.08);
+            --color-green: #34C759;
+            --color-green-subtle: rgba(52, 199, 89, 0.12);
+            --color-orange: #FF9500;
+            --color-orange-subtle: rgba(255, 149, 0, 0.12);
+            --color-red: #FF3B30;
+            --color-separator: rgba(0, 0, 0, 0.06);
+            --color-border: rgba(0, 0, 0, 0.08);
+            --color-shadow: rgba(0, 0, 0, 0.04);
+            --color-shadow-lg: rgba(0, 0, 0, 0.08);
+            --color-code-bg: #F2F2F7;
+            --color-nav-bg: rgba(245, 245, 247, 0.72);
+            --color-toast-bg: #1D1D1F;
+            --color-toast-text: #F5F5F7;
+            color-scheme: light;
         }
 
         /* ============================================
@@ -127,6 +189,7 @@
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             text-rendering: optimizeLegibility;
+            color-scheme: light dark;
         }
 
         body {
@@ -252,8 +315,16 @@
         }
 
         .icon-sun, .icon-moon { display: none; }
-        [data-theme="light"] .icon-moon { display: block; }
-        [data-theme="dark"] .icon-sun { display: block; }
+        /* 默认浅色：显示月亮 */
+        .icon-moon { display: block; }
+        @media (prefers-color-scheme: dark) {
+            html:not([data-theme="light"]) .icon-moon { display: none; }
+            html:not([data-theme="light"]) .icon-sun { display: block; }
+        }
+        html[data-theme="dark"] .icon-moon { display: none; }
+        html[data-theme="dark"] .icon-sun { display: block; }
+        html[data-theme="light"] .icon-moon { display: block; }
+        html[data-theme="light"] .icon-sun { display: none; }
 
         /* ============================================
            5. Main Layout
@@ -559,7 +630,13 @@
             color: #5856D6;
         }
 
-        [data-theme="dark"] .quality-tag.q-hires {
+        @media (prefers-color-scheme: dark) {
+            html:not([data-theme="light"]) .quality-tag.q-hires {
+                background: rgba(94, 92, 230, 0.16);
+                color: #5E5CE6;
+            }
+        }
+        html[data-theme="dark"] .quality-tag.q-hires {
             background: rgba(94, 92, 230, 0.16);
             color: #5E5CE6;
         }
@@ -574,7 +651,13 @@
             color: #AF52DE;
         }
 
-        [data-theme="dark"] .quality-tag.q-master {
+        @media (prefers-color-scheme: dark) {
+            html:not([data-theme="light"]) .quality-tag.q-master {
+                background: rgba(191, 90, 242, 0.16);
+                color: #BF5AF2;
+            }
+        }
+        html[data-theme="dark"] .quality-tag.q-master {
             background: rgba(191, 90, 242, 0.16);
             color: #BF5AF2;
         }
@@ -1259,7 +1342,8 @@
                             <div class="source-name">次合代</div>
                             <div class="source-url">聚合二号 (免费)</div>
                             <div class="source-quality-indicator">
-                                <span class="quality-tag q-hires">FLAC 24bit</span>
+                                <span class="quality-tag q-master">Master</span>
+                                <span class="quality-tag q-spatial">Atmos</span>
                             </div>
                         </div>
                         <div class="source-check" aria-hidden="true">
@@ -1461,7 +1545,7 @@
         const SOURCE_PLUGINS = {
             'ikun':       ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'linglan':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
-            'cihedai':    ['wy.js', 'qq.js', 'kw.js'],
+            'cihedai':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'quandouyao': ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'changqing':  ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'hyw':        ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
@@ -1471,7 +1555,7 @@
         const SOURCE_QUALITIES = {
             'ikun':       { 'kg.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kw.js': ['128k','320k','flac','flac24bit','hires'], 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus'], 'wy.js': ['128k','320k','flac','flac24bit','hires','atmos','master'] },
             'linglan':    { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': null },
-            'cihedai':    { 'wy.js': ['128k','192k','320k','flac','flac24bit'], 'qq.js': ['128k','320k','flac','flac24bit','atmos','atmos_plus','master'], 'kw.js': ['128k','320k','flac'] },
+            'cihedai':    { 'wy.js': ['128k','192k','320k','flac','flac24bit'], 'qq.js': ['128k','320k','flac','flac24bit','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
             'quandouyao': { 'wy.js': ['128k','320k','flac','flac24bit','hires','master'], 'qq.js': ['128k','320k','flac','flac24bit','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac','flac24bit'] },
             'changqing':  { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
             'hyw':        { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
@@ -1562,8 +1646,8 @@
 
         // ============================================
         // Theme
-        // - 默认跟随系统 prefers-color-scheme
-        // - 仅用户点击切换时写入 localStorage('theme-user')
+        // - 无 data-theme：纯 CSS 跟随系统 prefers-color-scheme
+        // - 有 data-theme：用户手动覆盖，写入 theme-user
         // ============================================
         const THEME_USER_KEY = 'theme-user';
 
@@ -1571,26 +1655,31 @@
             return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
 
-        function getPreferredTheme() {
-            try {
-                const stored = localStorage.getItem(THEME_USER_KEY);
-                if (stored === 'light' || stored === 'dark') return stored;
-            } catch (e) {}
+        function getEffectiveTheme() {
+            const attr = document.documentElement.getAttribute('data-theme');
+            if (attr === 'light' || attr === 'dark') return attr;
             return getSystemTheme();
         }
 
-        function applyTheme(theme, persist) {
-            document.documentElement.setAttribute('data-theme', theme);
-            if (persist) {
-                try {
-                    localStorage.setItem(THEME_USER_KEY, theme);
-                } catch (e) {}
+        function syncThemeFromStorage() {
+            try {
+                const stored = localStorage.getItem(THEME_USER_KEY);
+                if (stored === 'light' || stored === 'dark') {
+                    document.documentElement.setAttribute('data-theme', stored);
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            } catch (e) {
+                document.documentElement.removeAttribute('data-theme');
             }
         }
 
         function toggleTheme() {
-            const current = document.documentElement.getAttribute('data-theme') || getSystemTheme();
-            applyTheme(current === 'dark' ? 'light' : 'dark', true);
+            const next = getEffectiveTheme() === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            try {
+                localStorage.setItem(THEME_USER_KEY, next);
+            } catch (e) {}
         }
 
         // ============================================
@@ -1779,18 +1868,9 @@
         // ============================================
         // Initialize
         // ============================================
-        // head 里已同步应用一次；此处再对齐（无用户偏好时跟系统）
-        applyTheme(getPreferredTheme(), false);
+        // 无用户偏好时不设置 data-theme，完全由 CSS @media 跟随系统
+        syncThemeFromStorage();
         initSourceSelection();
-
-        // 用户未手动选主题时，跟随系统深浅色变化
-        try {
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-                if (!localStorage.getItem(THEME_USER_KEY)) {
-                    applyTheme(e.matches ? 'dark' : 'light', false);
-                }
-            });
-        } catch (e) {}
     </script>
 </body>
 </html>

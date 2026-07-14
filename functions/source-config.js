@@ -20,7 +20,7 @@
  *   query      - GET  ${url}/url?source=&songId=&quality=                 header: X-API-Key
  *   lxmusic    - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
  *   changqing  - 按平台独立 URL, 音质键映射 (standard/exhigh/lossless)
- *   cihedai    - 次合代多端点: wy=GD音乐台, qq=s01s链, kw=念心酷我
+ *   cihedai    - 次合代多端点: wy=GD音乐台, qq=s01s链, kw=念心酷我, kg=长青
  *   quandouyao - 全豆要聚合: wy/kw 多端点, qq=vkeys, kg=长青
  *   hyw        - GET  ${url}/api/music/url?source=&songId=&quality=&key=  header: X-Script-Version + X-Card-Key
  */
@@ -55,6 +55,7 @@ const SOURCE_CONFIG = {
     // wy: GD音乐台
     // qq: littleyouzi + s01s
     // kw: 念心酷我模板 URL
+    // kg: 长青酷狗模板
     url: 'https://music-api.gdstudio.xyz/api.php?use_xbridge3=true&loader_name=forest',
     requiresKey: false,
     builtinKey: '',
@@ -62,6 +63,7 @@ const SOURCE_CONFIG = {
     plugins: {
       'wy.js': ['128k', '192k', '320k', 'flac', 'flac24bit'],
       'qq.js': ['128k', '320k', 'flac', 'flac24bit', 'atmos', 'atmos_plus', 'master'],
+      'kg.js': ['128k', '320k', 'flac'],
       'kw.js': ['128k', '320k', 'flac'],
     }
   },

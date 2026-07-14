@@ -42,7 +42,7 @@
 | 聆澜音源 | `linglan` | 需要 | wy / qq / kg / kw |
 | 何意味 | `hyw` | 内置 charity | wy / qq / kg / kw |
 | 全豆要 | `quandouyao` | 内置 | wy / qq / kg / kw |
-| 次合代 | `cihedai` | 内置 | wy / qq / kw（wy=GD） |
+| 次合代 | `cihedai` | 内置 | wy / qq / kg / kw |
 | 长青音源 | `changqing` | 内置 | wy / qq / kg / kw |
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。

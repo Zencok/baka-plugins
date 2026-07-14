@@ -122,12 +122,13 @@ ${sourceMapCode}async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
-    // ── cihedai 次合代: wy=GD音乐台, qq=s01s链, kw=念心酷我 ──
+    // ── cihedai 次合代: wy=GD, qq=s01s链, kw=念心, kg=长青 ──
     case 'cihedai': {
       code += `
 var _CHD_GD_BR = {"128k":"128","192k":"192","320k":"320","flac":"740","flac24bit":"999"};
 var _CHD_QQ_Q = {"128k":"10","320k":"8","flac":"5","flac24bit":"5","atmos":"1","atmos_plus":"1","master":"0"};
 var _CHD_KW_Q = {"128k":"standard","320k":"exhigh","flac":"lossless","flac24bit":"lossless","hires":"lossless"};
+var _CHD_KG_Q = {"128k":"standard","320k":"exhigh","flac":"lossless"};
 async function requestMusicUrl(source, songId, quality) {
   if (source === "wy") {
     var br = _CHD_GD_BR[quality] || "128";
@@ -145,6 +146,10 @@ async function requestMusicUrl(source, songId, quality) {
   if (source === "kw") {
     var level = _CHD_KW_Q[quality] || "standard";
     return { code: 200, url: "http://music.nxinxz.com/kw.php?id=" + encodeURIComponent(songId) + "&level=" + encodeURIComponent(level) + "&type=mp3" };
+  }
+  if (source === "kg") {
+    var kgLevel = _CHD_KG_Q[quality] || "standard";
+    return { code: 200, url: "https://music.haitangw.cc/kgqq/kg.php?type=mp3&id=" + encodeURIComponent(songId) + "&level=" + encodeURIComponent(kgLevel) };
   }
   throw new Error("次合代: platform " + source + " not supported");
 }`;
