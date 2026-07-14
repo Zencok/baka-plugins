@@ -1342,8 +1342,7 @@
                             <div class="source-name">次合代</div>
                             <div class="source-url">聚合二号 (免费)</div>
                             <div class="source-quality-indicator">
-                                <span class="quality-tag q-master">Master</span>
-                                <span class="quality-tag q-spatial">Atmos</span>
+                                <span class="quality-tag q-hires">Hi-Res</span>
                             </div>
                         </div>
                         <div class="source-check" aria-hidden="true">
@@ -1356,7 +1355,7 @@
                             <div class="source-name">长青音源</div>
                             <div class="source-url">haitangw.net (免费)</div>
                             <div class="source-quality-indicator">
-                                <span class="quality-tag q-lossless">FLAC</span>
+                                <span class="quality-tag q-hires">Hi-Res</span>
                             </div>
                         </div>
                         <div class="source-check" aria-hidden="true">
@@ -1555,9 +1554,9 @@
         const SOURCE_QUALITIES = {
             'ikun':       { 'kg.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kw.js': ['128k','320k','flac','flac24bit','hires'], 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus'], 'wy.js': ['128k','320k','flac','flac24bit','hires','atmos','master'] },
             'linglan':    { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': null },
-            'cihedai':    { 'wy.js': ['128k','192k','320k','flac','flac24bit'], 'qq.js': ['128k','320k','flac','flac24bit','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
-            'quandouyao': { 'wy.js': ['128k','320k','flac','flac24bit','hires','master'], 'qq.js': ['128k','320k','flac','flac24bit','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac','flac24bit'] },
-            'changqing':  { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
+            'cihedai':    { 'wy.js': ['128k','192k','320k','flac','hires'], 'qq.js': ['96k','128k','320k','flac'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
+            'quandouyao': { 'wy.js': ['128k','320k','flac','hires','master'], 'qq.js': ['128k','320k','flac','atmos'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
+            'changqing':  { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
             'hyw':        { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
         };
 
@@ -1571,6 +1570,7 @@
 
         // 音质显示信息
         const QUALITY_INFO = {
+            '96k':        { label: '96K',        cls: 'q-basic' },
             '128k':       { label: '128K',       cls: 'q-basic' },
             '192k':       { label: '192K',       cls: 'q-basic' },
             '320k':       { label: '320K',       cls: 'q-standard' },

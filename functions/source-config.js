@@ -52,18 +52,19 @@ const SOURCE_CONFIG = {
   },
   'cihedai': {
     name: '次合代',
-    // wy: GD音乐台
-    // qq: littleyouzi + s01s
-    // kw: 念心酷我模板 URL
-    // kg: 长青酷狗模板
+    // wy: GD (128/192/320/flac；br=999 保留为 hires)
+    // qq: s01s 分字段 (fq/C200=96k, standard/C400≈128, hq/C600, sq/flac)
+    // kw: 念心酷我
+    // kg: 长青酷狗
     url: 'https://music-api.gdstudio.xyz/api.php?use_xbridge3=true&loader_name=forest',
     requiresKey: false,
     builtinKey: '',
     apiType: 'cihedai',
     plugins: {
-      'wy.js': ['128k', '192k', '320k', 'flac', 'flac24bit'],
-      'qq.js': ['128k', '320k', 'flac', 'flac24bit', 'atmos', 'atmos_plus', 'master'],
-      'kg.js': ['128k', '320k', 'flac'],
+      'wy.js': ['128k', '192k', '320k', 'flac', 'hires'],
+      'qq.js': ['96k', '128k', '320k', 'flac'],
+      // kg=长青: standard/exhigh/lossless/hires → qu128/320/flac/high
+      'kg.js': ['128k', '320k', 'flac', 'hires'],
       'kw.js': ['128k', '320k', 'flac'],
     }
   },
@@ -72,7 +73,8 @@ const SOURCE_CONFIG = {
     url: 'https://musicapi.haitangw.net',
     requiresKey: false,
     apiType: 'changqing',
-    qualityMap: { '128k': 'standard', '320k': 'exhigh', 'flac': 'lossless' },
+    // kg 实测: standard→qu128, exhigh→qu320, lossless→quflac, hires→quhigh
+    qualityMap: { '128k': 'standard', '320k': 'exhigh', 'flac': 'lossless', 'hires': 'hires' },
     platformUrls: {
       'wy.js': 'http://175.27.166.236/wy/wy.php',
       'qq.js': 'http://175.27.166.236/kgqq/qq.php',
@@ -82,7 +84,7 @@ const SOURCE_CONFIG = {
     plugins: {
       'wy.js':  ['128k', '320k', 'flac'],
       'qq.js':  ['128k', '320k', 'flac'],
-      'kg.js':  ['128k', '320k', 'flac'],
+      'kg.js':  ['128k', '320k', 'flac', 'hires'],
       'kw.js':  ['128k', '320k', 'flac'],
     }
   },
@@ -93,10 +95,11 @@ const SOURCE_CONFIG = {
     requiresKey: false,
     apiType: 'quandouyao',
     plugins: {
-      'wy.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'master'],
-      'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'atmos', 'atmos_plus', 'master'],
-      'kg.js':  ['128k', '320k', 'flac'],
-      'kw.js':  ['128k', '320k', 'flac', 'flac24bit'],
+      'wy.js':  ['128k', '320k', 'flac', 'hires', 'master'],
+      'qq.js':  ['128k', '320k', 'flac', 'atmos'],
+      // kg=长青: 含 hires(quhigh)
+      'kg.js':  ['128k', '320k', 'flac', 'hires'],
+      'kw.js':  ['128k', '320k', 'flac'],
     }
   },
   'hyw': {

@@ -122,13 +122,12 @@ ${sourceMapCode}async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
-    // ── cihedai 次合代: wy=GD, qq=s01s链, kw=念心, kg=长青 ──
+    // ── cihedai 次合代: wy=GD, qq=s01s分字段, kw=念心, kg=长青 ──
     case 'cihedai': {
       code += `
-var _CHD_GD_BR = {"128k":"128","192k":"192","320k":"320","flac":"740","flac24bit":"999"};
-var _CHD_QQ_Q = {"128k":"10","320k":"8","flac":"5","flac24bit":"5","atmos":"1","atmos_plus":"1","master":"0"};
-var _CHD_KW_Q = {"128k":"standard","320k":"exhigh","flac":"lossless","flac24bit":"lossless","hires":"lossless"};
-var _CHD_KG_Q = {"128k":"standard","320k":"exhigh","flac":"lossless"};
+var _CHD_GD_BR = {"128k":"128","192k":"192","320k":"320","flac":"740","hires":"999"};
+var _CHD_KW_Q = {"128k":"standard","320k":"exhigh","flac":"lossless"};
+var _CHD_KG_Q = {"128k":"standard","320k":"exhigh","flac":"lossless","hires":"hires"};
 async function requestMusicUrl(source, songId, quality) {
   if (source === "wy") {
     var br = _CHD_GD_BR[quality] || "128";
@@ -138,9 +137,23 @@ async function requestMusicUrl(source, songId, quality) {
     return { code: 500, msg: (body && body.detail) || "No URL" };
   }
   if (source === "tx" || source === "qq") {
-    var q = _CHD_QQ_Q[quality] || "10";
-    try { var r = await axios_1.default.get("https://www.littleyouzi.com/api/v2/qqmusic?quality=" + q + "&mid=" + songId, {timeout:10000}); if (r.data && r.data.retcode === 0 && r.data.data && r.data.data.audio) return {code:200,url:r.data.data.audio}; } catch(e) {}
-    try { var r2 = await axios_1.default.get("https://tang.api.s01s.cn/music_open_api.php?mid=" + songId, {timeout:10000}); if (r2.data && r2.data.song_play_url_sq) return {code:200,url:r2.data.song_play_url_sq}; if (r2.data && r2.data.song_play_url) return {code:200,url:r2.data.song_play_url}; } catch(e) {}
+    // s01s: fq/C200=96k · standard/C400≈128 · hq/C600 · sq/F000=flac
+    try {
+      var r2 = await axios_1.default.get("https://tang.api.s01s.cn/music_open_api.php?mid=" + encodeURIComponent(songId), { timeout: 10000 });
+      var b2 = r2.data || {};
+      var url = null;
+      if (quality === "flac") {
+        url = b2.song_play_url_sq || b2.song_play_url || b2.song_play_url_hq || b2.song_play_url_standard || b2.song_play_url_fq;
+      } else if (quality === "320k") {
+        url = b2.song_play_url_hq || b2.song_play_url || b2.song_play_url_sq || b2.song_play_url_standard || b2.song_play_url_fq;
+      } else if (quality === "96k") {
+        url = b2.song_play_url_fq || b2.song_play_url_standard || b2.song_play_url || b2.song_play_url_hq || b2.song_play_url_sq;
+      } else {
+        // 128k 默认: C400 standard
+        url = b2.song_play_url_standard || b2.song_play_url || b2.song_play_url_hq || b2.song_play_url_fq || b2.song_play_url_sq;
+      }
+      if (url) return { code: 200, url: url };
+    } catch (e) {}
     throw new Error("次合代 QQ 接口获取失败");
   }
   if (source === "kw") {
@@ -179,9 +192,9 @@ async function requestMusicUrl(source, songId, quality) {
     case 'quandouyao': {
       switch (pluginName) {
         case 'qq.js':
-          // vkeys（洛雪主链）替换原 littleyouzi/s01s
+          // vkeys: 6=M500 8=M800 10=SQ 13=臻品全景声
           code += `
-var _QDY_QQ_Q = {"128k":"6","320k":"8","flac":"10","flac24bit":"11","atmos":"11","atmos_plus":"11","master":"11"};
+var _QDY_QQ_Q = {"128k":"6","320k":"8","flac":"10","atmos":"13"};
 async function requestMusicUrl(source, songId, quality) {
   var q = _QDY_QQ_Q[quality] || "6";
   var r = await axios_1.default.get("https://api.vkeys.cn/v2/music/tencent/geturl?mid=" + encodeURIComponent(songId) + "&quality=" + q, {timeout:10000});
@@ -194,18 +207,16 @@ async function requestMusicUrl(source, songId, quality) {
           break;
         case 'wy.js':
           code += `
-var _QDY_WY_Q1 = {"128k":"7","320k":"6","flac":"4","flac24bit":"3","hires":"3","master":"1"};
-var _QDY_WY_Q2 = {"128k":"standard","320k":"exhigh","flac":"lossless","flac24bit":"hires","hires":"hires","master":"jymaster"};
+var _QDY_WY_Q = {"128k":"standard","320k":"exhigh","flac":"lossless","hires":"hires","master":"jymaster"};
 async function requestMusicUrl(source, songId, quality) {
-  try { var q1 = _QDY_WY_Q1[quality] || "7"; var r = await axios_1.default.get("https://www.littleyouzi.com/api/v2/netmusic?mid=" + songId + "&type=json&quality=" + q1, {timeout:10000}); if (r.data && r.data.retcode === 0 && r.data.data && r.data.data.audio) { var a = r.data.data.audio.trim(); if (a) return {code:200,url:a}; } } catch(e) {}
-  try { var q2 = _QDY_WY_Q2[quality] || "lossless"; var r2 = await axios_1.default.get("https://api.bugpk.com/api/163_music?ids=" + songId + "&type=json&level=" + q2, {timeout:10000}); if (r2.data && r2.data.status == 200 && r2.data.url) { var u = r2.data.url.trim(); if (u) return {code:200,url:u}; } } catch(e) {}
+  try { var q2 = _QDY_WY_Q[quality] || "lossless"; var r2 = await axios_1.default.get("https://api.bugpk.com/api/163_music?ids=" + songId + "&type=json&level=" + q2, {timeout:10000}); if (r2.data && r2.data.status == 200 && r2.data.url) { var u = r2.data.url.trim(); if (u) return {code:200,url:u}; } } catch(e) {}
   try { var r3 = await axios_1.default.get("https://oiapi.net/api/Music_163?id=" + songId, {timeout:10000}); if (r3.data && r3.data.code === 0 && r3.data.data && r3.data.data[0] && r3.data.data[0].url) { var v = r3.data.data[0].url.trim(); if (v) return {code:200,url:v}; } } catch(e) {}
   throw new Error("网易云接口获取失败");
 }`;
           break;
         case 'kw.js':
           code += `
-var _QDY_KW_Q = {"128k":"128kmp3","320k":"320kmp3","flac":"2000kflac","flac24bit":"2000kflac"};
+var _QDY_KW_Q = {"128k":"128kmp3","320k":"320kmp3","flac":"2000kflac"};
 async function requestMusicUrl(source, songId, quality) {
   var br = _QDY_KW_Q[quality] || "2000kflac";
   var u = Math.floor(Math.random() * 4294967295);
@@ -218,7 +229,7 @@ async function requestMusicUrl(source, songId, quality) {
         case 'kg.js':
           // 长青酷狗模板
           code += `
-var _QDY_KG_Q = {"128k":"standard","320k":"exhigh","flac":"lossless"};
+var _QDY_KG_Q = {"128k":"standard","320k":"exhigh","flac":"lossless","hires":"hires"};
 async function requestMusicUrl(source, songId, quality) {
   var level = _QDY_KG_Q[quality] || "standard";
   return { code: 200, url: "https://music.haitangw.cc/kgqq/kg.php?type=mp3&id=" + encodeURIComponent(songId) + "&level=" + encodeURIComponent(level) };
