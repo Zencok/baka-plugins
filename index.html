@@ -1550,9 +1550,10 @@
             'hyw':        ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
         };
 
-        // 音源 → 各插件音质 (null = 使用插件默认音质)
+        // 音源 → 各插件音质 (null = 使用插件默认音质；键顺序 wy→qq→kg→kw 与 SOURCE_PLUGINS 一致)
         const SOURCE_QUALITIES = {
-            'ikun':       { 'kg.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kw.js': ['128k','320k','flac','flac24bit','hires'], 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus'], 'wy.js': ['128k','320k','flac','flac24bit','hires','atmos','master'] },
+            // 与 source-config ikun 一致：wy/qq/kg 用插件默认，kw 覆盖高阶环绕
+            'ikun':       { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
             'linglan':    { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus'], 'kg.js': null, 'kw.js': null },
             'cihedai':    { 'wy.js': ['128k','192k','320k','flac','hires'], 'qq.js': ['96k','128k','320k','flac'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
             'quandouyao': { 'wy.js': ['128k','320k','flac','hires','master'], 'qq.js': ['128k','320k','flac','atmos'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
@@ -1560,9 +1561,9 @@
             'hyw':        { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
         };
 
-        // 插件默认音质 (音源配置为 null 时使用)
+        // 插件默认音质 (音源配置为 null 时使用；与 plugins/*.js supportedQualities 对齐)
         const DEFAULT_QUALITIES = {
-            'wy.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
+            'wy.js':  ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
             'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
             'kg.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
             'kw.js':  ['128k', '320k', 'flac'],
@@ -1611,7 +1612,9 @@
                 ? `${selectedSource.name}支持的各平台音质类型`
                 : '各平台支持的音质类型';
 
-            Object.keys(qualities).forEach(file => {
+            // 平台顺序以 SOURCE_PLUGINS 为准，避免对象键顺序导致各音源表格错位
+            const files = SOURCE_PLUGINS[source] || Object.keys(qualities);
+            files.forEach(file => {
                 const display = PLUGIN_DISPLAY[file];
                 if (!display) return;
 

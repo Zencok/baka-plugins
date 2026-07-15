@@ -31,10 +31,12 @@ const SOURCE_CONFIG = {
     url: 'https://c.wwwweb.top',
     requiresKey: true,
     apiType: 'ikun',
+    // 平台顺序 wy→qq→kg→kw；null = 使用插件默认 supportedQualities
     plugins: {
       'wy.js':  null,
       'qq.js':  null,
       'kg.js':  null,
+      // ikun 酷我额外开放环绕/母带（插件默认仅到 flac）
       'kw.js':  ['128k', '320k', 'flac', 'atmos', 'atmos_plus', 'master'],
     }
   },
