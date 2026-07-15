@@ -45,7 +45,8 @@ const SOURCE_CONFIG = {
     apiType: 'query',
     plugins: {
       'wy.js':  null,
-      'qq.js':  null,
+      // tx 已不支持 master（API 返回 400）
+      'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus'],
       'kg.js':  null,
       'kw.js':  null,
     }
