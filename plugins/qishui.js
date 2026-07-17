@@ -1,8 +1,8 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.0.3
- * @description 汽水音乐 PC API 原生插件，支持搜索、专辑、歌单、音乐人、逐字歌词和多音质
+ * @version 3.1.0
+ * @description 汽水音乐插件：搜索等走 PC API；播放取流走 Android track_v2（可拿 lossless）。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
  * @srcLink https://music.cwo.cc.cd/plugins/qishui.js
@@ -30,7 +30,86 @@ const QISHUI_API_HEADERS = {
 
 const QISHUI_PC_API_BASE = "https://api.qishui.com/luna/pc";
 
+const QISHUI_ANDROID_API_BASE = "https://api.qishui.com/luna";
+
 const QISHUI_TRACK_DETAIL_DEVICE_ID = "1000008787889255961";
+
+/** 默认 sessionid；过期后可在插件用户变量 sessionid 中覆盖 */
+const QISHUI_ANDROID_DEFAULT_SESSION_ID = "80b79adf758dd589f31c76d54e866828";
+
+const QISHUI_ANDROID_API_HEADERS = {
+  "User-Agent": "com.luna.music/100198030 (Linux; U; Android 15; zh_CN_#Hans; ABR-AL80; Build/V417IR;tt-ok/3.12.13.19)",
+  "Accept-Encoding": "gzip",
+  "content-type": "application/json; charset=UTF-8"
+};
+
+const QISHUI_ANDROID_API_PARAMS = {
+  "device_platform": "android",
+  "os": "android",
+  "ssmix": "a",
+  "cdid": "46556f98-1720-4248-83da-62b74b60b46a",
+  "channel": "xiaomi_8478_64",
+  "aid": "8478",
+  "app_name": "luna",
+  "version_code": "100198030",
+  "version_name": "19.8.0",
+  "manifest_version_code": "100198030",
+  "update_version_code": "100198030",
+  "resolution": "1080*1920",
+  "dpi": "480",
+  "device_type": "ABR-AL80",
+  "device_brand": "HUAWEI",
+  "language": "zh",
+  "os_api": "35",
+  "os_version": "15",
+  "ac": "wifi",
+  "device_model": "ABR-AL80",
+  "save_power": "0",
+  "font_size": "1.00",
+  "luna_first_launch_apk_type": "normal_apk",
+  "diversion_channel_name": "xiaomi_8478_64",
+  "is_car_play": "0",
+  "battery": "0.99",
+  "network_speed": "10156",
+  "hybrid_version_code": "100198030",
+  "tz_name": "Asia/Shanghai",
+  "tz_offset": "28800",
+  "luna_register_time": "1784311292",
+  // 与抓包原文一致（保留 %E5 编码，勿解码为中文；axios 会再把 % 编成 %25）
+  "diversion_category_level_two": "Xiaomi%E5%95%86%E5%BA%97-%E8%87%AA%E7%84%B6",
+  "package": "com.luna.music",
+  "charge": "0",
+  "luna_apk_type": "normal_apk",
+  "output_device_type": "Phone",
+  "volume": "1.00",
+  "brightness": "0.08",
+  "need_personal_recommend": "1",
+  "is_teen_mode": "0",
+  "sim_region": "cn",
+  "diversion_category_level_one": "%E5%8E%82%E5%95%86%E5%95%86%E5%BA%97-%E8%87%AA%E7%84%B6",
+  "android_device_type": "default",
+  "iid": "2204957404569386",
+  "device_id": "2204957404565290"
+};
+
+const QISHUI_ANDROID_TRACK_BODY_TEMPLATE = {
+  "enable_refresh_api": true,
+  "limited_free_param": {
+    "expire_time": 0,
+    "from_other_queue": false,
+    "intercept_type": "",
+    "is_login_support": true,
+    "is_logout_support": true,
+    "limited_free": false,
+    "limited_free_type": "",
+    "rewind_prev_intercept_type": "",
+    "sign": "",
+    "sign_version": ""
+  },
+  "media_type": "track",
+  "queue_type": "search_one_track",
+  "scene_name": "search_track_reco"
+};
 
 const QISHUI_PC_API_HEADERS = {
   "Accept": "*/*",
@@ -260,6 +339,209 @@ function createSearchId() {
 
 function getPcApiParams(extraParams = {}) {
   return Object.assign({}, QISHUI_PC_API_PARAMS, extraParams);
+}
+
+/**
+ * 读取用户变量 sessionid（支持纯值或含 sessionid= 的 Cookie 片段）
+ * BakaMusic: env.getUserVariables()
+ */
+function getQishuiSessionId() {
+  try {
+    const userVariables = (typeof env !== "undefined" && env?.getUserVariables?.()) || {};
+    const raw = userVariables.sessionid
+      || userVariables.SESSIONID
+      || userVariables.SessionId
+      || userVariables.cookie
+      || userVariables.Cookie
+      || "";
+
+    if (raw && typeof raw === "string") {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        return QISHUI_ANDROID_DEFAULT_SESSION_ID;
+      }
+
+      const match = trimmed.match(/(?:^|[;\s])sessionid=([^;]+)/i);
+      if (match) {
+        return match[1].trim();
+      }
+
+      if (!trimmed.includes("=")) {
+        return trimmed;
+      }
+    }
+  } catch (error) {
+    // env 在非插件宿主环境下可能不存在
+  }
+
+  return QISHUI_ANDROID_DEFAULT_SESSION_ID;
+}
+
+function getAndroidApiParams(extraParams = {}) {
+  return Object.assign({}, QISHUI_ANDROID_API_PARAMS, {
+    "_rticket": String(Date.now())
+  }, extraParams);
+}
+
+function getAndroidApiHeaders() {
+  return Object.assign({}, QISHUI_ANDROID_API_HEADERS, {
+    "Cookie": `sessionid=${getQishuiSessionId()}`
+  });
+}
+
+function parseVideoModelToPlayInfoList(videoModel) {
+  if (!videoModel) {
+    return [];
+  }
+
+  let videoModelObj = videoModel;
+  if (typeof videoModel === "string") {
+    try {
+      videoModelObj = JSON.parse(videoModel);
+    } catch (error) {
+      console.error(`[汽水音乐] video_model 解析失败: ${error.message}`);
+      return [];
+    }
+  }
+
+  if (!Array.isArray(videoModelObj?.video_list)) {
+    return [];
+  }
+
+  return videoModelObj.video_list.map(video => ({
+    "Bitrate": video.video_meta?.bitrate || 0,
+    "FileHash": video.video_meta?.file_hash || "",
+    "Size": video.video_meta?.size || 0,
+    "Height": 0,
+    "Width": 0,
+    "Format": video.video_meta?.vtype || "",
+    "Codec": video.video_meta?.codec_type || "",
+    "Logo": "",
+    "Definition": "",
+    "Quality": video.video_meta?.quality || "",
+    "Duration": video.video_duration || 0,
+    "EncryptionMethod": video.encrypt_info?.encryption_method || "",
+    "PlayAuth": video.encrypt_info?.spade_a || "",
+    "PlayAuthID": video.encrypt_info?.kid || "",
+    "MainPlayUrl": video.main_url || "",
+    "BackupPlayUrl": video.backup_url || "",
+    "UrlExpire": video.url_expire || 0,
+    "FileID": video.video_meta?.file_id || "",
+    "P2pVerifyURL": "",
+    "PreloadInterval": 60,
+    "PreloadMaxStep": 10,
+    "PreloadMinStep": 5,
+    "PreloadSize": 327680,
+    "CheckInfo": ""
+  }));
+}
+
+function resolveReturnedQuality(playInfo, requestedQuality) {
+  const qishuiQuality = playInfo?.Quality;
+  if (qishuiQuality === "spatial") {
+    return requestedQuality === "atmos_plus" ? "atmos_plus" : "atmos";
+  }
+  return QISHUI_QUALITY_TO_BAKA[qishuiQuality] || requestedQuality;
+}
+
+/** 试听流：video_model 里直接就是 "video_duration": 60（或 30） */
+function isFixedPreviewDuration(value) {
+  return value === 60 || value === 30 || value === "60" || value === "30";
+}
+
+function parseVideoModelObject(videoModel) {
+  if (!videoModel) {
+    return null;
+  }
+  if (typeof videoModel === "string") {
+    try {
+      return JSON.parse(videoModel);
+    } catch (error) {
+      console.error(`[汽水音乐] video_model 解析失败: ${error.message}`);
+      return null;
+    }
+  }
+  return videoModel;
+}
+
+/** Android track_v2 的 video_model 若条目 duration 固定 30/60，说明是试听流 */
+function isPreviewVideoModel(videoModel) {
+  const videoModelObj = parseVideoModelObject(videoModel);
+  const videoList = videoModelObj?.video_list;
+  if (!Array.isArray(videoList) || videoList.length === 0) {
+    return false;
+  }
+
+  return videoList.some(video => isFixedPreviewDuration(video?.video_duration));
+}
+
+async function fetchAndroidTrackV2(trackId) {
+  const response = await axios.default.post(
+    `${QISHUI_ANDROID_API_BASE}/track_v2`,
+    Object.assign({}, QISHUI_ANDROID_TRACK_BODY_TEMPLATE, {
+      "track_id": String(trackId)
+    }),
+    {
+      "params": getAndroidApiParams(),
+      "headers": getAndroidApiHeaders(),
+      "timeout": 20000
+    }
+  );
+
+  return response.data;
+}
+
+/**
+ * 优先 Android track_v2；
+ * video_duration 为 30/60 试听则用完整 vid 走 luna/player；
+ * 再失败回落 SEO（不再走 PC track_v2）
+ */
+async function fetchTrackPlaybackData(trackId) {
+  let androidData = null;
+
+  try {
+    androidData = await fetchAndroidTrackV2(trackId);
+    const videoModel = androidData?.track_player?.video_model;
+    const playInfoList = parseVideoModelToPlayInfoList(videoModel);
+    const isPreview = isPreviewVideoModel(videoModel);
+    const fullVid = androidData?.track?.vid;
+
+    if (playInfoList.length > 0 && !isPreview) {
+      console.log(`[汽水音乐] Android track_v2 成功: trackId=${trackId}, qualities=${playInfoList.map(item => item.Quality).join(",")}`);
+      return {
+        "trackData": androidData,
+        "playInfoList": playInfoList,
+        "source": "android_track_v2"
+      };
+    }
+
+    if (isPreview) {
+      console.log(`[汽水音乐] Android track_v2 为试听流(30/60s)，改用完整 vid 取流: trackId=${trackId}, vid=${fullVid || ""}`);
+    } else {
+      console.warn(`[汽水音乐] Android track_v2 无播放列表, trackId=${trackId}, status=${androidData?.status_code || androidData?.status_info?.status_msg || "unknown"}`);
+    }
+
+    if (fullVid) {
+      const byVid = await fetchSeoTrackDataByVid(fullVid);
+      if (Array.isArray(byVid?.playInfoList) && byVid.playInfoList.length > 0) {
+        console.log(`[汽水音乐] luna/player(vid) 成功: trackId=${trackId}, qualities=${byVid.playInfoList.map(item => item.Quality).join(",")}`);
+        return {
+          "trackData": androidData,
+          "playInfoList": byVid.playInfoList,
+          "source": "android_vid_player"
+        };
+      }
+    }
+  } catch (error) {
+    console.error(`[汽水音乐] Android track_v2 失败: ${error.message}`);
+  }
+
+  const seoResult = await fetchSeoTrackData(trackId, androidData?.track?.vid);
+  return {
+    "trackData": androidData || seoResult.seoData,
+    "playInfoList": seoResult.playInfoList || [],
+    "source": "seo_fallback"
+  };
 }
 
 async function qishuiPcGet(path, params = {}) {
@@ -758,63 +1040,71 @@ async function searchQishui(keyword, page, type = "music") {
 
 
 
-async function fetchSeoTrackData(trackId) {
+async function fetchSeoTrackData(trackId, preferredVid = "") {
   const seoUrl = `https://beta-luna.douyin.com/luna/h5/seo_track?track_id=${trackId}&device_platform=web`;
   const seoResponse = await axios.default.get(seoUrl);
   const playInfoUrl = seoResponse?.data?.track_player?.url_player_info;
-  const vid = seoResponse?.data?.seo_track?.track?.vid;
+  const vid = preferredVid
+    || seoResponse?.data?.seo_track?.track?.vid
+    || "";
   let playInfoList = [];
 
-  if (!seoResponse?.data?.track_player?.media_id) {
-    console.log(`[汽水音乐] fetchSeoTrackData: 未找到 media_id，trackId=${trackId}`);
-    const TrackDetail = await fetchTrackDetail(trackId);
-    const videoModel = TrackDetail?.track_player?.video_model;
-    const videoModelObj = videoModel ? JSON.parse(videoModel) : null;
-    if (videoModelObj && Array.isArray(videoModelObj.video_list)) {
-      playInfoList = videoModelObj.video_list.map(video => ({
-        "Bitrate": video.video_meta?.bitrate || 0,
-        "FileHash": video.video_meta?.file_hash || "",
-        "Size": video.video_meta?.size || 0,
-        "Height": 0,
-        "Width": 0,
-        "Format": video.video_meta?.vtype || "",
-        "Codec": video.video_meta?.codec_type || "",
-        "Logo": "",
-        "Definition": "",
-        "Quality": video.video_meta?.quality || "",
-        "Duration": video.video_duration || 0,
-        "EncryptionMethod": video.encrypt_info?.encryption_method || "",
-        "PlayAuth": video.encrypt_info?.spade_a || "",
-        "PlayAuthID": video.encrypt_info?.kid || "",
-        "MainPlayUrl": video.main_url || "",
-        "BackupPlayUrl": video.backup_url || "",
-        "UrlExpire": video.url_expire || 0,
-        "FileID": video.video_meta?.file_id || "",
-        "P2pVerifyURL": "",
-        "PreloadInterval": 60,
-        "PreloadMaxStep": 10,
-        "PreloadMinStep": 5,
-        "PreloadSize": 327680,
-        "CheckInfo": ""
-      }));
+  const previewDuration = seoResponse?.data?.seo_track?.track?.preview?.duration;
+  const fullDuration = seoResponse?.data?.seo_track?.track?.duration;
+  const isSeoPreview = previewDuration && fullDuration && previewDuration < fullDuration;
+
+  // 试听 / 无 media_id：用完整 vid 走 luna/player（不再回落 PC track_v2）
+  if (isSeoPreview || !seoResponse?.data?.track_player?.media_id) {
+    console.log(`[汽水音乐] fetchSeoTrackData: 使用完整 vid 取流, trackId=${trackId}, vid=${vid}, seoPreview=${!!isSeoPreview}`);
+    if (vid) {
+      const playInfoResponse = await fetchSeoTrackDataByVid(vid);
+      playInfoList = playInfoResponse?.playInfoList || [];
     }
-    // const playInfoResponse = await axios.default.get(TrackDetail?.track_player?.url_player_info);
-    // playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
-  } else if (seoResponse?.data?.seo_track?.track?.preview?.duration && seoResponse?.data?.seo_track?.track?.preview?.duration < seoResponse?.data?.seo_track?.track?.duration) {
-    console.log(`[汽水音乐] fetchSeoTrackData: 播放器版本，trackId=${trackId}`);
-    const playInfoResponse = await fetchSeoTrackDataByVid(vid);
-    playInfoList = playInfoResponse?.playInfoList || [];
-  } else {
-    if (playInfoUrl) {
-      console.log(`[汽水音乐] fetchSeoTrackData: 获取播放信息，trackId=${trackId}`);
-      const playInfoResponse = await axios.default.get(playInfoUrl);
-      playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
-    }
+  } else if (playInfoUrl) {
+    console.log(`[汽水音乐] fetchSeoTrackData: 获取播放信息，trackId=${trackId}`);
+    const playInfoResponse = await axios.default.get(playInfoUrl);
+    playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
   }
+
   return {
     "seoData": seoResponse.data,
     "playInfoList": playInfoList
   };
+}
+
+async function getMusicInfoFromAndroid(trackId) {
+  try {
+    const { trackData, playInfoList, source } = await fetchTrackPlaybackData(trackId);
+    const track = trackData?.track
+      || trackData?.seo_track?.track
+      || null;
+    const musicItem = parseTrackItem(track);
+
+    if (!musicItem && !playInfoList.length) {
+      return null;
+    }
+
+    const result = musicItem || {
+      "id": trackId,
+      "title": "",
+      "artist": "",
+      "qualities": {}
+    };
+
+    const playInfoQualities = createQualitiesFromPlayInfoList(playInfoList);
+    if (Object.keys(playInfoQualities).length > 0) {
+      // 以真实可播档位为准，避免 bit_rates 标 flac 但无流
+      result.qualities = playInfoQualities;
+    } else if (musicItem?.qualities) {
+      result.qualities = musicItem.qualities;
+    }
+
+    result._playSource = source;
+    return result;
+  } catch (error) {
+    console.error(`[汽水音乐] getMusicInfoFromAndroid 错误: ${error.message}`);
+    return null;
+  }
 }
 
 async function getMusicInfoFromSeo(trackId) {
@@ -841,17 +1131,12 @@ async function getMusicPlaybackSource(musicItem, quality = "128k") {
   if (!musicItem?.id) return null;
 
   try {
-    if (musicItem.qualities && Object.keys(musicItem.qualities).length > 0 && !musicItem.qualities[quality]) {
-      console.error(`[汽水音乐] 歌曲不支持音质 ${quality}`);
-      throw new Error(`该歌曲不支持 ${quality} 音质`);
-    }
-
     let lastErrorMessage = "";
     let playUrl = "";
     let playInfo = null;
 
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const { playInfoList } = await fetchSeoTrackData(musicItem.id);
+      const { playInfoList, source } = await fetchTrackPlaybackData(musicItem.id);
 
       if (!playInfoList.length) {
         lastErrorMessage = "播放列表为空";
@@ -861,9 +1146,18 @@ async function getMusicPlaybackSource(musicItem, quality = "128k") {
         break;
       }
 
-      const qishuiQuality = pickQishuiQuality(musicItem, quality);
+      // 有真实 playInfoList 时，不按搜索期 bit_rates 误拦 flac 等
+      const availableQualities = createQualitiesFromPlayInfoList(playInfoList);
+      if (Object.keys(availableQualities).length > 0 && !availableQualities[quality]) {
+        // 仍尝试 pick + fallback，而不是直接失败
+        console.warn(`[汽水音乐] 请求音质 ${quality} 不在列表 ${Object.keys(availableQualities).join(",")}，将尝试回落`);
+      }
+
+      const qishuiQuality = BAKA_QUALITY_TO_QISHUI[quality]
+        || pickQishuiQuality(musicItem, quality);
       playInfo = getBestPlayableInfo(playInfoList, qishuiQuality, quality);
-      console.log(`[汽水音乐] 获取播放源: trackId=${musicItem.id}, quality=${quality}, qishuiQuality=${qishuiQuality}, playInfo=${JSON.stringify(playInfo, null, 2)}`);
+      const actualQuality = resolveReturnedQuality(playInfo, quality);
+      console.log(`[汽水音乐] 获取播放源: trackId=${musicItem.id}, req=${quality}, actual=${actualQuality}, qishui=${qishuiQuality}, source=${source}, playInfo.Quality=${playInfo?.Quality}`);
 
       playUrl = playInfo?.MainPlayUrl || playInfo?.BackupPlayUrl;
       if (!playUrl) {
@@ -896,14 +1190,14 @@ async function getMusicPlaybackSource(musicItem, quality = "128k") {
           url: playUrl,
           headers: AUDIO_PLAYBACK_HEADERS,
           cek: cek,
-          quality
+          quality: actualQuality
         };
       }
 
       return {
         url: playUrl,
         headers: AUDIO_PLAYBACK_HEADERS,
-        quality
+        quality: actualQuality
       };
     }
 
@@ -927,6 +1221,13 @@ async function getMusicInfo(musicBase) {
   if (!songId) {
     console.error('[汽水音乐] getMusicInfo: 缺少有效的歌曲ID');
     return null;
+  }
+
+  const androidMusicInfo = await getMusicInfoFromAndroid(songId);
+  if (androidMusicInfo) {
+    return Object.assign({}, androidMusicInfo, {
+      "platform": "汽水音乐"
+    });
   }
 
   const seoMusicInfo = await getMusicInfoFromSeo(songId);
@@ -1506,11 +1807,18 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.0.3",
+  "version": "3.1.0",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
   "supportedQualities": ["128k", "192k", "320k", "flac", "hires", "atmos", "atmos_plus"],
+  "userVariables": [
+    {
+      "key": "sessionid",
+      "name": "sessionid",
+      "hint": "汽水/抖音登录 Cookie 中的 sessionid。可填纯 sessionid 或 sessionid=xxx 片段；过期后请更新"
+    }
+  ],
   "hints": {
     "importMusicSheet": [
       "汽水APP：歌单-分享-分享链接；手动访问链接后再复制链接粘贴即可",

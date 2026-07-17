@@ -26,7 +26,7 @@
 | 酷我音乐 | `plugins/kw.js` | `1.0.4` | 音源相关 |
 | 咪咕音乐 | `plugins/mg.js` | `1.1.1` | 免密 |
 | Bilibili | `plugins/bilibili.js` | `1.0.1` | 免密 |
-| 汽水音乐 | `plugins/qishui.js` | `3.0.3` | 免密 |
+| 汽水音乐 | `plugins/qishui.js` | `3.1.0` | 免密 |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 
