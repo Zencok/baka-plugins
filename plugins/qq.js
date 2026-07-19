@@ -87,6 +87,10 @@ function parseQualities(file) {
   if (file.size_hires && file.size_hires !== 0) {
     qualities['hires'] = { size: file.size_hires, bitrate: 1536000 };
   }
+  if (file.size_dolby && file.size_dolby !== 0) {
+    qualities['dolby'] = { size: file.size_dolby, bitrate: 1411000 };
+  }
+  // size_new: master / atmos / atmos_plus / vinyl / …
   if (file.size_new && file.size_new[0] !== 0) {
     qualities['master'] = { size: file.size_new[0], bitrate: 2304000 };
   }
@@ -95,6 +99,9 @@ function parseQualities(file) {
   }
   if (file.size_new && file.size_new[2] !== 0) {
     qualities['atmos_plus'] = { size: file.size_new[2], bitrate: 1411000 };
+  }
+  if (file.size_new && file.size_new[4] !== 0) {
+    qualities['vinyl'] = { size: file.size_new[4], bitrate: 2500000 };
   }
   return qualities;
 }
@@ -752,8 +759,10 @@ async function getAlbumInfo(albumItem) {
   ).data;
 
   const songList = res.albumSonglist.data.songList.map(item => item.songInfo);
+  // Album list file often stops at flac; hires/master/atmos need CgiGetTrackInfo
+  const qualityInfo = await getBatchQualities(songList);
   return {
-    musicList: songList.map(formatMusicItem),
+    musicList: songList.map((song) => formatMusicItem(song, qualityInfo)),
   };
 }
 
@@ -789,9 +798,13 @@ async function getArtistSongs(artistItem, page) {
     })
   ).data;
 
+  const songList = res.singer.data.songlist || [];
+  // get_singer_detail_info file often only has up to flac(SQ); HR+ via batch
+  const qualityInfo = await getBatchQualities(songList);
+
   return {
     isEnd: res.singer.data.total_song <= page * pageSize,
-    data: res.singer.data.songlist.map(formatMusicItem),
+    data: songList.map((song) => formatMusicItem(song, qualityInfo)),
   };
 }
 
@@ -1123,7 +1136,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.6",
+  version: "1.0.7",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
