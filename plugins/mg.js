@@ -1,7 +1,7 @@
 /**
  * 咪咕音乐 BakaMusic 免密插件
  * 内置官方听歌线路，无需 source/key；仅 128k（PQ）
- * @version 1.1.1
+ * @version 1.1.3
  */
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -210,6 +210,54 @@ function normalizeDurationSeconds(value) {
 
   // Migu V3 search returns seconds directly, while some legacy fields may still be milliseconds.
   return numericValue >= 1000 ? Math.floor(numericValue / 1000) : Math.floor(numericValue);
+}
+
+/**
+ * 作者单曲 song-list 接口不返回 length/duration，但有 newRateFormats.size。
+ * 用 CBR 档位（PQ/HQ/LQ）按体积反推秒数；flac/hires 码率不稳，不用于估算。
+ */
+function estimateDurationFromFormats(item) {
+  if (!item || typeof item !== 'object') return undefined;
+  const formats = []
+    .concat(Array.isArray(item.newRateFormats) ? item.newRateFormats : [])
+    .concat(Array.isArray(item.rateFormats) ? item.rateFormats : []);
+  if (!formats.length) return undefined;
+
+  const bitrateMap = {
+    PQ: 128000,
+    HQ: 320000,
+    LQ: 48000,
+  };
+
+  for (const type of ['PQ', 'HQ', 'LQ']) {
+    const format = formats.find((f) => f && f.formatType === type);
+    if (!format) continue;
+    const size = Number(format.size || format.androidSize || format.iosSize);
+    const bitrate = bitrateMap[type];
+    if (!Number.isFinite(size) || size < 1000 || !bitrate) continue;
+    const seconds = Math.floor((size * 8) / bitrate);
+    if (seconds > 5 && seconds < 7200) return seconds;
+  }
+  return undefined;
+}
+
+/** 咪咕列表常见时长字段：duration / length(00:03:02) / songTime 等；缺失时用音质 size 估算 */
+function pickDurationSeconds(item) {
+  if (!item || typeof item !== 'object') return undefined;
+  const candidates = [
+    item.duration,
+    item.length,
+    item.songTime,
+    item.playTime,
+    item.timeLength,
+    item.songLength,
+    item.lengthOfTrack,
+  ];
+  for (const value of candidates) {
+    const seconds = normalizeDurationSeconds(value);
+    if (seconds) return seconds;
+  }
+  return estimateDurationFromFormats(item);
 }
 
 function toMD5(str) {
@@ -594,7 +642,7 @@ async function searchMusic(query, page) {
           singerId: item.singerId,
           qualities: qualities,
           albumId: item.albumId,
-          duration: normalizeDurationSeconds(item.duration),
+          duration: pickDurationSeconds(item),
           lrcUrl: item.lrcUrl,
           mrcUrl: item.mrcurl,          trcUrl: item.trcUrl,
         });
@@ -659,6 +707,7 @@ async function searchMusic(query, page) {
         copyrightId: _.copyrightId,
         singerId: _.singerId,
         qualities: qualities,
+        duration: pickDurationSeconds(_),
         vipFlag: _.vipFlag,
         lrcUrl: _.lrcUrl,
         mrcUrl: _.mrcurl,
@@ -1225,7 +1274,7 @@ async function getMusicInfo(musicBase) {
               album: item.album || item.albumName,
               albumId: item.albumId,
               artwork: artwork,
-              duration: normalizeDurationSeconds(item.duration),
+              duration: pickDurationSeconds(item),
               qualities: qualities,
               platform: '咪咕音乐',
             };
@@ -1433,6 +1482,7 @@ async function getArtistWorks(artistItem, page, type) {
               copyrightId: item.copyrightId,
               singerId: item.singerId,
               qualities: qualities,
+              duration: pickDurationSeconds(item),
               lrcUrl: item.lrcUrl,
               mrcUrl: item.mrcUrl,
               trcUrl: item.trcUrl,
@@ -1554,6 +1604,7 @@ async function getMusicSheetInfo(sheet, page) {
             copyrightId: item.copyrightId,
             singerId: item.singerId,
             qualities: qualities,
+            duration: pickDurationSeconds(item),
             lrcUrl: lyricInfo.lrcUrl,
             mrcUrl: lyricInfo.mrcUrl,
             trcUrl: lyricInfo.trcUrl,
@@ -1653,6 +1704,7 @@ async function getMusicSheetInfo(sheet, page) {
             copyrightId: item.copyrightId,
             singerId: item.singerId,
             qualities: qualities,
+            duration: pickDurationSeconds(item),
             lrcUrl: lyricInfo.lrcUrl,
             mrcUrl: lyricInfo.mrcUrl,
             trcUrl: lyricInfo.trcUrl,
@@ -2184,6 +2236,7 @@ async function getTopListDetail(topListItem) {
           mrcUrl: songInfo.mrcUrl,
           trcUrl: songInfo.trcUrl,
           qualities: qualities,
+          duration: pickDurationSeconds(songInfo),
         };
       });
 
@@ -2234,6 +2287,7 @@ async function getTopListDetail(topListItem) {
           copyrightId: _.copyrightId,
           singerId: _.singers?.[0]?.id,
           qualities: getMiGuQualitiesFromSong(_),
+          duration: pickDurationSeconds(_),
         };
       }),
     };
@@ -2309,7 +2363,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.1.1",
+  version: "1.1.3",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",
@@ -2475,6 +2529,7 @@ module.exports = {
           copyrightId: item.copyrightId,
           singerId: item.singerId,
           qualities: qualities,
+          duration: pickDurationSeconds(item),
         };
       }),
     };
