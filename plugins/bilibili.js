@@ -27,15 +27,18 @@ const QualityMap = {
     "dolby": AudioQuality.AudioDolby,
 };
 
+const CHROME_UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
 const headers = {
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774.63",
+    "user-agent": CHROME_UA,
     accept: "*/*",
     "accept-encoding": "gzip, deflate, br",
     "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
 };
 
 const searchHeaders = {
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774.63",
+    "user-agent": CHROME_UA,
     accept: "application/json, text/plain, */*",
     "accept-encoding": "gzip, deflate, br",
     origin: "https://search.bilibili.com",
@@ -52,6 +55,9 @@ let cookie;
 
 let img, sub, syncedTime;
 
+let biliTicket;
+let biliTicketExpires = 0;
+
 let w_webid;
 
 let w_webid_date;
@@ -62,14 +68,16 @@ function getSessdata() {
 }
 
 function buildCookieHeader() {
+    const parts = [];
+    if (cookie?.b_3) parts.push(`buvid3=${cookie.b_3}`);
+    if (cookie?.b_4) parts.push(`buvid4=${cookie.b_4}`);
+    if (biliTicket && Date.now() < biliTicketExpires) {
+        parts.push(`bili_ticket=${biliTicket}`);
+        parts.push(`bili_ticket_expires=${Math.floor(biliTicketExpires / 1000)}`);
+    }
     const sessdata = getSessdata();
-    if (sessdata) {
-        return `SESSDATA=${sessdata}`;
-    }
-    if (cookie) {
-        return `buvid3=${cookie.b_3};buvid4=${cookie.b_4}`;
-    }
-    return '';
+    if (sessdata) parts.push(`SESSDATA=${sessdata}`);
+    return parts.join("; ");
 }
 
 function durationToSec(duration) {
@@ -120,11 +128,26 @@ function formatMedia(result) {
         avatar: owner.face || "",
     }] : [];
 
+    const mid = owner.mid || result.mid;
+    const artistName =
+        (_e = result.author) !== null && _e !== void 0
+            ? _e
+            : (_f = result.owner) === null || _f === void 0
+              ? void 0
+              : _f.name;
+    if (!singerList.length && (mid || artistName)) {
+        singerList.push({
+            id: mid,
+            name: artistName || "",
+            avatar: owner.face || "",
+        });
+    }
+
     return {
         id: (_d = (_c = result.cid) !== null && _c !== void 0 ? _c : result.bvid) !== null && _d !== void 0 ? _d : result.aid,
         aid: result.aid,
         bvid: result.bvid,
-        artist: (_e = result.author) !== null && _e !== void 0 ? _e : (_f = result.owner) === null || _f === void 0 ? void 0 : _f.name,
+        artist: artistName,
         singerList: singerList,
         title,
         alias: (_g = title.match(/《(.+?)》/)) === null || _g === void 0 ? void 0 : _g[1],
@@ -132,7 +155,8 @@ function formatMedia(result) {
         artwork: ((_j = result.pic) === null || _j === void 0 ? void 0 : _j.startsWith("//"))
             ? "http:".concat(result.pic)
             : result.pic,
-        duration: durationToSec(result.duration),
+        // 投稿列表用 length（"3:45"），搜索/详情用 duration（秒）
+        duration: durationToSec(result.duration ?? result.length),
         tags: (_k = result.tag) === null || _k === void 0 ? void 0 : _k.split(","),
         date: dayjs.unix(result.pubdate || result.created).format("YYYY-MM-DD"),
         qualities: qualities,
@@ -183,7 +207,7 @@ async function getCookie() {
     if (!cookie) {
         cookie = (await axios_1.default.get("https://api.bilibili.com/x/frontend/finger/spi", {
             headers: {
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1 Edg/114.0.0.0",
+                "User-Agent": CHROME_UA,
             },
         })).data.data;
     }
@@ -220,7 +244,7 @@ async function getBiliTicket(csrf) {
                 csrf: csrf || ''
             },
             headers: {
-                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0'
+                'User-Agent': CHROME_UA,
             }
         });
         const data = await response.data;
@@ -232,7 +256,8 @@ async function getBiliTicket(csrf) {
 }
 
 async function getWBIKeys() {
-    if (img && sub && syncedTime && syncedTime.getDate() === (new Date()).getDate()) {
+    const ticketValid = biliTicket && Date.now() < biliTicketExpires;
+    if (img && sub && syncedTime && syncedTime.getDate() === (new Date()).getDate() && ticketValid) {
         return {
             img,
             sub
@@ -240,6 +265,13 @@ async function getWBIKeys() {
     }
     else {
         const data = await getBiliTicket('');
+        if (data?.ticket) {
+            biliTicket = data.ticket;
+            // ticket 约 3 天，提前 1 小时刷新
+            const created = (data.created_at || Math.floor(Date.now() / 1000)) * 1000;
+            const ttlMs = ((data.ttl || 259200) - 3600) * 1000;
+            biliTicketExpires = created + Math.max(ttlMs, 60 * 60 * 1000);
+        }
         img = data.nav.img;
         img = img.slice(img.lastIndexOf('/') + 1, img.lastIndexOf('.'));
         sub = data.nav.sub;
@@ -260,9 +292,16 @@ async function getRid(params) {
     let c = [];
     for (let d = 0, u = /[!'\(\)*]/g; d < l.length; ++d) {
         let [h, p] = [l[d], params[l[d]]];
-        p && "string" == typeof p && (p = p.replace(u, "")),
-            null != p &&
-                c.push("".concat(encodeURIComponent(h), "=").concat(encodeURIComponent(p)));
+        if (typeof p === "number" || typeof p === "boolean") {
+            p = String(p);
+        }
+        if (p && "string" == typeof p) {
+            p = p.replace(u, "");
+        }
+        // 跳过空字符串，避免 WBI 签名与浏览器不一致
+        if (p != null && p !== "") {
+            c.push("".concat(encodeURIComponent(h), "=").concat(encodeURIComponent(p)));
+        }
     }
     const f = c.join("&");
     const w_rid = CryptoJs.MD5(f + o).toString();
@@ -307,7 +346,7 @@ async function searchBase(keyword, page, searchType) {
         dynamic_offset: 0,
     };
     const res = (await axios_1.default.get("https://api.bilibili.com/x/web-interface/search/type", {
-        headers: { ...searchHeaders, ...{ cookie: `buvid3=${cookie.b_3};buvid4=${cookie.b_4}` } },
+        headers: { ...searchHeaders, ...{ cookie: buildCookieHeader() } },
         params: params,
     })).data;
     return res.data;
@@ -525,45 +564,80 @@ async function getMusicInfo(musicBase) {
 }
 
 async function getArtistWorks(artistItem, page, type) {
-    const queryHeaders = {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774.63",
-        accept: "*/*",
-        "accept-encoding": "gzip, deflate, br, zstd",
-        origin: "https://space.bilibili.com",
-        "sec-fetch-site": "same-site",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-dest": "empty",
-        referer: `https://space.bilibili.com/${artistItem.id}/video`,
-    };
-    await getCookie();
-    const now = Math.round(Date.now() / 1e3);
-    const params = {
-        mid: artistItem.id,
-        ps: 30,
-        tid: 0,
-        pn: page,
-        web_location: 1550101,
-        order_avoided: true,
-        order: "pubdate",
-        keyword: "",
-        platform: "web",
-        dm_img_list: "[]",
-        dm_img_str: "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
-        dm_cover_img_str: "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgR1RYIDE2NTAgKDB4MDAwMDFGOTEpIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEpR29vZ2xlIEluYy4gKE5WSURJQS",
-        dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
-        wts: now.toString(),
-    };
-    const w_rid = await getRid(params);
-    const res = (await axios_1.default.get("https://api.bilibili.com/x/space/wbi/arc/search", {
-        headers: { ...queryHeaders, ...{ cookie: `buvid3=${cookie.b_3};buvid4=${cookie.b_4}` } },
-        params: { ...params, ...{ w_rid } },
-    })).data;
-    const resultData = res.data;
-    const albums = resultData.list.vlist.map(formatMedia);
-    return {
-        isEnd: resultData.page.pn * resultData.page.ps >= resultData.page.count,
-        data: albums,
-    };
+    // 空间投稿 /x/space/wbi/arc/search：
+    // - 缺 dm_img_* → code -352 风控
+    // - 缺 bili_ticket / 旧 web_location → HTTP 412 banned
+    // - 需 WBI(wts/w_rid) + buvid3/4 + bili_ticket + dm_img_* + web_location=333.1387
+    try {
+        await getCookie();
+        await getWBIKeys();
+
+        const mid = String(artistItem.id || artistItem.mid || "");
+        if (!mid) {
+            return { isEnd: true, data: [] };
+        }
+
+        const queryHeaders = {
+            "user-agent": CHROME_UA,
+            accept: "application/json, text/plain, */*",
+            origin: "https://space.bilibili.com",
+            referer: `https://space.bilibili.com/${mid}/video`,
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+            cookie: buildCookieHeader(),
+        };
+
+        const now = Math.floor(Date.now() / 1000);
+        const params = {
+            mid,
+            pn: String(page || 1),
+            ps: "30",
+            index: "1",
+            order: "pubdate",
+            order_avoided: "true",
+            platform: "web",
+            web_location: "333.1387",
+            // WebGL/GPU 指纹占位（浏览器侧同款字段）；必须参与签名
+            dm_img_list: "[]",
+            dm_img_str: "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
+            dm_cover_img_str:
+                "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgR1RYIDE2NTAgKDB4MDAwMDFGOTEpIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEpR29vZ2xlIEluYy4gKE5WSURJQS",
+            dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
+            wts: String(now),
+        };
+        const w_rid = await getRid(params);
+
+        const res = (
+            await axios_1.default.get(
+                "https://api.bilibili.com/x/space/wbi/arc/search",
+                {
+                    headers: queryHeaders,
+                    params: { ...params, w_rid },
+                    timeout: 15000,
+                    validateStatus: (status) => status < 500,
+                }
+            )
+        ).data;
+
+        if (!res || res.code !== 0 || !res.data?.list?.vlist) {
+            console.error(
+                "[bilibili] getArtistWorks 失败:",
+                res?.code,
+                res?.message || res
+            );
+            return { isEnd: true, data: [] };
+        }
+
+        const resultData = res.data;
+        const albums = resultData.list.vlist.map(formatMedia);
+        return {
+            isEnd:
+                resultData.page.pn * resultData.page.ps >= resultData.page.count,
+            data: albums,
+        };
+    } catch (error) {
+        console.error("[bilibili] getArtistWorks 错误:", error.message);
+        return { isEnd: true, data: [] };
+    }
 }
 
 async function getFavoriteList(id) {
@@ -765,7 +839,7 @@ async function getTopListDetail(topListItem) {
     const res = await axios_1.default.get(`https://api.bilibili.com/x/web-interface/${path}`, {
         headers: { ...headers, ...{
             referer: "https://www.bilibili.com/",
-            cookie: `buvid3=${cookie.b_3};buvid4=${cookie.b_4}`
+            cookie: buildCookieHeader()
         } },
         params: params,
     });
@@ -815,7 +889,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
     platform: "bilibili",
     author: "Toskysun",
-    version: "1.0.1",
+    version: "1.0.2",
     appVersion: ">=0.0",
     srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
     cacheControl: "no-cache",
