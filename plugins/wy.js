@@ -121,20 +121,51 @@ function sizeFormate(size) {
   return (size / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
 }
 
+function applyPrivilegeQualities(qualities, privilege) {
+  if (!privilege || !qualities) return;
+  const maxBr = Number(privilege.maxbr || privilege.maxBr || 0);
+  if (maxBr >= 128000) qualities['128k'] = qualities['128k'] || { bitrate: 128000 };
+  if (maxBr >= 320000) qualities['320k'] = qualities['320k'] || { bitrate: 320000 };
+  if (maxBr >= 999000) qualities['flac'] = qualities['flac'] || { bitrate: 1411000 };
+  if (maxBr >= 1999000) qualities['hires'] = qualities['hires'] || { bitrate: 2304000 };
+
+  // Newer API uses string levels: lossless / hires / jyeffect / sky / jymaster …
+  const level = String(
+    privilege.playMaxbr ||
+      privilege.maxBrLevel ||
+      privilege.maxbrLevel ||
+      privilege.maxBrLevelStr ||
+      ""
+  ).toLowerCase();
+  if (!level) return;
+  if (/(standard|higher|exhigh|128|320)/.test(level)) {
+    qualities['128k'] = qualities['128k'] || { bitrate: 128000 };
+  }
+  if (/(exhigh|320|higher)/.test(level)) {
+    qualities['320k'] = qualities['320k'] || { bitrate: 320000 };
+  }
+  if (/(lossless|sq|flac)/.test(level)) {
+    qualities['flac'] = qualities['flac'] || { bitrate: 1411000 };
+  }
+  if (/(hires|hr|hres)/.test(level)) {
+    qualities['hires'] = qualities['hires'] || { bitrate: 2304000 };
+  }
+  // 沉浸环绕 / 高清臻音 等
+  if (/(jyeffect|sky|effect|immers)/.test(level)) {
+    qualities['atmos'] = qualities['atmos'] || { bitrate: 1411000 };
+  }
+  // 超清母带
+  if (/(jymaster|master)/.test(level)) {
+    qualities['master'] = qualities['master'] || { bitrate: 4608000 };
+  }
+}
+
 function formatMusicItem(_) {
   var _a, _b, _c, _d;
   const album = _.al || _.album;
   const qualities = {};
 
-  if (_.privilege) {
-    const maxBr = _.privilege.maxbr || _.privilege.maxBrLevel;
-    if (maxBr) {
-      if (maxBr >= 128000) qualities['128k'] = { bitrate: 128000 };
-      if (maxBr >= 320000) qualities['320k'] = { bitrate: 320000 };
-      if (maxBr >= 999000) qualities['flac'] = { bitrate: 1411000 };
-      if (maxBr >= 1999000) qualities['hires'] = { bitrate: 2304000 };
-    }
-  }
+  applyPrivilegeQualities(qualities, _.privilege);
 
   if ((_.l && _.l.size) || (_.m && _.m.size && !_.h)) {
     const audioData = _.l || _.m;
@@ -151,11 +182,12 @@ function formatMusicItem(_) {
   if (_.hr && _.hr.size) {
     qualities['hires'] = { size: _.hr.size, bitrate: _.hr.br || 2304000 };
   }
+  // 超清母带 / 沉浸环绕声（列表接口常缺，靠 music/detail 批量补全）
   if (_.jm && _.jm.size) {
-    qualities['master'] = { size: _.jm.size, bitrate: _.jm.br };
+    qualities['master'] = { size: _.jm.size, bitrate: _.jm.br || 4608000 };
   }
   if (_.je && _.je.size) {
-    qualities['atmos'] = { size: _.je.size, bitrate: _.je.br };
+    qualities['atmos'] = { size: _.je.size, bitrate: _.je.br || 1411000 };
   }
 
   if (Object.keys(qualities).length === 0) {
@@ -256,11 +288,21 @@ async function getMusicQualityInfo(id) {
     if (data.hr && data.hr.size) {
       qualities['hires'] = { size: sizeFormate(data.hr.size), bitrate: data.hr.br || 2304000 };
     }
+    // 超清母带
     if (data.jm && data.jm.size) {
       qualities['master'] = { size: sizeFormate(data.jm.size), bitrate: data.jm.br || 4608000 };
     }
+    // 高清臻音 / 沉浸环绕
     if (data.je && data.je.size) {
       qualities['atmos'] = { size: sizeFormate(data.je.size), bitrate: data.je.br || 1411000 };
+    }
+    // 部分接口用 sk(sky) 表示沉浸环绕
+    if (data.sk && data.sk.size && !qualities['atmos']) {
+      qualities['atmos'] = { size: sizeFormate(data.sk.size), bitrate: data.sk.br || 1411000 };
+    }
+    // 杜比全景声
+    if (data.db && data.db.size) {
+      qualities['dolby'] = { size: sizeFormate(data.db.size), bitrate: data.db.br || 1411000 };
     }
 
     return qualities;
@@ -273,16 +315,42 @@ async function getMusicQualityInfo(id) {
 async function getBatchMusicQualityInfo(idList) {
   if (!idList || idList.length === 0) return {};
 
-  const qualityResults = await Promise.all(
-    idList.map(id => getMusicQualityInfo(id).catch(() => ({})))
-  );
-
   const qualityInfoMap = {};
-  idList.forEach((id, index) => {
-    qualityInfoMap[id] = qualityResults[index] || {};
-  });
+  // Limit concurrency — artist hotSongs can be 50+, full parallel is flaky/slow
+  const chunkSize = 8;
+  for (let i = 0; i < idList.length; i += chunkSize) {
+    const slice = idList.slice(i, i + chunkSize);
+    const qualityResults = await Promise.all(
+      slice.map((id) => getMusicQualityInfo(id).catch(() => ({})))
+    );
+    slice.forEach((id, index) => {
+      qualityInfoMap[id] = qualityResults[index] || {};
+    });
+  }
 
   return qualityInfoMap;
+}
+
+/** Attach full quality map (incl. master/atmos) onto formatted songs. */
+async function withBatchQualities(songs) {
+  const list = Array.isArray(songs) ? songs : [];
+  if (!list.length) return [];
+  const idList = list.map((s) => s && s.id).filter(Boolean);
+  let qualityInfoMap = {};
+  try {
+    qualityInfoMap = await getBatchMusicQualityInfo(idList);
+  } catch (e) {
+    console.error("[网易云] 批量音质失败:", e && e.message);
+  }
+  return list.map((song) => {
+    const formatted = formatMusicItem(song);
+    const q = qualityInfoMap[song.id];
+    if (q && Object.keys(q).length > 0) {
+      // Prefer detail API sizes; keep privilege flags for missing tiers
+      formatted.qualities = Object.assign({}, formatted.qualities || {}, q);
+    }
+    return formatted;
+  });
 }
 
 async function getValidMusicItems(trackIds) {
@@ -786,9 +854,11 @@ async function getAlbumInfo(albumItem) {
       data: paeData,
     })
   ).data;
+  // Album/artist list payloads usually stop at hr(HR); jm/je need music/detail
+  const musicList = await withBatchQualities(res.songs || []);
   return {
     albumItem: { description: res.album.description },
-    musicList: (res.songs || []).map(formatMusicItem),
+    musicList,
   };
 }
 
@@ -818,9 +888,12 @@ async function getArtistWorks(artistItem, page, type) {
         data: paeData,
       })
     ).data;
+    const hotSongs = res.hotSongs || [];
+    // hotSongs file fields often only go to hr(HR); batch-fetch master/atmos
+    const dataList = await withBatchQualities(hotSongs);
     return {
       isEnd: true,
-      data: res.hotSongs.map(formatMusicItem),
+      data: dataList,
     };
   } else if (type === "album") {
     const res = (
@@ -1203,7 +1276,7 @@ async function getArtistInfo(artistItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.5",
+  version: "1.0.6",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
