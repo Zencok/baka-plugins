@@ -50,6 +50,27 @@ function formatFileSize(bytes) {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + 'GB';
 }
 
+/** Normalize Kugou duration fields to seconds for the host player/list UI. */
+function normalizeDurationSeconds(item) {
+  if (!item || typeof item !== "object") {
+    return undefined;
+  }
+  // Prefer explicit millisecond fields.
+  const msCandidates = [item.timelen, item.time_length, item.timelength];
+  for (const raw of msCandidates) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) {
+      // > 10000 ≈ longer than ~2.7h if seconds → treat as ms
+      return n > 10000 ? Math.floor(n / 1000) : Math.floor(n);
+    }
+  }
+  const d = Number(item.duration);
+  if (Number.isFinite(d) && d > 0) {
+    return d > 10000 ? Math.floor(d / 1000) : Math.floor(d);
+  }
+  return undefined;
+}
+
 
 function formatMusicItem(_, qualityInfo = {}) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i;
@@ -279,7 +300,7 @@ function formatArtistSongItem(_) {
       : (_.album_sizable_cover
         ? _.album_sizable_cover.replace("{size}", "400")
         : undefined),
-    duration: _.duration,
+    duration: normalizeDurationSeconds(_),
     "320hash": _.HQFileHash || _["320hash"],
     sqhash: _.SQFileHash || _.sqhash,
     origin_hash: _.origin_hash,
@@ -1096,6 +1117,7 @@ async function getAlbumInfo(albumItem, page = 1) {
         album_id: _.album_id,
         album_audio_id: _.album_audio_id,
         artwork: albumItem.artwork,
+        duration: normalizeDurationSeconds(_),
         "320hash": _.HQFileHash,
         sqhash: _.SQFileHash,
         origin_hash: _.id,
@@ -1435,7 +1457,7 @@ async function getSpecialMusicList(specialId, page) {
         artwork: song.trans_param?.union_cover
           ? song.trans_param.union_cover.replace("{size}", "400")
           : undefined,
-        duration: song.duration,
+        duration: normalizeDurationSeconds(song),
         "320hash": song["320hash"],
         sqhash: song.sqhash,
         origin_hash: song.origin_hash,
@@ -2002,9 +2024,49 @@ function getMusicDetailPageUrl(musicItem) {
   return `https://www.kugou.com/song/#hash=${hash}&album_id=${albumId}`;
 }
 
+/** 补全作者头像/简介（歌曲 Singers 常无 img） */
+async function getArtistInfo(artistItem) {
+  if (!artistItem?.id) {
+    return null;
+  }
+  try {
+    const res = (
+      await axios_1.default.get("http://mobilecdn.kugou.com/api/v3/singer/info", {
+        headers,
+        params: {
+          version: 9108,
+          singerid: artistItem.id,
+          area_code: 1,
+        },
+        timeout: 8000,
+      })
+    ).data;
+    if (!res || res.status !== 1 || !res.data) {
+      return null;
+    }
+    const d = res.data;
+    const avatar = d.imgurl
+      ? String(d.imgurl).replace("{size}", "400")
+      : d.sizable_avatar
+        ? String(d.sizable_avatar).replace("{size}", "400")
+        : "";
+    return {
+      id: String(artistItem.id),
+      name: d.singername || artistItem.name || "",
+      avatar: avatar || "",
+      description: d.profile || d.intro || "",
+      worksNum: d.songcount || d.song_count || 0,
+      platform: "酷狗音乐",
+    };
+  } catch (e) {
+    console.error("[酷狗] 获取歌手详情失败:", e?.message || e);
+    return null;
+  }
+}
+
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.0.4",
+  version: "1.0.6",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
@@ -2039,6 +2101,7 @@ module.exports = {
   getTopListDetail,
   getAlbumInfo,
   getArtistWorks,
+  getArtistInfo,
   importMusicSheet,
   getMusicSheetInfo,
   getMusicComments,

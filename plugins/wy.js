@@ -1116,10 +1116,68 @@ function getMusicDetailPageUrl(musicItem) {
   return songId ? `https://music.163.com/#/song?id=${songId}` : "";
 }
 
+/** 补全作者头像/简介（歌曲列表里 ar 常无 pic） */
+async function getArtistInfo(artistItem) {
+  if (!artistItem?.id) {
+    return null;
+  }
+  try {
+    const data = { csrf_token: "" };
+    const pae = getParamsAndEnc(JSON.stringify(data));
+    const paeData = qs.stringify(pae);
+    const headers = {
+      authority: "music.163.com",
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36",
+      "content-type": "application/x-www-form-urlencoded",
+      accept: "*/*",
+      origin: "https://music.163.com",
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-dest": "empty",
+      referer: "https://music.163.com/search/",
+      "accept-language": "zh-CN,zh;q=0.9",
+    };
+    const res = (
+      await axios_1.default({
+        method: "post",
+        url: `https://music.163.com/weapi/v1/artist/${artistItem.id}?csrf_token=`,
+        headers,
+        data: paeData,
+      })
+    ).data;
+    const artist = res?.artist;
+    if (!artist) {
+      return null;
+    }
+    let avatar = artist.img1v1Url || artist.picUrl || "";
+    // 网易默认占位图视为无头像
+    if (
+      typeof avatar === "string" &&
+      (avatar.includes("5639395138885805") || avatar.includes("default"))
+    ) {
+      avatar = artist.picUrl && !String(artist.picUrl).includes("5639395138885805")
+        ? artist.picUrl
+        : "";
+    }
+    return {
+      id: String(artist.id ?? artistItem.id),
+      name: artist.name || artistItem.name || "",
+      avatar: avatar || "",
+      description: artist.briefDesc || artist.description || "",
+      worksNum: artist.musicSize ?? artist.albumSize,
+      platform: "网易云音乐",
+    };
+  } catch (e) {
+    console.error("[网易云] 获取歌手详情失败:", e?.message || e);
+    return null;
+  }
+}
+
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.3",
+  version: "1.0.4",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
@@ -1156,6 +1214,7 @@ module.exports = {
   getLyric,
   getAlbumInfo,
   getArtistWorks,
+  getArtistInfo,
   importMusicSheet,
   getMusicSheetInfo,
   getRecommendSheetTags,
