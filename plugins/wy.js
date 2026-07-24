@@ -984,7 +984,7 @@ async function importMusicSheet(urlLike) {
 }
 
 async function getMusicSheetInfo(sheet, page) {
-  const id = sheet?.id;
+  const id = sheet?.id != null && sheet.id !== "" ? String(sheet.id) : "";
   if (!id) {
     return { isEnd: true, musicList: [] };
   }
@@ -994,7 +994,7 @@ async function getMusicSheetInfo(sheet, page) {
     (Array.isArray(sheet._trackIds) && sheet._trackIds.length
       ? sheet._trackIds
       : null) ||
-    sheetTrackIdsCache.get(String(id)) ||
+    sheetTrackIdsCache.get(id) ||
     null;
 
   if (!trackIds) {
@@ -1049,7 +1049,7 @@ async function getMusicSheetInfo(sheet, page) {
   return {
     isEnd,
     musicList: res,
-    // 必须放在 sheetItem 内，宿主才会合并并（在部分路径）回传
+    // 必须放在 sheetItem 内，宿主才会合并并写回 ref 供下一页使用
     ...(pageNum <= 1 ? { sheetItem: { id, _trackIds: trackIds } } : {}),
   };
 }
@@ -1114,7 +1114,8 @@ async function getRecommendSheetsByTag(tag, page) {
     })
   ).data;
   const playLists = res.playlists.map((_) => ({
-    id: _.id,
+    // 必须 string：URL params 是字符串，number 会导致宿主 isSameMedia 失败 → 分页整表重载抽搐
+    id: String(_.id),
     artist: _.creator.nickname,
     title: _.name,
     artwork: _.coverImgUrl,
@@ -1342,7 +1343,7 @@ async function getArtistInfo(artistItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.7",
+  version: "1.0.8",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
