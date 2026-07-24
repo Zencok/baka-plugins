@@ -517,7 +517,7 @@ async function searchMusicSheet(query, page) {
     isEnd: res.result.playlistCount <= page * pageSize,
     data: res.result.playlists.map((_) => ({
       title: _.name,
-      id: _.id,
+      id: String(_.id),
       coverImg: _.coverImgUrl,
       artist: _.creator?.nickname,
       playCount: _.playCount,
