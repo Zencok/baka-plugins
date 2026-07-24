@@ -353,7 +353,16 @@ async function withBatchQualities(songs) {
   });
 }
 
-async function getValidMusicItems(trackIds) {
+/**
+ * @param {Array<string|number>} trackIds
+ * @param {{ withQuality?: boolean }} [options]
+ *   withQuality=false 时跳过逐首 music/detail 音质补全（歌单分页用）。
+ *   40 首 × 音质接口极易超过宿主 30s RPC 超时，导致 load-more 失败后无限重试页面抽搐。
+ */
+async function getValidMusicItems(trackIds, options = {}) {
+  const withQuality = options.withQuality !== false;
+  if (!trackIds || !trackIds.length) return [];
+
   const headers = {
     Referer: "https://y.music.163.com/",
     Origin: "https://y.music.163.com/",
@@ -395,19 +404,36 @@ async function getValidMusicItems(trackIds) {
     });
 
     const validMusicItems = songsWithPrivilege.map(formatMusicItem);
-    const idList = validMusicItems.map(item => item.id);
-    const qualityInfoMap = await getBatchMusicQualityInfo(idList);
 
-    validMusicItems.forEach(item => {
-      const qualityInfo = qualityInfoMap[item.id];
-      if (qualityInfo) item.qualities = qualityInfo;
-    });
+    // privilege 已覆盖常见音质档；列表分页不必再打 music/detail
+    if (withQuality) {
+      const idList = validMusicItems.map(item => item.id);
+      const qualityInfoMap = await getBatchMusicQualityInfo(idList);
+      validMusicItems.forEach(item => {
+        const qualityInfo = qualityInfoMap[item.id];
+        if (qualityInfo) item.qualities = qualityInfo;
+      });
+    }
 
     return validMusicItems;
   } catch (e) {
     console.error("[网易云] 获取歌单歌曲失败:", e);
     return [];
   }
+}
+
+/** 模块级缓存：宿主不会把顶层 _trackIds 回传给下一页，必须本地记住 trackIds */
+const sheetTrackIdsCache = new Map();
+const SHEET_TRACK_CACHE_MAX = 40;
+
+function rememberSheetTrackIds(sheetId, trackIds) {
+  const key = String(sheetId);
+  if (!key || !Array.isArray(trackIds) || !trackIds.length) return;
+  if (sheetTrackIdsCache.size >= SHEET_TRACK_CACHE_MAX && !sheetTrackIdsCache.has(key)) {
+    const oldest = sheetTrackIdsCache.keys().next().value;
+    sheetTrackIdsCache.delete(oldest);
+  }
+  sheetTrackIdsCache.set(key, trackIds);
 }
 
 async function searchBase(query, page, type) {
@@ -958,33 +984,73 @@ async function importMusicSheet(urlLike) {
 }
 
 async function getMusicSheetInfo(sheet, page) {
-  let trackIds = sheet._trackIds;
-  if (!trackIds) {
-    const id = sheet.id;
-    const headers = {
-      Referer: "https://y.music.163.com/",
-      Origin: "https://y.music.163.com/",
-      authority: "music.163.com",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36",
-    };
-    const sheetDetail = (
-      await axios_1.default.get(
-        `https://music.163.com/api/v3/playlist/detail?id=${id}&n=5000`,
-        {
-          headers,
-        }
-      )
-    ).data;
-    trackIds = sheetDetail.playlist.trackIds.map((_) => _.id);
+  const id = sheet?.id;
+  if (!id) {
+    return { isEnd: true, musicList: [] };
   }
+
+  // 优先 sheet 回传 → 模块缓存（宿主只合并 result.sheetItem，顶层 _trackIds 无效）
+  let trackIds =
+    (Array.isArray(sheet._trackIds) && sheet._trackIds.length
+      ? sheet._trackIds
+      : null) ||
+    sheetTrackIdsCache.get(String(id)) ||
+    null;
+
+  if (!trackIds) {
+    try {
+      const headers = {
+        Referer: "https://y.music.163.com/",
+        Origin: "https://y.music.163.com/",
+        authority: "music.163.com",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36",
+      };
+      const sheetDetail = (
+        await axios_1.default.get(
+          `https://music.163.com/api/v3/playlist/detail?id=${id}&n=5000`,
+          {
+            headers,
+          }
+        )
+      ).data;
+      trackIds = (sheetDetail?.playlist?.trackIds || [])
+        .map((_) => _.id)
+        .filter((tid) => tid != null);
+    } catch (e) {
+      console.error("[网易云] 获取歌单详情失败:", e?.message || e);
+      return { isEnd: true, musicList: [] };
+    }
+  }
+
+  if (!trackIds.length) {
+    return { isEnd: true, musicList: [] };
+  }
+
+  rememberSheetTrackIds(id, trackIds);
+
   const pageSize = 40;
-  const currentPageIds = trackIds.slice((page - 1) * pageSize, page * pageSize);
-  const res = await getValidMusicItems(currentPageIds);
+  const pageNum = Math.max(1, Number(page) || 1);
+  const start = (pageNum - 1) * pageSize;
+  const currentPageIds = trackIds.slice(start, start + pageSize);
+  const isEnd = start + pageSize >= trackIds.length;
+
+  if (!currentPageIds.length) {
+    return {
+      isEnd: true,
+      musicList: [],
+      ...(pageNum <= 1 ? { sheetItem: { id, _trackIds: trackIds } } : {}),
+    };
+  }
+
+  // 歌单分页不做逐首音质补全：privilege 足够展示，避免 RPC 超时 → 无限 load-more
+  const res = await getValidMusicItems(currentPageIds, { withQuality: false });
+
   return {
-    isEnd: trackIds.length <= page * pageSize,
+    isEnd,
     musicList: res,
-    ...(page <= 1 ? { _trackIds: trackIds } : {}),
+    // 必须放在 sheetItem 内，宿主才会合并并（在部分路径）回传
+    ...(pageNum <= 1 ? { sheetItem: { id, _trackIds: trackIds } } : {}),
   };
 }
 
@@ -1276,7 +1342,7 @@ async function getArtistInfo(artistItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.6",
+  version: "1.0.7",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
