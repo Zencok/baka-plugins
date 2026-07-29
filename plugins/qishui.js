@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.1.0
+ * @version 3.1.1
  * @description 汽水音乐插件：搜索等走 PC API；播放取流走 Android track_v2（可拿 lossless）。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -198,6 +198,8 @@ const QISHUI_QUALITY_FALLBACK_BITRATE = {
 };
 
 const QISHUI_QUALITY_PRIORITY = ["medium", "higher", "highest", "lossless", "hi_res", "spatial"];
+
+const QISHUI_NO_LYRIC = "[00:00.000]暂无歌词，请欣赏";
 
 const QISHUI_TOP_LIST_ITEMS = [{
   "id": "7036274230471712007",
@@ -1314,25 +1316,32 @@ async function getLegacyMusicDetailInfo(trackId) {
     return {};
   }
 
+  const rawLrc = item.lyric_info?.lyric_text;
+
   return {
     "artwork": item.cover_url,
-    "rawLrc": item.lyric_info?.lyric_text || ""
+    "rawLrc": typeof rawLrc === "string" ? rawLrc : ""
   };
 }
 
 async function getMusicDetailInfo(musicItem) {
   const trackId = musicItem?.id || musicItem?.item_id;
   if (!trackId) {
-    return {};
+    return {
+      "rawLrc": QISHUI_NO_LYRIC
+    };
   }
+
+  let artwork = musicItem?.artwork || "";
 
   try {
     const detail = await fetchTrackDetail(trackId);
     const lyric = detail?.lyric || {};
     const rawLrc = parseQishuiKrcToQrc(lyric.content);
     const trackInfo = parseTrackItem(detail?.track);
+    artwork = trackInfo?.artwork || artwork;
     const result = {
-      "artwork": trackInfo?.artwork || musicItem.artwork || ""
+      "artwork": artwork
     };
     const translation = extractTranslationLyric(lyric);
     const romanization = extractRomanizationLyric(lyric);
@@ -1358,7 +1367,23 @@ async function getMusicDetailInfo(musicItem) {
     console.error(`[汽水音乐] track_v2 获取歌词错误: ${error.message}`);
   }
 
-  return getLegacyMusicDetailInfo(trackId);
+  try {
+    const legacyResult = await getLegacyMusicDetailInfo(trackId);
+    if (typeof legacyResult.rawLrc === "string" && legacyResult.rawLrc.trim()) {
+      return legacyResult;
+    }
+    return {
+      ...legacyResult,
+      "artwork": legacyResult.artwork || artwork,
+      "rawLrc": QISHUI_NO_LYRIC
+    };
+  } catch (error) {
+    console.error(`[汽水音乐] legacy 获取歌词错误: ${error.message}`);
+    return {
+      "artwork": artwork,
+      "rawLrc": QISHUI_NO_LYRIC
+    };
+  }
 }
 
 async function getAlbumInfo(album) {
@@ -1807,7 +1832,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
