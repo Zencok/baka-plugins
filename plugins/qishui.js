@@ -551,6 +551,15 @@ async function fetchTrackPlaybackData(trackId) {
   };
 }
 
+async function qishuiAndroidGet(path, params = {}) {
+  const response = await axios.default.get(`${QISHUI_ANDROID_API_BASE}${path}`, {
+    "params": getAndroidApiParams(params),
+    "headers": QISHUI_ANDROID_API_HEADERS
+  });
+
+  return response.data;
+}
+
 async function qishuiPcGet(path, params = {}) {
   const response = await axios.default.get(`${QISHUI_PC_API_BASE}${path}`, {
     "params": getPcApiParams(params),
@@ -1239,14 +1248,11 @@ async function searchMusic(keyword, page) {
 async function searchQishui(keyword, page, type = "music") {
   const searchType = QISHUI_SEARCH_TYPE_MAP[type] || "track";
   const offset = (page - 1) * PAGE_SIZE;
-  const apiData = await qishuiPcGet(`/search/${searchType}`, {
+  const apiData = await qishuiAndroidGet(`/search/${searchType}`, {
     "q": keyword,
     "cursor": String(offset),
-    "search_id": createSearchId(),
-    "search_method": "input",
-    "debug_params": "",
-    "from_search_id": "",
-    "search_scene": ""
+    "count": "20",
+    "aid": "386088"
   });
 
   const groups = Array.isArray(apiData.result_groups) ? apiData.result_groups : [];
@@ -2215,7 +2221,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": QISHUI_PLATFORM_NAME,
   "author": "JanYun & Toskysun",
-  "version": "3.1.2",
+  "version": "3.1.3",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
