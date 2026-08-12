@@ -1,8 +1,8 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.1.2
- * @description 汽水音乐插件：搜索等走 PC API；播放取流走 Android track_v2（可拿 lossless）；兼容汽水视频音乐。sessionid 支持用户变量自定义
+ * @version 3.1.4
+ * @description 汽水音乐插件：搜索/歌词/取流走 Android API（lossless 音质与逐字歌词）；专辑、歌手、歌单、榜单、评论走 PC API；兼容汽水视频音乐。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
  * @srcLink https://music.cwo.cc.cd/plugins/qishui.js
@@ -33,8 +33,6 @@ const QISHUI_API_HEADERS = {
 const QISHUI_PC_API_BASE = "https://api.qishui.com/luna/pc";
 
 const QISHUI_ANDROID_API_BASE = "https://api.qishui.com/luna";
-
-const QISHUI_TRACK_DETAIL_DEVICE_ID = "1000008787889255961";
 
 /** 默认 sessionid；过期后可在插件用户变量 sessionid 中覆盖 */
 const QISHUI_ANDROID_DEFAULT_SESSION_ID = "80b79adf758dd589f31c76d54e866828";
@@ -1014,10 +1012,38 @@ function extractLyricText(value) {
   return "";
 }
 
+/**
+ * Android track_v2 的翻译挂在 lyric.lang_translations 下，键为语言码（如 ZH-HANS-CN）。
+ * 跳过与原词同语言的条目，避免把歌词自身当成翻译。
+ */
+function pickLangTranslation(lyric, matcher) {
+  const langTranslations = lyric?.lang_translations;
+  if (!langTranslations || typeof langTranslations !== "object") {
+    return "";
+  }
+
+  const sourceLang = String(lyric?.lang || "").toUpperCase();
+
+  for (const [key, value] of Object.entries(langTranslations)) {
+    const lang = String(key).toUpperCase();
+    if (lang === sourceLang || !matcher(lang)) {
+      continue;
+    }
+
+    const text = extractLyricText(value);
+    if (text) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
 function extractTranslationLyric(lyric) {
   return extractLyricText(lyric?.translations?.cn)
     || extractLyricText(lyric?.translations?.zh)
     || extractLyricText(lyric?.translation)
+    || pickLangTranslation(lyric, lang => lang.startsWith("ZH"))
     || "";
 }
 
@@ -1026,6 +1052,7 @@ function extractRomanizationLyric(lyric) {
     || extractLyricText(lyric?.romaji)
     || extractLyricText(lyric?.translations?.romanization)
     || extractLyricText(lyric?.translations?.romaji)
+    || pickLangTranslation(lyric, lang => /ROMAJI|ROMAN|LATN|PINYIN|(^|-)RM(-|$)/.test(lang))
     || "";
 }
 
@@ -1661,16 +1688,9 @@ async function getMusicInfo(musicBase) {
   }
 }
 
+/** PC track_v2 已下线（返回空响应），歌词统一走 Android track_v2 */
 async function fetchTrackDetail(trackId) {
-  return qishuiPcPost("/track_v2", {
-    "track_id": String(trackId),
-    "media_type": "track",
-    "queue_type": "daily_mix",
-    "scene_name": "track_reco"
-  }, {
-    "device_id": QISHUI_TRACK_DETAIL_DEVICE_ID,
-    "fp": QISHUI_TRACK_DETAIL_DEVICE_ID
-  });
+  return fetchAndroidTrackV2(trackId);
 }
 
 async function getLegacyMusicDetailInfo(trackId) {
@@ -2221,7 +2241,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": QISHUI_PLATFORM_NAME,
   "author": "JanYun & Toskysun",
-  "version": "3.1.3",
+  "version": "3.1.4",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
