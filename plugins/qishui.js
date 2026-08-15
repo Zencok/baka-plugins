@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.1.4
+ * @version 3.1.5
  * @description 汽水音乐插件：搜索/歌词/取流走 Android API（lossless 音质与逐字歌词）；专辑、歌手、歌单、榜单、评论走 PC API；兼容汽水视频音乐。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -200,7 +200,6 @@ const QISHUI_QUALITY_FALLBACK_BITRATE = {
 const QISHUI_QUALITY_PRIORITY = ["medium", "higher", "highest", "lossless", "hi_res", "spatial"];
 
 const VIDEO_QUALITY_PICK_ORDER = ["320k", "192k", "128k", "flac", "hires", "atmos", "atmos_plus"];
-const VIDEO_DETAIL_CONCURRENCY = 4;
 
 const QISHUI_NO_LYRIC = "[00:00.000]暂无歌词，请欣赏";
 
@@ -319,23 +318,30 @@ function buildImageUrlFromCover(urlCover, size = "960:960") {
     return buildDouyinImageUrl(urlCover.uri, urlCover.template_prefix, size);
   }
 
-  if (Array.isArray(urlCover.urls) && urlCover.urls.length > 0 && urlCover.uri) {
-    return `${urlCover.urls[0]}${urlCover.uri}`;
-  }
-
   if (Array.isArray(urlCover.urls) && urlCover.urls.length > 0) {
-    return urlCover.urls[0];
+    const firstUrl = urlCover.urls[0];
+    if (!urlCover.uri || String(firstUrl).includes(urlCover.uri)) {
+      return firstUrl;
+    }
+    return `${firstUrl}${urlCover.uri}`;
   }
 
   return "";
 }
 
 function buildSingerList(artists = []) {
-  return artists.map(artist => ({
-    id: artist.id,
-    name: artist.name,
-    avatar: artist.avatar || buildImageUrlFromCover(artist.url_avatar, "100:100") || "",
-  }));
+  return artists.map(artist => {
+    const artistInfo = artist?.user_info || artist?.author_info || artist || {};
+    return {
+      id: artistInfo.id || artist?.id || "",
+      name: artistInfo.name || artistInfo.nickname || artist?.name || "",
+      avatar: artistInfo.avatar
+        || buildImageUrlFromCover(artistInfo.url_avatar, "100:100")
+        || buildImageUrlFromCover(artistInfo.medium_avatar_url, "100:100")
+        || buildImageUrlFromCover(artistInfo.thumb_avatar_url, "100:100")
+        || "",
+    };
+  }).filter(artist => artist.id || artist.name);
 }
 
 function createSearchId() {
@@ -750,21 +756,6 @@ function withQishuiPlatform(...items) {
   });
 }
 
-async function mapLimit(items = [], limit, iterator) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(limit, 1), items.length);
-  const workers = Array.from({ length: workerCount }, async () => {
-    while (nextIndex < items.length) {
-      const currentIndex = nextIndex++;
-      results[currentIndex] = await iterator(items[currentIndex], currentIndex);
-    }
-  });
-
-  await Promise.all(workers);
-  return results;
-}
-
 function createQualitiesFromBitRates(bitRates = []) {
   const qualities = {};
 
@@ -1157,7 +1148,6 @@ function parseTrackItem(track) {
 
   const vipFee = getVipFee(track?.["label_info"]?.["only_vip_playable"]);
   const album = track.album || {};
-  const primaryArtist = Array.isArray(track.artists) && track.artists.length > 0 ? track.artists[0] : {};
   const isVideo = isVideoTrack(track, rawTrack);
   const videoId = track.video_id || track.id || track.vid;
   const videoQuality = isVideo ? getVideoResolution(track) : undefined;
@@ -1174,6 +1164,7 @@ function parseTrackItem(track) {
   const qualities = isVideo ? videoQualities : audioQualities;
 
   const singerList = buildSingerList(track.artists || []);
+  const primaryArtist = singerList[0] || {};
 
   return {
     "id": track.id || track.video_id,
@@ -1460,27 +1451,10 @@ function mergeVideoMusicInfo(musicItem, videoInfo) {
   });
 }
 
-async function enrichVideoMusicItem(musicItem) {
-  if (!musicItem?.is_video) {
-    return musicItem;
-  }
-
-  const picked = pickVideoQualityEntry(musicItem.qualities);
-  if (isUsableVideoQualityEntry(picked?.entry)) {
-    return withQishuiPlatform(musicItem);
-  }
-
-  try {
-    const id = musicItem.videoId || musicItem.vid || musicItem.id;
-    const videoInfo = await getVideoMusicInfo(id);
-    return mergeVideoMusicInfo(musicItem, videoInfo);
-  } catch (error) {
-    return withQishuiPlatform(musicItem);
-  }
-}
-
-async function enrichVideoMusicList(musicList = []) {
-  return mapLimit(musicList, VIDEO_DETAIL_CONCURRENCY, enrichVideoMusicItem);
+function prepareMusicList(musicList = []) {
+  return musicList.map(musicItem => musicItem?.is_video
+    ? withQishuiPlatform(musicItem)
+    : musicItem);
 }
 
 async function getVideoPlaybackSource(musicItem, quality = "192k") {
@@ -2066,7 +2040,7 @@ async function importMusicPlaylist(playlistUrl) {
   const musicList = playlistDetail.media_resources
     .map(parsePlaylistMediaResource)
     .filter(Boolean);
-  return enrichVideoMusicList(musicList);
+  return prepareMusicList(musicList);
 }
 
 async function importMusicItem(urlLike) {
@@ -2103,7 +2077,7 @@ async function getMusicPlaylistInfo(playlist) {
   return {
     "isEnd": true,
     "sheetItem": parsePlaylistItem(playlistDetail.playlistInfo) || playlist,
-    "musicList": await enrichVideoMusicList(musicList)
+    "musicList": prepareMusicList(musicList)
   };
 }
 
@@ -2204,7 +2178,7 @@ async function getTopListDetail(topListItem, page = 1) {
 
   return { ...topListItem, 
     "title": chart.title || topListItem.title,
-    "musicList": await enrichVideoMusicList(musicList)
+    "musicList": prepareMusicList(musicList)
    };
 }
 
@@ -2241,7 +2215,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": QISHUI_PLATFORM_NAME,
   "author": "JanYun & Toskysun",
-  "version": "3.1.4",
+  "version": "3.1.5",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
