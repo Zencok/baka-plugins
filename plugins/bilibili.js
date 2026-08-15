@@ -642,11 +642,12 @@ async function getArtistWorks(artistItem, page, type) {
 
 async function getFavoriteList(id) {
     const result = [];
+    let favoriteInfo = null;
     const pageSize = 20;
     let page = 1;
     while (true) {
         try {
-            const { data: { data: { medias, has_more }, }, } = await axios_1.default.get("https://api.bilibili.com/x/v3/fav/resource/list", {
+            const { data: { data, }, } = await axios_1.default.get("https://api.bilibili.com/x/v3/fav/resource/list", {
                 params: {
                     media_id: id,
                     platform: "web",
@@ -654,8 +655,9 @@ async function getFavoriteList(id) {
                     pn: page,
                 },
             });
-            result.push(...medias);
-            if (!has_more) {
+            favoriteInfo = favoriteInfo || data.info || null;
+            result.push(...(data.medias || []));
+            if (!data.has_more) {
                 break;
             }
             page += 1;
@@ -665,7 +667,10 @@ async function getFavoriteList(id) {
             break;
         }
     }
-    return result;
+    return {
+        info: favoriteInfo,
+        medias: result,
+    };
 }
 
 async function importMusicSheet(urlLike) {
@@ -686,8 +691,8 @@ async function importMusicSheet(urlLike) {
     if (!id) {
         return;
     }
-    const musicSheet = await getFavoriteList(id);
-    return musicSheet.map((_) => {
+    const favoriteList = await getFavoriteList(id);
+    const musicList = favoriteList.medias.map((_) => {
         var _a, _b;
         return ({
             id: _.id,
@@ -705,6 +710,17 @@ async function importMusicSheet(urlLike) {
             },
         });
     });
+    const info = favoriteList.info || {};
+    return {
+        id: String(info.id || info.fid || id),
+        title: info.title || "",
+        artwork: info.cover,
+        artist: info.upper?.name || "",
+        description: info.intro || "",
+        worksNum: Number(info.media_count || info.cnt) || musicList.length,
+        createAt: Number(info.ctime) > 0 ? Number(info.ctime) * 1000 : undefined,
+        musicList,
+    };
 }
 
 async function getTopLists() {
@@ -889,7 +905,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
     platform: "bilibili",
     author: "Toskysun",
-    version: "1.0.2",
+    version: "1.0.3",
     appVersion: ">=0.0",
     srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
     cacheControl: "no-cache",

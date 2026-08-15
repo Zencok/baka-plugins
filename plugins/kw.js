@@ -1233,6 +1233,7 @@ async function importMusicSheet(urlLike) {
   let page = 1;
   let totalPage = 30;
   let musicList = [];
+  let sheetInfo = null;
 
   // 如果用户提供了完整的 pl3_getlist URL，直接使用（优先）
   let useNewApi = isNewApiUrl;
@@ -1269,6 +1270,9 @@ async function importMusicSheet(urlLike) {
 
       // 新接口从 data.info 中取数据
       const responseData = useNewApi ? data.info : data;
+      if (!sheetInfo) {
+        sheetInfo = responseData.playlistinfo || responseData.playlistInfo || responseData;
+      }
 
       totalPage = Math.ceil(responseData.total / 80);
       if (isNaN(totalPage)) {
@@ -1323,7 +1327,16 @@ async function importMusicSheet(urlLike) {
     ++page;
   }
 
-  return musicList;
+  return {
+    id: String(sheetInfo?.id || sheetInfo?.pid || id),
+    title: he.decode(sheetInfo?.name || sheetInfo?.title || ""),
+    artwork: sheetInfo?.pic || sheetInfo?.image || sheetInfo?.cover || sheetInfo?.pic300,
+    artist: sheetInfo?.uname || sheetInfo?.username || sheetInfo?.userName || sheetInfo?.nickname || "",
+    description: he.decode(sheetInfo?.info || sheetInfo?.intro || sheetInfo?.description || ""),
+    worksNum: Number(sheetInfo?.total) || musicList.length,
+    playCount: Number(sheetInfo?.playcnt || sheetInfo?.playCount) || 0,
+    musicList,
+  };
 }
 
 function getMusicSheetInfo(sheet, page) {
@@ -1615,7 +1628,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.0.7",
+  version: "1.0.8",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",

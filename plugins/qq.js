@@ -902,17 +902,33 @@ async function importMusicSheet(urlLike) {
     result.replace(/callback\(|MusicJsonCallback\(|jsonCallback\(|\)$/g, "")
   );
 
-  const songList = res.cdlist[0].songlist;
+  const sheetData = res.cdlist?.[0];
+  if (!sheetData) {
+    return;
+  }
+  const songList = sheetData.songlist || [];
   const qualityInfo = await getBatchQualities(songList);
+  const musicList = songList.map(song => formatMusicItem(song, qualityInfo));
 
-  return songList.map(song => formatMusicItem(song, qualityInfo));
+  return {
+    id: String(sheetData.disstid || id),
+    title: he.decode(sheetData.dissname || sheetData.dirname || ""),
+    artwork: sheetData.logo || sheetData.logo1,
+    artist: sheetData.nickname || sheetData.nick || "",
+    description: he.decode(sheetData.desc || sheetData.desc2 || ""),
+    worksNum: Number(sheetData.songnum) || musicList.length,
+    playCount: Number(sheetData.visitnum) || 0,
+    createAt: Number(sheetData.ctime) > 0 ? Number(sheetData.ctime) * 1000 : undefined,
+    musicList,
+  };
 }
 
 async function getMusicSheetInfo(sheet, page) {
-  const data = await importMusicSheet(sheet.id);
+  const importedSheet = await importMusicSheet(sheet.id);
   return {
     isEnd: true,
-    musicList: data,
+    sheetItem: importedSheet || sheet,
+    musicList: importedSheet?.musicList || [],
   };
 }
 
@@ -1136,7 +1152,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.7",
+  version: "1.0.8",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

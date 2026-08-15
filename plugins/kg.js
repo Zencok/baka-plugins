@@ -1354,7 +1354,10 @@ async function getMusicSheetInfo(sheet, page) {
       return await getSpecialMusicList(sheetId, page);
     }
     
-    const musicList = await importMusicSheet(sheetId);
+    const importedSheet = await importMusicSheet(sheetId);
+    const musicList = Array.isArray(importedSheet)
+      ? importedSheet
+      : importedSheet?.musicList || [];
     
     if (!musicList || musicList.length === 0) {
       console.log('[酷狗] 歌单为空，尝试解析其他格式');
@@ -1374,6 +1377,9 @@ async function getMusicSheetInfo(sheet, page) {
     
     return {
       isEnd: !musicList || musicList.length <= endIndex,
+      ...(!Array.isArray(importedSheet) && importedSheet
+        ? { sheetItem: importedSheet }
+        : {}),
       musicList: pagedList,
     };
   } catch (error) {
@@ -1480,6 +1486,20 @@ async function getSpecialMusicList(specialId, page) {
   }
 }
 
+function buildImportedKugouSheet(id, info, musicList) {
+  const sheetInfo = info || {};
+  return {
+    id: String(sheetInfo.listid || sheetInfo.id || sheetInfo.global_collection_id || id),
+    title: sheetInfo.name || sheetInfo.title || sheetInfo.listname || "",
+    artwork: sheetInfo.pic || sheetInfo.image || sheetInfo.img || sheetInfo.cover,
+    artist: sheetInfo.nickname || sheetInfo.username || sheetInfo.userName || "",
+    description: sheetInfo.intro || sheetInfo.description || "",
+    worksNum: Number(sheetInfo.count || sheetInfo.total) || musicList.length,
+    playCount: Number(sheetInfo.play_count || sheetInfo.playCount) || 0,
+    musicList,
+  };
+}
+
 async function importMusicSheet(urlLike) {
   var _a;
   let id =
@@ -1487,6 +1507,7 @@ async function importMusicSheet(urlLike) {
       ? void 0
       : _a[1];
   let musicList = [];
+  let sheetInfo = null;
   
   if (!id) {
     console.error('[酷狗] 无法解析酷狗码，请输入纯数字酷狗码');
@@ -1512,6 +1533,7 @@ async function importMusicSheet(urlLike) {
     
     let data = res.data.data;
     let info = data.info;
+    sheetInfo = info;
     
     if (!info) {
       console.error('[酷狗] 歌单信息为空');
@@ -1522,7 +1544,8 @@ async function importMusicSheet(urlLike) {
     
     if (info.global_collection_id) {
       console.log(`[酷狗] 检测到global_collection_id: ${info.global_collection_id}，使用特殊接口获取歌单`);
-      return await getUserListDetail2(info.global_collection_id);
+      musicList = await getUserListDetail2(info.global_collection_id);
+      return buildImportedKugouSheet(id, info, musicList);
     }
     
     if (res.data.data.list && res.data.data.list.length > 0) {
@@ -1591,7 +1614,7 @@ async function importMusicSheet(urlLike) {
         });
         
         console.log(`[酷狗] 歌单导入成功（从list字段），最终歌曲数量: ${musicList.length}`);
-        return musicList;
+        return buildImportedKugouSheet(id, info, musicList);
       }
     }
     
@@ -1710,7 +1733,7 @@ async function importMusicSheet(urlLike) {
     console.error(`[酷狗] 导入歌单异常: ${error.message}`);
   }
 
-  return musicList;
+  return buildImportedKugouSheet(id, sheetInfo, musicList);
 }
 
 
@@ -2066,7 +2089,7 @@ async function getArtistInfo(artistItem) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.0.6",
+  version: "1.0.7",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

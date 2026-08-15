@@ -2040,7 +2040,17 @@ async function importMusicPlaylist(playlistUrl) {
   const musicList = playlistDetail.media_resources
     .map(parsePlaylistMediaResource)
     .filter(Boolean);
-  return prepareMusicList(musicList);
+  const preparedMusicList = prepareMusicList(musicList);
+  const sheetItem = parsePlaylistItem(playlistDetail.playlistInfo) || {
+    "id": String(playlistId),
+    "title": ""
+  };
+
+  return Object.assign({}, sheetItem, {
+    "id": String(sheetItem.id || playlistId),
+    "worksNum": sheetItem.worksNum || preparedMusicList.length,
+    "musicList": preparedMusicList
+  });
 }
 
 async function importMusicItem(urlLike) {
@@ -2215,7 +2225,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": QISHUI_PLATFORM_NAME,
   "author": "JanYun & Toskysun",
-  "version": "3.1.5",
+  "version": "3.1.6",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",

@@ -937,7 +937,7 @@ async function getArtistWorks(artistItem, page, type) {
   }
 }
 
-async function getSheetMusicById(id) {
+async function getSheetMusicById(id, withSheetInfo = false) {
   const headers = {
     Referer: "https://y.music.163.com/",
     Origin: "https://y.music.163.com/",
@@ -953,7 +953,8 @@ async function getSheetMusicById(id) {
       }
     )
   ).data;
-  const trackIds = sheetDetail.playlist.trackIds.map((_) => _.id);
+  const playlist = sheetDetail.playlist;
+  const trackIds = (playlist?.trackIds || []).map((_) => _.id);
   let result = [];
   let idx = 0;
   while (idx * 200 < trackIds.length) {
@@ -963,7 +964,21 @@ async function getSheetMusicById(id) {
     result = result.concat(res);
     ++idx;
   }
-  return result;
+  if (!withSheetInfo) {
+    return result;
+  }
+
+  return {
+    id: String(playlist?.id || id),
+    title: playlist?.name || "",
+    artwork: playlist?.coverImgUrl,
+    artist: playlist?.creator?.nickname || "",
+    description: playlist?.description || "",
+    worksNum: Number(playlist?.trackCount) || result.length,
+    playCount: Number(playlist?.playCount) || 0,
+    createAt: Number(playlist?.createTime) || undefined,
+    musicList: result,
+  };
 }
 
 async function importMusicSheet(urlLike) {
@@ -980,7 +995,7 @@ async function importMusicSheet(urlLike) {
     return null;
   }
 
-  return getSheetMusicById(id);
+  return getSheetMusicById(id, true);
 }
 
 async function getMusicSheetInfo(sheet, page) {
@@ -1343,7 +1358,7 @@ async function getArtistInfo(artistItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.8",
+  version: "1.0.9",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",

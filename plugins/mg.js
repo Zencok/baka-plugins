@@ -1892,7 +1892,8 @@ async function importMusicSheet(urlLike) {
       }
     )
   ).data;
-  const contentCount = parseInt(res.rsp.playList[0].contentCount);
+  const playlistInfo = res.rsp.playList[0];
+  const contentCount = parseInt(playlistInfo.contentCount);
   const cids = [];
   let pageNo = 1;
   while ((pageNo - 1) * 20 < contentCount) {
@@ -1922,7 +1923,7 @@ async function importMusicSheet(urlLike) {
       withCredentials: true,
     })
   ).data;
-  return songs.items
+  const musicList = songs.items
     .filter((_) => _.vipFlag === 0)
     .map((_) => {
       var _a, _b, _c, _d, _e, _f;
@@ -1955,6 +1956,24 @@ async function importMusicSheet(urlLike) {
         trcUrl: lyricInfo.trcUrl,
       };
     });
+  return {
+    id: String(playlistInfo.playListId || playlistInfo.id || id),
+    title: playlistInfo.playListName || playlistInfo.name || playlistInfo.title || "",
+    artwork: formatImgUrl(
+      playlistInfo.playListPic
+        || playlistInfo.image
+        || playlistInfo.img
+        || playlistInfo.cover,
+    ),
+    artist: playlistInfo.createUserName
+      || playlistInfo.userName
+      || playlistInfo.ownerName
+      || "",
+    description: playlistInfo.summary || playlistInfo.intro || playlistInfo.description || "",
+    worksNum: Number(playlistInfo.contentCount) || musicList.length,
+    playCount: Number(playlistInfo.playCount || playlistInfo.playNum) || 0,
+    musicList,
+  };
 }
 
 async function getRecommendSheetTags() {
@@ -2363,7 +2382,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.1.3",
+  version: "1.1.4",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",
