@@ -1,7 +1,7 @@
 {
   "name": "bakamusic-plugins",
   "version": "1.0.0",
-  "description": "BakaMusic 插件订阅服务",
+  "description": "BakaMusic \u63d2\u4ef6\u8ba2\u9605\u670d\u52a1",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -12,5 +12,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "overrides": {
+    "path-to-regexp": "0.1.13"
   }
 }
