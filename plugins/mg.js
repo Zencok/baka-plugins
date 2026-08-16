@@ -1292,15 +1292,24 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
     }
     if (!url) return null;
     const isHls = /\.m3u8(?:\?|$)/i.test(url);
+    const actualQuality = getMiguMvQuality(selected?.formatType);
+    const selectedSize = Number(selected?.size) || undefined;
     return {
       url,
       headers: MIGU_MV_HEADERS,
       userAgent: MIGU_MV_HEADERS["User-Agent"],
-      videoQuality: getMiguMvQuality(selected?.formatType),
+      videoQuality: actualQuality,
       mimeType: isHls
         ? "application/vnd.apple.mpegurl"
         : selected?.fileType ? `video/${String(selected.fileType).toLowerCase()}` : "video/mp4",
       duration: parseMiguVideoDuration(resource.migumvDuration),
+      size: selectedSize,
+      availableVideoQualities: [{
+        key: actualQuality,
+        label: actualQuality,
+        size: selectedSize,
+        mimeType: isHls ? "application/vnd.apple.mpegurl" : "video/mp4",
+      }],
       // mvplayinfo 返回带 playSessionId 的临时 HLS 地址，保守刷新以免缓存过期会话。
       expiresAt: isHls ? Date.now() + 30 * 60 * 1000 : undefined,
     };

@@ -424,9 +424,17 @@ const VIDEO_QUALITY_LABEL = {
 function pickVideo(playData, requestedQuality = "1080p") {
   const videos = asArray(playData?.dash?.video).filter((video) => mediaUrl(video));
   if (!videos.length) return asArray(playData?.durl)[0] || null;
+  // Chromium's built-in MP4 pipeline is broadly compatible with AVC. Prefer
+  // AVC over HEVC/AV1 when DASH exposes several codecs at the same height;
+  // the latter can report a valid URL yet fail with MEDIA_ERR_DECODE.
+  const compatible = videos.filter((video) => {
+    const codec = String(video.codecs || video.codec || "").toLowerCase();
+    return !codec || /(?:avc1|avc3|h264)/i.test(codec);
+  });
+  const candidates = compatible.length ? compatible : videos;
   const wanted = String(requestedQuality).toLowerCase().replace(/\s+/g, "");
   const target = VIDEO_QUALITY_ID[wanted] || Number(wanted.replace(/p$/, "")) || 80;
-  const ordered = videos.slice().sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+  const ordered = candidates.slice().sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
   return ordered.find((video) => Number(video.id) === target)
     || ordered.filter((video) => Number(video.id) <= target).pop()
     || ordered[0];
@@ -560,6 +568,31 @@ async function getMvSource(musicItem = {}, videoQuality = "1080p") {
     || VIDEO_QUALITY_ID[String(videoQuality).toLowerCase()]
     || 80;
   const backup = selected?.backupUrl || selected?.backup_url || [];
+  const availableVideoQualities = response.data?.dash?.video
+    ? collectQualities(response.data).videoQualities
+        .filter((item) => item?.quality !== undefined)
+        .map((item) => ({
+          key: VIDEO_QUALITY_LABEL[Number(item.id)] || `${Number(item.id)}q`,
+          label: VIDEO_QUALITY_LABEL[Number(item.id)] || `${Number(item.height || item.id)}p`,
+          width: item.width,
+          height: item.height,
+          bitrate: item.bitrate,
+          size: item.size,
+          codec: item.codec,
+          mimeType: "video/mp4",
+        }))
+    : [];
+  if (!availableVideoQualities.length) {
+    availableVideoQualities.push({
+      key: VIDEO_QUALITY_LABEL[actualId] || `${actualId}q`,
+      label: VIDEO_QUALITY_LABEL[actualId] || `${actualId}q`,
+      width: Number(selected?.width) || undefined,
+      height: Number(selected?.height) || undefined,
+      size: mediaSize(selected, Number(response.data?.timelength) > 0 ? Number(response.data.timelength) / 1000 : undefined),
+      codec: selected?.codecs || selected?.codec || undefined,
+      mimeType: "video/mp4",
+    });
+  }
   return {
     url,
     headers: getMediaHeaders({ ...musicItem, bvid, aid }),
@@ -570,7 +603,9 @@ async function getMvSource(musicItem = {}, videoQuality = "1080p") {
     width: Number(selected?.width) || undefined,
     height: Number(selected?.height) || undefined,
     codec: selected?.codecs || selected?.codec || undefined,
-    backupUrl: Array.isArray(backup) ? backup.slice(0, 2) : [],
+    size: mediaSize(selected, Number(response.data?.timelength) > 0 ? Number(response.data.timelength) / 1000 : undefined),
+    availableVideoQualities,
+    backupUrls: Array.isArray(backup) ? backup.slice(0, 3) : [],
   };
 }
 

@@ -23,6 +23,23 @@ const KUWO_MV_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 };
 
+const KUWO_MV_API = "https://anymatch.kuwo.cn/mobi.s";
+const KUWO_MV_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1";
+const KUWO_MV_REQUEST_QUALITY = {
+  "360p": "MP4L",
+  "480p": "MP4",
+  "720p": "MP4HV",
+  "1080p": "MP4UL",
+  "4k": "MP4BD",
+};
+const KUWO_MV_RESPONSE_QUALITY = {
+  MP4L: "360p",
+  MP4: "480p",
+  MP4HV: "720p",
+  MP4UL: "1080p",
+  MP4BD: "4k",
+};
+
 function ensureQualities(qualities) {
   const declared = module.exports && Array.isArray(module.exports.supportedQualities)
     ? module.exports.supportedQualities
@@ -256,6 +273,15 @@ function getDurationSeconds(item) {
   return Number.isFinite(parsedDuration) ? parsedDuration : undefined;
 }
 
+function normalizeKuwoMvId(candidate) {
+  if (typeof candidate !== "string" && typeof candidate !== "number") return undefined;
+  const value = String(candidate).trim().replace(/^MV_/, "");
+  if (!value || ["0", "-1", "false", "null", "undefined"].includes(value.toLowerCase())) {
+    return undefined;
+  }
+  return value;
+}
+
 function formatMusicItem(_) {
   let qualities = {};
 
@@ -275,7 +301,7 @@ function formatMusicItem(_) {
     _.allartistid || _.ALLARTISTID || _.aartistid
   );
   const mvInfo = _.mvpayinfo || {};
-  const mvId = mvInfo.vid || _.MVID || _.mvid || undefined;
+  const mvId = normalizeKuwoMvId(mvInfo.vid || _.MVID || _.mvid);
 
   return {
     id: _.MUSICRID.replace("MUSIC_", ""),
@@ -842,53 +868,156 @@ async function getMediaSource(musicItem, quality) {
   }
 }
 
-async function getMvSource(musicItem, videoQuality = "1080p") {
-  const songId = musicItem?.mvSongId
+function parseKuwoMvResponse(payload) {
+  if (typeof payload !== "string") return {};
+
+  return payload.split(/\r?\n/).reduce((result, line) => {
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex <= 0) return result;
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    if (key) result[key] = value;
+    return result;
+  }, {});
+}
+
+function getKuwoMvId(musicItem) {
+  const candidates = [musicItem?.mvId, musicItem?.mv, musicItem?.mvid, musicItem?.mvVid];
+  for (const candidate of candidates) {
+    const value = normalizeKuwoMvId(candidate);
+    if (value) return value;
+  }
+  return null;
+}
+
+function getKuwoSongId(musicItem) {
+  const candidate = musicItem?.mvSongId
     || musicItem?.songId
     || (typeof musicItem?.id === "string" ? musicItem.id.replace(/^MUSIC_/, "") : musicItem?.id);
-  const mvId = musicItem?.mvId || musicItem?.mv;
-  const mid = songId || mvId;
-  if (!mid) return null;
+  if (typeof candidate !== "string" && typeof candidate !== "number") return null;
+  const value = String(candidate).trim();
+  return value && value !== "0" ? value : null;
+}
+
+async function requestKuwoMvSourceByVid(mvId, musicItem, videoQuality) {
+  const normalizedQuality = String(videoQuality || "1080p").trim().toLowerCase();
+  const requestQuality = KUWO_MV_REQUEST_QUALITY[normalizedQuality] || KUWO_MV_REQUEST_QUALITY["1080p"];
+  const response = await axios_1.default.get(KUWO_MV_API, {
+    params: {
+      f: "web",
+      prod: "kwplayer_ar_12.1.6.0",
+      corp: "kuwo",
+      newver: 3,
+      vipver: "12.1.6.0",
+      source: "kwplayer_ar_12.1.6.0_40.apk",
+      p2p: 1,
+      approval: false,
+      allpay: 1,
+      notrace: 0,
+      vipMode: 0,
+      type: "get_url_by_vid",
+      vid: mvId,
+      quality: requestQuality,
+      secureScreen: 1,
+      short_mv: 1,
+      p2pid: 1,
+      h265: 1,
+    },
+    headers: {
+      "User-Agent": KUWO_MV_USER_AGENT,
+      "Accept-Encoding": "gzip",
+    },
+    timeout: 20000,
+    transformResponse: [(value) => value],
+  });
+  const source = parseKuwoMvResponse(response.data);
+  if (!source.url) return null;
+
+  const responseQuality = String(source.quality || requestQuality).trim().toUpperCase().replace(/^S(?=MP4)/, "");
+  const actualQuality = KUWO_MV_RESPONSE_QUALITY[responseQuality] || responseQuality || normalizedQuality;
+  const bitrateKbps = Number(source.bitrate);
+
+  return {
+    // 应用内视频代理负责加载接口返回的 HTTP CDN 地址，避免区域节点 HTTPS 握手失败。
+    url: source.url,
+    headers: {
+      Referer: "https://kuwo.cn/",
+      "User-Agent": KUWO_MV_USER_AGENT,
+    },
+    userAgent: KUWO_MV_USER_AGENT,
+    videoQuality: actualQuality,
+    mimeType: String(source.format).toLowerCase() === "mp4" ? "video/mp4" : undefined,
+    bitrate: Number.isFinite(bitrateKbps) && bitrateKbps > 0 ? bitrateKbps * 1000 : undefined,
+    availableVideoQualities: [{
+      key: actualQuality,
+      label: actualQuality,
+      height: ({ "360p": 360, "480p": 480, "720p": 720, "1080p": 1080, "4k": 2160 })[actualQuality],
+      mimeType: "video/mp4",
+    }],
+    duration: Number(musicItem.duration) > 0 ? Number(musicItem.duration) : undefined,
+  };
+}
+
+async function requestKuwoLegacyMvSource(songId, musicItem) {
+  if (!songId) return null;
+  const response = await axios_1.default.get("https://kuwo.cn/api/v1/www/music/playUrl", {
+    params: {
+      mid: songId,
+      type: "mv",
+      httpsStatus: 1,
+    },
+    headers: KUWO_MV_HEADERS,
+    timeout: 20000,
+  });
+  const url = response.data?.data?.url;
+  if (!url) return null;
+
+  return {
+    url: String(url),
+    headers: {
+      Referer: "https://kuwo.cn/",
+      "User-Agent": KUWO_MV_HEADERS["User-Agent"],
+    },
+    userAgent: KUWO_MV_HEADERS["User-Agent"],
+    videoQuality: "360p",
+    mimeType: "video/mp4",
+    availableVideoQualities: [{
+      key: "360p",
+      label: "360p",
+      height: 360,
+      mimeType: "video/mp4",
+    }],
+    duration: Number(musicItem.duration) > 0 ? Number(musicItem.duration) : undefined,
+  };
+}
+
+async function getMvSource(musicItem, videoQuality = "1080p") {
+  const mvId = getKuwoMvId(musicItem);
+  const songId = getKuwoSongId(musicItem);
+  if (!mvId && !songId) return null;
+
+  if (mvId) {
+    try {
+      const source = await requestKuwoMvSourceByVid(mvId, musicItem, videoQuality);
+      if (source) return source;
+    } catch (error) {
+      console.error(`[酷我] 通过 VID 获取 MV 播放源错误: ${error.message}`);
+    }
+  }
 
   try {
-    const response = await axios_1.default.get("https://kuwo.cn/api/v1/www/music/playUrl", {
-      params: {
-        mid: String(mid),
-        type: "mv",
-        httpsStatus: 1,
-      },
-      headers: KUWO_MV_HEADERS,
-      timeout: 20000,
-    });
-    const url = response.data?.data?.url;
-    if (!url) return null;
-    const level = String(url).match(/\/(le|sd|hd|sq|rq)\//i)?.[1]?.toLowerCase();
-    const actualQuality = {
-      le: "480p",
-      sd: "720p",
-      hd: "1080p",
-      sq: "1080p",
-      rq: "4k",
-    }[level] || videoQuality || "1080p";
-    return {
-      url: String(url).replace(/^http:/i, "https:"),
-      headers: {
-        Referer: "https://kuwo.cn/",
-        "User-Agent": KUWO_MV_HEADERS["User-Agent"],
-      },
-      userAgent: KUWO_MV_HEADERS["User-Agent"],
-      videoQuality: actualQuality,
-      mimeType: "video/mp4",
-      duration: Number(musicItem.duration) > 0 ? Number(musicItem.duration) : undefined,
-    };
+    return await requestKuwoLegacyMvSource(songId, musicItem);
   } catch (error) {
-    console.error(`[酷我] 获取 MV 播放源错误: ${error.message}`);
+    console.error(`[酷我] 获取 MV 备用播放源错误: ${error.message}`);
     return null;
   }
 }
 
 async function getMusicInfo(musicBase) {
   if (musicBase.artwork && musicBase.qualities && Object.keys(musicBase.qualities).length > 0) {
+    const mvId = normalizeKuwoMvId(musicBase.mvId || musicBase.mv || musicBase.mvid);
+
     return {
       id: musicBase.id,
       title: musicBase.title,
@@ -897,8 +1026,8 @@ async function getMusicInfo(musicBase) {
       albumId: musicBase.albumId,
       artwork: musicBase.artwork,
       qualities: musicBase.qualities,
-      mv: musicBase.mv,
-      mvId: musicBase.mvId,
+      mv: mvId,
+      mvId,
       mvSongId: musicBase.mvSongId || musicBase.id,
       mvArtwork: musicBase.mvArtwork,
       platform: '酷我音乐',
@@ -952,6 +1081,8 @@ async function getMusicInfo(musicBase) {
       }
     }
 
+    const mvId = normalizeKuwoMvId(info.mvpayinfo?.vid || info.MVID || info.mvid);
+
     return {
       id: rid,
       title: songName || undefined,
@@ -961,8 +1092,8 @@ async function getMusicInfo(musicBase) {
       artwork: artwork,
       duration: info.duration,
       qualities: ensureQualities(qualities),
-      mv: info.mvpayinfo?.vid || info.MVID || info.mvid || undefined,
-      mvId: info.mvpayinfo?.vid || info.MVID || info.mvid || undefined,
+      mv: mvId,
+      mvId,
       mvSongId: String(rid),
       mvArtwork: info.MVPIC || info.hts_MVPIC || undefined,
       platform: '酷我音乐',
@@ -1693,7 +1824,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.1.0",
+  version: "1.1.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",

@@ -1496,6 +1496,27 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
 
   const picked = pickVideoQualityEntry(musicItem?.qualities, source.quality);
   const entry = picked?.entry || {};
+  const availableVideoQualities = Object.entries(musicItem?.qualities || {})
+    .map(([key, value]) => ({
+      key,
+      label: value?.videoQuality || key,
+      width: getPositiveNumber(value?.width) || undefined,
+      height: getPositiveNumber(value?.height) || undefined,
+      size: getPositiveNumber(value?.size) || undefined,
+      codec: value?.codec || value?.codecs || undefined,
+      mimeType: "video/mp4",
+    }))
+    .filter((value) => value.width || value.height || value.size || value.label !== value.key);
+  if (!availableVideoQualities.length) {
+    availableVideoQualities.push({
+      key: source.videoQuality || entry.videoQuality || musicItem.videoQuality || videoQuality,
+      label: source.videoQuality || entry.videoQuality || musicItem.videoQuality || videoQuality,
+      width: getPositiveNumber(source.width || entry.width) || undefined,
+      height: getPositiveNumber(source.height || entry.height) || undefined,
+      size: getPositiveNumber(source.size || entry.size) || undefined,
+      mimeType: "video/mp4",
+    });
+  }
   return {
     "url": source.url,
     "headers": source.headers || AUDIO_PLAYBACK_HEADERS,
@@ -1504,7 +1525,10 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
     "mimeType": "video/mp4",
     "duration": normalizeDurationSeconds(musicItem.duration),
     "width": getPositiveNumber(source.width || entry.width) || undefined,
-    "height": getPositiveNumber(source.height || entry.height) || undefined
+    "height": getPositiveNumber(source.height || entry.height) || undefined,
+    "size": getPositiveNumber(source.size || entry.size) || undefined,
+    "codec": source.codec || entry.codec || entry.codecs || undefined,
+    "availableVideoQualities": availableVideoQualities
   };
 }
 

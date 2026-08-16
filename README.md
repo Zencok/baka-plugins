@@ -22,13 +22,19 @@
 |---|---|---:|---|
 | 网易云音乐 | `plugins/wy.js` | `1.1.0` | 音源相关、MV |
 | QQ音乐 | `plugins/qq.js` | `1.1.0` | 音源相关、MV |
-| 酷狗音乐 | `plugins/kg.js` | `1.1.0` | 音源相关、MV |
-| 酷我音乐 | `plugins/kw.js` | `1.1.0` | 音源相关、MV |
+| 酷狗音乐 | `plugins/kg.js` | `1.1.1` | 音源相关、MV |
+| 酷我音乐 | `plugins/kw.js` | `1.1.1` | 音源相关、MV |
 | 咪咕音乐 | `plugins/mg.js` | `1.2.0` | 免密、MV |
 | Bilibili | `plugins/bilibili.js` | `2.0.7` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
 | 汽水音乐 | `plugins/qishui.js` | `3.2.0` | 免密、MV |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
+
+酷狗 MV 播放会保留接口返回的 HTTP CDN 地址（并提供备用节点）。该 CDN 的 HTTPS
+证书与域名不匹配，强制升级为 HTTPS 会导致 Electron 播放器握手失败。
+
+酷我 MV 使用 VID 分画质取源，并按接口实际返回档位识别服务端回落；播放器仅展示
+真正可用且不重复的清晰度，同时保留接口返回的 HTTP CDN 地址交由应用内代理加载。
 
 ---
 

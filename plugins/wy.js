@@ -747,6 +747,8 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
       return null;
     }
     const expiresInSeconds = Number(source.expi || source.expiresIn || 0);
+    const actualQuality = `${Number(source.r) || resolution}p`;
+    const size = Number(source.size || source.filesize || source.fileSize || 0) || undefined;
     return {
       url: source.url,
       headers: {
@@ -755,8 +757,20 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
         "User-Agent": headers["user-agent"],
       },
       userAgent: headers["user-agent"],
-      videoQuality: `${Number(source.r) || resolution}p`,
+      videoQuality: actualQuality,
       mimeType: "video/mp4",
+      size,
+      width: Number(source.width) || undefined,
+      height: Number(source.height) || resolution,
+      availableVideoQualities: [{
+        key: actualQuality,
+        label: actualQuality,
+        width: Number(source.width) || undefined,
+        height: Number(source.height) || resolution,
+        size,
+        bitrate: Number(source.bitrate) || undefined,
+        mimeType: "video/mp4",
+      }],
       expiresAt: expiresInSeconds > 0
         ? Date.now() + expiresInSeconds * 1000
         : undefined,

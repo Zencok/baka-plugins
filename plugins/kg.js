@@ -952,9 +952,7 @@ const KUGOU_MV_LEVELS = [
 ];
 
 function pickKugouMvStream(mvdata, requestedQuality) {
-  const available = KUGOU_MV_LEVELS
-    .map((level) => ({ level, stream: mvdata?.[level.key] }))
-    .filter(({ stream }) => stream?.downurl);
+  const available = getKugouMvStreams(mvdata);
   if (!available.length) return null;
 
   const value = String(requestedQuality || "1080p").toLowerCase();
@@ -962,6 +960,20 @@ function pickKugouMvStream(mvdata, requestedQuality) {
   return available.find(({ level }) => level.height === target)
     || available.filter(({ level }) => level.height <= target).pop()
     || available[0];
+}
+
+function getKugouMvStreams(mvdata) {
+  const byQuality = new Map();
+  for (const level of KUGOU_MV_LEVELS) {
+    const stream = mvdata?.[level.key];
+    if (!stream?.downurl) continue;
+    const candidate = { level, stream };
+    const previous = byQuality.get(level.quality);
+    const candidateSize = Number(stream.filesize || stream.fileSize || stream.size || 0);
+    const previousSize = Number(previous?.stream?.filesize || previous?.stream?.fileSize || previous?.stream?.size || 0);
+    if (!previous || candidateSize >= previousSize) byQuality.set(level.quality, candidate);
+  }
+  return [...byQuality.values()];
 }
 
 async function getMvSource(musicItem, videoQuality = "1080p") {
@@ -984,8 +996,19 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
 
     const selected = pickKugouMvStream(response.data.mvdata, videoQuality);
     if (!selected?.stream?.downurl) return null;
-    const url = String(selected.stream.downurl).replace(/^http:/i, "https:");
+    // Kugou's fsmvpc CDN currently serves the signed object over HTTP. The
+    // HTTPS endpoint has a certificate for a different host and is rejected
+    // by Chromium/Electron, while the HTTP URL supports ranges and CORS.
+    const url = String(selected.stream.downurl);
     const durationMs = Number(selected.stream.timelength || response.data.timelength);
+    const available = getKugouMvStreams(response.data.mvdata);
+    const size = Number(selected.stream.filesize || selected.stream.fileSize || selected.stream.size || 0) || undefined;
+    const backupValue = selected.stream.backupdownurl
+      || selected.stream.backupDownUrl
+      || selected.stream.backupurl;
+    const backupUrls = (Array.isArray(backupValue) ? backupValue : backupValue ? [backupValue] : [])
+      .filter(Boolean)
+      .map(String);
     return {
       url,
       headers: {
@@ -995,6 +1018,19 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
       userAgent: headers["User-Agent"],
       videoQuality: selected.level.quality,
       mimeType: "video/mp4",
+      size,
+      bitrate: Number(selected.stream.bitrate) || undefined,
+      availableVideoQualities: available.map(({ level, stream }) => ({
+        key: level.quality,
+        label: level.quality,
+        width: Number(stream.width) || undefined,
+        height: level.height,
+        bitrate: Number(stream.bitrate) || undefined,
+        size: Number(stream.filesize || stream.fileSize || stream.size) || undefined,
+        codec: stream.codec || stream.codecs || undefined,
+        mimeType: "video/mp4",
+      })),
+      backupUrls,
       duration: Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs / 1000) : undefined,
     };
   } catch (error) {
@@ -2173,7 +2209,7 @@ async function getArtistInfo(artistItem) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.1.0",
+  version: "1.1.1",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

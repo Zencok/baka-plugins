@@ -523,16 +523,20 @@ function normalizeRequestedVideoHeight(videoQuality) {
 }
 
 function pickQqMvStream(streams, requestedQuality) {
-  const list = Array.isArray(streams) ? streams : Object.values(streams || {});
-  const available = videoQualityLevels
-    .map((level) => ({ level, stream: list.find((item) => Number(item?.filetype) === level.filetype) }))
-    .filter(({ stream }) => Number(stream?.code || 0) === 0 && Array.isArray(stream?.freeflow_url) && stream.freeflow_url.length > 0);
+  const available = getQqMvStreams(streams);
 
   if (!available.length) return null;
   const targetHeight = normalizeRequestedVideoHeight(requestedQuality);
   return available.find(({ level }) => level.height === targetHeight)
     || available.filter(({ level }) => level.height <= targetHeight).pop()
     || available[0];
+}
+
+function getQqMvStreams(streams) {
+  const list = Array.isArray(streams) ? streams : Object.values(streams || {});
+  return videoQualityLevels
+    .map((level) => ({ level, stream: list.find((item) => Number(item?.filetype) === level.filetype) }))
+    .filter(({ stream }) => Number(stream?.code || 0) === 0 && Array.isArray(stream?.freeflow_url) && stream.freeflow_url.length > 0);
 }
 
 async function getMvSource(musicItem, videoQuality = "1080p") {
@@ -571,6 +575,9 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
     if (!url) return null;
 
     const expire = Number(selected.stream.expire);
+    const available = getQqMvStreams(streams);
+    const size = Number(selected.stream.fileSize || selected.stream.filesize || selected.stream.size || 0) || undefined;
+    const backupUrls = urls.filter((item) => item !== url);
     return {
       url: /^http:\/\//i.test(url) ? url.replace(/^http:/i, "https:") : url,
       headers: {
@@ -580,6 +587,21 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
       userAgent: headers["user-agent"],
       videoQuality: selected.level.quality,
       mimeType: "video/mp4",
+      size,
+      width: Number(selected.stream.width) || undefined,
+      height: Number(selected.stream.height) || selected.level.height,
+      bitrate: Number(selected.stream.bitrate) || undefined,
+      availableVideoQualities: available.map(({ level, stream }) => ({
+        key: level.quality,
+        label: level.quality,
+        width: Number(stream.width) || undefined,
+        height: Number(stream.height) || level.height,
+        bitrate: Number(stream.bitrate) || undefined,
+        size: Number(stream.fileSize || stream.filesize || stream.size || 0) || undefined,
+        codec: stream.codec || stream.codecs || undefined,
+        mimeType: "video/mp4",
+      })),
+      backupUrls,
       expiresAt: Number.isFinite(expire) && expire > 0 ? Date.now() + expire * 1000 : undefined,
     };
   } catch (error) {
