@@ -91,6 +91,8 @@ function formatMusicItem(_, qualityInfo = {}) {
     name: s.name,
     avatar: s.img || "",
   }));
+  const mvHash = _.MvHash || _.MVHash || _.mvhash || _.mvdata?.[0]?.hash;
+  const mvId = _.mvdata?.[0]?.id;
 
   return {
     id: fileHash,
@@ -113,6 +115,9 @@ function formatMusicItem(_, qualityInfo = {}) {
     ResFileHash:
       (_h = _.ResFileHash) !== null && _h !== void 0 ? _h : undefined,
     qualities: qualities,
+    mv: mvHash || mvId || undefined,
+    mvHash: mvHash || undefined,
+    mvId: mvId || undefined,
   };
 }
 
@@ -138,6 +143,8 @@ function formatExpandedMusicItem(_, qualityInfo = {}) {
     id: s.id,
     name: s.name,
   }));
+  const mvHash = _.MvHash || _.MVHash || _.mvhash || _.mvdata?.[0]?.hash;
+  const mvId = _.mvdata?.[0]?.id;
 
   return {
     id: fileHash,
@@ -153,6 +160,9 @@ function formatExpandedMusicItem(_, qualityInfo = {}) {
     sqhash: _.SQFileHash || undefined,
     ResFileHash: _.ResFileHash || undefined,
     qualities: qualities,
+    mv: mvHash || mvId || undefined,
+    mvHash: mvHash || undefined,
+    mvId: mvId || undefined,
   };
 }
 
@@ -213,6 +223,8 @@ function formatMusicItem2(_) {
     sqhash: _.sqhash,
     origin_hash: _.origin_hash,
     qualities: qualities,
+    mv: _.mvhash || _.mv_hash || _.MvHash || undefined,
+    mvHash: _.mvhash || _.mv_hash || _.MvHash || undefined,
   };
 }
 
@@ -931,6 +943,66 @@ async function getMediaSource(musicItem, quality) {
   }
 }
 
+const KUGOU_MV_LEVELS = [
+  { key: "le", quality: "480p", height: 480 },
+  { key: "sd", quality: "720p", height: 720 },
+  { key: "hd", quality: "1080p", height: 1080 },
+  { key: "sq", quality: "1080p", height: 1080 },
+  { key: "rq", quality: "4k", height: 2160 },
+];
+
+function pickKugouMvStream(mvdata, requestedQuality) {
+  const available = KUGOU_MV_LEVELS
+    .map((level) => ({ level, stream: mvdata?.[level.key] }))
+    .filter(({ stream }) => stream?.downurl);
+  if (!available.length) return null;
+
+  const value = String(requestedQuality || "1080p").toLowerCase();
+  const target = value === "4k" ? 2160 : (Number(value.replace(/p$/, "")) || 1080);
+  return available.find(({ level }) => level.height === target)
+    || available.filter(({ level }) => level.height <= target).pop()
+    || available[0];
+}
+
+async function getMvSource(musicItem, videoQuality = "1080p") {
+  const rawMv = musicItem?.mv;
+  const mvHash = musicItem?.mvHash
+    || (rawMv && typeof rawMv === "object" ? (rawMv.hash || rawMv.mvHash) : rawMv);
+  if (!mvHash || !/^[a-f\d]{32}$/i.test(String(mvHash))) return null;
+
+  try {
+    const response = await axios_1.default.get("https://m.kugou.com/app/i/mv.php", {
+      params: {
+        cmd: 100,
+        ext: "mp4",
+        hash: String(mvHash),
+      },
+      headers,
+      timeout: 20000,
+    });
+    if (Number(response.data?.status) !== 1) return null;
+
+    const selected = pickKugouMvStream(response.data.mvdata, videoQuality);
+    if (!selected?.stream?.downurl) return null;
+    const url = String(selected.stream.downurl).replace(/^http:/i, "https:");
+    const durationMs = Number(selected.stream.timelength || response.data.timelength);
+    return {
+      url,
+      headers: {
+        Referer: "https://www.kugou.com/",
+        "User-Agent": headers["User-Agent"],
+      },
+      userAgent: headers["User-Agent"],
+      videoQuality: selected.level.quality,
+      mimeType: "video/mp4",
+      duration: Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs / 1000) : undefined,
+    };
+  } catch (error) {
+    console.error(`[酷狗] 获取 MV 播放源错误: ${error.message}`);
+    return null;
+  }
+}
+
 async function getMusicInfo(musicBase) {
   if (musicBase.artwork && musicBase.qualities && Object.keys(musicBase.qualities).length > 0) {
     return {
@@ -942,6 +1014,9 @@ async function getMusicInfo(musicBase) {
       album_id: musicBase.album_id,
       artwork: musicBase.artwork,
       qualities: musicBase.qualities,
+      mv: musicBase.mv,
+      mvHash: musicBase.mvHash,
+      mvId: musicBase.mvId,
       platform: '酷狗音乐',
     };
   }
@@ -965,6 +1040,12 @@ async function getMusicInfo(musicBase) {
 
     const albumInfo = info.album_info || {};
     const audioInfo = info.audio_info || {};
+    const mvInfo = info.mv_info || info.video_info || {};
+    const mvHash = musicBase.mvHash || musicBase.mv
+      || info.mv_hash || info.mvhash || info.mv_hash_128
+      || audioInfo.mv_hash || audioInfo.mvhash
+      || mvInfo.hash || mvInfo.mv_hash;
+    const mvId = musicBase.mvId || info.mv_id || mvInfo.id;
 
     let qualities = qualityInfoMap[hash] || {};
 
@@ -986,6 +1067,9 @@ async function getMusicInfo(musicBase) {
       artwork: (albumInfo.sizable_cover || '').replace('{size}', '480'),
       duration: audioInfo.timelength ? Math.floor(audioInfo.timelength / 1000) : undefined,
       qualities: qualities,
+      mv: mvHash || mvId || undefined,
+      mvHash: mvHash || undefined,
+      mvId: mvId || undefined,
       platform: '酷狗音乐',
     };
   } catch (error) {
@@ -2089,12 +2173,13 @@ async function getArtistInfo(artistItem) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.0.7",
+  version: "1.1.0",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   supportedQualities: ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "master"],
+  supportedVideoQualities: ["480p", "720p", "1080p", "4k"],
   primaryKey: ["id", "album_id", "album_audio_id"],
   hints: {
     importMusicSheet: [
@@ -2117,6 +2202,7 @@ module.exports = {
     }
   },
   getMediaSource,
+  getMvSource,
   getMusicInfo,
   getMusicDetailPageUrl,
   getTopLists,

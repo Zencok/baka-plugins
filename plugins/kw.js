@@ -16,6 +16,12 @@ try {
 const pageSize = 30;
 
 const BASE_SUPPORTED_QUALITIES = ["128k", "320k", "flac"];
+const KUWO_MV_HEADERS = {
+  "Secret": "5470ccb31c2e253cf173fea957bd5e544d0b4f6e54f88190868a0817094e920000224d1a",
+  "Cookie": "Hm_Iuvt_cdb524f42f23cer9b268564v7y735ewrq2324=w6nWhWQm4y2cTbFFcXi5Xxa3KtXKnjzS",
+  "Referer": "https://kuwo.cn/",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+};
 
 function ensureQualities(qualities) {
   const declared = module.exports && Array.isArray(module.exports.supportedQualities)
@@ -268,6 +274,8 @@ function formatMusicItem(_) {
     avatar,
     _.allartistid || _.ALLARTISTID || _.aartistid
   );
+  const mvInfo = _.mvpayinfo || {};
+  const mvId = mvInfo.vid || _.MVID || _.mvid || undefined;
 
   return {
     id: _.MUSICRID.replace("MUSIC_", ""),
@@ -283,6 +291,10 @@ function formatMusicItem(_) {
     duration: _.DURATION ? Number(_.DURATION) : undefined,
     qualities: ensureQualities(qualities),
     nMInfo: _.N_MINFO,
+    mv: mvId,
+    mvId,
+    mvSongId: _.MUSICRID ? _.MUSICRID.replace(/^MUSIC_/, "") : undefined,
+    mvArtwork: _.MVPIC || _.hts_MVPIC || undefined,
   };
 }
 
@@ -830,6 +842,51 @@ async function getMediaSource(musicItem, quality) {
   }
 }
 
+async function getMvSource(musicItem, videoQuality = "1080p") {
+  const songId = musicItem?.mvSongId
+    || musicItem?.songId
+    || (typeof musicItem?.id === "string" ? musicItem.id.replace(/^MUSIC_/, "") : musicItem?.id);
+  const mvId = musicItem?.mvId || musicItem?.mv;
+  const mid = songId || mvId;
+  if (!mid) return null;
+
+  try {
+    const response = await axios_1.default.get("https://kuwo.cn/api/v1/www/music/playUrl", {
+      params: {
+        mid: String(mid),
+        type: "mv",
+        httpsStatus: 1,
+      },
+      headers: KUWO_MV_HEADERS,
+      timeout: 20000,
+    });
+    const url = response.data?.data?.url;
+    if (!url) return null;
+    const level = String(url).match(/\/(le|sd|hd|sq|rq)\//i)?.[1]?.toLowerCase();
+    const actualQuality = {
+      le: "480p",
+      sd: "720p",
+      hd: "1080p",
+      sq: "1080p",
+      rq: "4k",
+    }[level] || videoQuality || "1080p";
+    return {
+      url: String(url).replace(/^http:/i, "https:"),
+      headers: {
+        Referer: "https://kuwo.cn/",
+        "User-Agent": KUWO_MV_HEADERS["User-Agent"],
+      },
+      userAgent: KUWO_MV_HEADERS["User-Agent"],
+      videoQuality: actualQuality,
+      mimeType: "video/mp4",
+      duration: Number(musicItem.duration) > 0 ? Number(musicItem.duration) : undefined,
+    };
+  } catch (error) {
+    console.error(`[酷我] 获取 MV 播放源错误: ${error.message}`);
+    return null;
+  }
+}
+
 async function getMusicInfo(musicBase) {
   if (musicBase.artwork && musicBase.qualities && Object.keys(musicBase.qualities).length > 0) {
     return {
@@ -840,6 +897,10 @@ async function getMusicInfo(musicBase) {
       albumId: musicBase.albumId,
       artwork: musicBase.artwork,
       qualities: musicBase.qualities,
+      mv: musicBase.mv,
+      mvId: musicBase.mvId,
+      mvSongId: musicBase.mvSongId || musicBase.id,
+      mvArtwork: musicBase.mvArtwork,
       platform: '酷我音乐',
     };
   }
@@ -900,6 +961,10 @@ async function getMusicInfo(musicBase) {
       artwork: artwork,
       duration: info.duration,
       qualities: ensureQualities(qualities),
+      mv: info.mvpayinfo?.vid || info.MVID || info.mvid || undefined,
+      mvId: info.mvpayinfo?.vid || info.MVID || info.mvid || undefined,
+      mvSongId: String(rid),
+      mvArtwork: info.MVPIC || info.hts_MVPIC || undefined,
       platform: '酷我音乐',
     };
   } catch (error) {
@@ -1628,11 +1693,12 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.0.8",
+  version: "1.1.0",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   supportedQualities: ["128k", "320k", "flac"],
+  supportedVideoQualities: ["360p", "480p", "720p", "1080p", "4k"],
   hints: {
     importMusicSheet: [
       "酷我APP：自建歌单-分享-复制试听链接，直接粘贴即可",
@@ -1659,6 +1725,7 @@ module.exports = {
     }
   },
   getMediaSource,
+  getMvSource,
   getMusicInfo,
   getMusicDetailPageUrl,
   getLyric,

@@ -20,13 +20,13 @@
 
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
-| 网易云音乐 | `plugins/wy.js` | `1.0.9` | 音源相关 |
-| QQ音乐 | `plugins/qq.js` | `1.0.8` | 音源相关 |
-| 酷狗音乐 | `plugins/kg.js` | `1.0.7` | 音源相关 |
-| 酷我音乐 | `plugins/kw.js` | `1.0.8` | 音源相关 |
-| 咪咕音乐 | `plugins/mg.js` | `1.1.4` | 免密 |
-| Bilibili | `plugins/bilibili.js` | `1.0.3` | 免密 |
-| 汽水音乐 | `plugins/qishui.js` | `3.1.6` | 免密 |
+| 网易云音乐 | `plugins/wy.js` | `1.1.0` | 音源相关、MV |
+| QQ音乐 | `plugins/qq.js` | `1.1.0` | 音源相关、MV |
+| 酷狗音乐 | `plugins/kg.js` | `1.1.0` | 音源相关、MV |
+| 酷我音乐 | `plugins/kw.js` | `1.1.0` | 音源相关、MV |
+| 咪咕音乐 | `plugins/mg.js` | `1.2.0` | 免密、MV |
+| Bilibili | `plugins/bilibili.js` | `2.0.7` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
+| 汽水音乐 | `plugins/qishui.js` | `3.2.0` | 免密、MV |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 
@@ -81,6 +81,22 @@ https://music.cwo.cc.cd/plugins/wy.js?source=ikun&key=YOUR_KEY
 ```text
 https://music.cwo.cc.cd/plugins/bilibili.js
 ```
+
+### Bilibili 登录与媒体能力
+
+`bilibili.js` 使用与桌面下载器一致的 WBI 签名和 `/x/player/wbi/playurl`，播放器
+会自动回退旧版播放接口。免登录可播放公开内容；在 BakaMusic 用户变量中填写
+`SESSDATA`、`BILI_COOKIE` 或兼容字段 `CK`（支持完整浏览器 Cookie）后，可访问
+会员流、杜比/Hi-Res 音频、HDR/4K/8K 视频、用户投稿和私有收藏夹。登录后会刷新已缓存条目的 DASH 能力，避免旧的 128/192/320K 快照遮挡 FLAC/Hi-Res（同一条 Bilibili Hi-Res 流只显示一个音质键）和 Dolby。
+
+下载时 `getMediaSource` 返回实际命中的音质键；例如请求 Master 但资源最高只有 320K
+时会返回 `320k`，避免文件名继续显示虚假的 Master。
+
+封面会同时写入 `artwork` 与 `coverImg`，并统一升级为 HTTPS；BakaMusic 对
+Bilibili 图片使用无 Referer 加载，用于底栏封面、沉浸背景和动态取色。
+
+插件同时提供视频 `getMvSource`（360p～8K）、音频 `getMediaSource`（128K～杜比）、
+歌单/收藏夹导入、歌单搜索、每周必看/分区排行榜、歌词和评论接口。
 
 ---
 
@@ -172,11 +188,14 @@ module.exports = {
   cacheControl,
   primaryKey,
   supportedQualities,
+  supportedVideoQualities,
   userVariables,
   hints,
   supportedSearchType,
   async search() {},
   getMediaSource,
+  // 可选：歌曲包含 mv 字段时解析 MV 视频源
+  getMvSource,
   getMusicInfo,
   getLyric,
   getAlbumInfo,
@@ -191,6 +210,16 @@ module.exports = {
   getMusicComments,
 };
 ```
+
+### MV / 视频源约定
+
+歌曲条目可用 `mv` 暴露平台 MV ID；`supportedVideoQualities` 声明可请求的
+分辨率档位。网易云、QQ、酷狗、酷我、咪咕、汽水和 Bilibili 已接入该方法。插件实现
+`getMvSource(musicItem, videoQuality?)` 后返回 `{ url, headers?, userAgent?,
+videoQuality?, mimeType?, duration?, width?, height?, expiresAt? }`。推荐分辨率写成
+`720p`、`1080p`、`4k`；播放器会在实际播放前重新校验 URL 和请求头。
+Bilibili MV 优先返回带音轨的单文件 MP4，并通过 `videoQuality` 回报平台实际下发画质，
+从而让播放音量、拖动和宿主下载保持一致。
 
 ---
 

@@ -215,6 +215,7 @@ function formatMusicItem(_) {
     qualities: qualities,
     copyrightId: _?.copyrightId,
     privilege: _.privilege,
+    mv: _.mv || _.mvid || undefined,
   };
 }
 
@@ -242,6 +243,7 @@ async function formatMusicItemWithQuality(_, qualityInfo = {}) {
     qualities: qualities,
     copyrightId: _?.copyrightId,
     privilege: _.privilege,
+    mv: _.mv || _.mvid || undefined,
   };
 }
 
@@ -701,6 +703,70 @@ async function getMediaSource(musicItem, quality) {
   }
 }
 
+function getMvId(musicItem) {
+  const mv = musicItem?.mv ?? musicItem?.mvId ?? musicItem?.mvid;
+  if (mv && typeof mv === "object") {
+    return mv.id ?? mv.mvId ?? mv.mvid;
+  }
+  return mv;
+}
+
+function getMvResolution(videoQuality) {
+  const normalized = String(videoQuality || "1080p").trim().toLowerCase();
+  if (normalized === "4k" || normalized === "2160p") return 2160;
+  const matched = normalized.match(/(240|360|480|720|1080|2160)/);
+  return matched ? Number(matched[1]) : 1080;
+}
+
+/**
+ * 解析歌曲关联的 MV 播放源。
+ * musicItem.mv 与 lx-lxwalnut-music-mobile 的 meta.mv 对齐；宿主负责展示与播放。
+ */
+async function getMvSource(musicItem, videoQuality = "1080p") {
+  const mvId = getMvId(musicItem);
+  if (!mvId) return null;
+
+  try {
+    const resolution = getMvResolution(videoQuality);
+    const encrypted = getParamsAndEnc(JSON.stringify({
+      id: mvId,
+      r: resolution,
+      csrf_token: "",
+    }));
+    const response = await axios_1.default.post(
+      "https://music.163.com/weapi/song/enhance/play/mv/url",
+      qs.stringify(encrypted),
+      {
+        headers,
+        timeout: 10000,
+      }
+    );
+    const source = response?.data?.data;
+    if (response?.status !== 200 || response?.data?.code !== 200 || !source?.url) {
+      console.error(`[网易云] 获取 MV 播放源失败: ${source?.msg || response?.data?.message || "未知错误"}`);
+      return null;
+    }
+    const expiresInSeconds = Number(source.expi || source.expiresIn || 0);
+    return {
+      url: source.url,
+      headers: {
+        Referer: "https://music.163.com/",
+        Origin: "https://music.163.com",
+        "User-Agent": headers["user-agent"],
+      },
+      userAgent: headers["user-agent"],
+      videoQuality: `${Number(source.r) || resolution}p`,
+      mimeType: "video/mp4",
+      expiresAt: expiresInSeconds > 0
+        ? Date.now() + expiresInSeconds * 1000
+        : undefined,
+    };
+  } catch (error) {
+    console.error(`[网易云] 获取 MV 播放源错误: ${error.message}`);
+    return null;
+  }
+}
+
 async function getMusicInfo(musicBase) {
   if (musicBase.artwork && musicBase.qualities && Object.keys(musicBase.qualities).length > 0) {
     return {
@@ -711,6 +777,7 @@ async function getMusicInfo(musicBase) {
       albumId: musicBase.albumId,
       artwork: musicBase.artwork,
       qualities: musicBase.qualities,
+      mv: musicBase.mv || musicBase.mvId || musicBase.mvid,
       platform: '网易云音乐',
     };
   }
@@ -758,6 +825,7 @@ async function getMusicInfo(musicBase) {
       artwork: album ? album.picUrl : undefined,
       duration: song.duration ? Math.floor(song.duration / 1000) : undefined,
       qualities: Object.keys(qualities).length > 0 ? qualities : { '128k': {}, '320k': {} },
+      mv: song.mv || song.mvid || undefined,
       platform: '网易云音乐',
     };
   } catch (error) {
@@ -1358,12 +1426,13 @@ async function getArtistInfo(artistItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.0.9",
+  version: "1.1.0",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
   primaryKey: ["id"],
   supportedQualities: ["128k", "320k", "flac", "hires", "atmos", "master"],
+  supportedVideoQualities: ["480p", "720p", "1080p", "4k"],
   hints: {
     importMusicSheet: [
       "网易云：APP点击分享，然后复制链接",
@@ -1390,6 +1459,7 @@ module.exports = {
     }
   },
   getMediaSource,
+  getMvSource,
   getMusicInfo,
   getMusicDetailPageUrl,
   getLyric,

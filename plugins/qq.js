@@ -71,6 +71,14 @@ const qualityLevels = {
   "master": "master",
 };
 
+const videoQualityLevels = [
+  { filetype: 10, quality: "360p", height: 360 },
+  { filetype: 20, quality: "480p", height: 480 },
+  { filetype: 30, quality: "720p", height: 720 },
+  { filetype: 40, quality: "1080p", height: 1080 },
+  { filetype: 50, quality: "4k", height: 2160 },
+];
+
 function parseQualities(file) {
   if (!file) return {};
 
@@ -226,6 +234,9 @@ function formatMusicItem(_, qualityInfo = {}) {
   }));
 
   const artwork = buildQqArtwork(_);
+  const mv = _.mv || {};
+  const mvId = typeof mv === "object" ? mv.id : undefined;
+  const mvVid = typeof mv === "object" ? mv.vid : (typeof mv === "string" ? mv : undefined);
 
   return {
     id: _.id || _.songid,
@@ -240,6 +251,9 @@ function formatMusicItem(_, qualityInfo = {}) {
     albumid: albumid,
     albummid: albummid,
     qualities: qualities,
+    mv: mvVid || mvId || undefined,
+    mvId: mvId || undefined,
+    mvVid: mvVid || undefined,
   };
 }
 
@@ -501,6 +515,79 @@ async function getMediaSource(musicItem, quality) {
   }
 }
 
+function normalizeRequestedVideoHeight(videoQuality) {
+  const value = String(videoQuality || "1080p").toLowerCase().trim();
+  if (value === "4k" || value === "uhd") return 2160;
+  const height = Number(value.replace(/p$/, ""));
+  return Number.isFinite(height) && height > 0 ? height : 1080;
+}
+
+function pickQqMvStream(streams, requestedQuality) {
+  const list = Array.isArray(streams) ? streams : Object.values(streams || {});
+  const available = videoQualityLevels
+    .map((level) => ({ level, stream: list.find((item) => Number(item?.filetype) === level.filetype) }))
+    .filter(({ stream }) => Number(stream?.code || 0) === 0 && Array.isArray(stream?.freeflow_url) && stream.freeflow_url.length > 0);
+
+  if (!available.length) return null;
+  const targetHeight = normalizeRequestedVideoHeight(requestedQuality);
+  return available.find(({ level }) => level.height === targetHeight)
+    || available.filter(({ level }) => level.height <= targetHeight).pop()
+    || available[0];
+}
+
+async function getMvSource(musicItem, videoQuality = "1080p") {
+  const rawMv = musicItem?.mv;
+  const vid = musicItem?.mvVid
+    || musicItem?.vid
+    || (rawMv && typeof rawMv === "object" ? rawMv.vid : rawMv);
+  if (!vid || /^\d+$/.test(String(vid))) return null;
+
+  try {
+    const data = {
+      comm: { ct: 24, cv: 4747474 },
+      getMVUrl: {
+        module: "gosrf.Stream.MvUrlProxy",
+        method: "GetMvUrls",
+        param: {
+          vids: [String(vid)],
+          request_typet: 10001,
+        },
+      },
+    };
+    const response = await axios_1.default.get("https://u.y.qq.com/cgi-bin/musicu.fcg", {
+      params: {
+        format: "json",
+        data: JSON.stringify(data),
+      },
+      headers,
+      timeout: 20000,
+    });
+    const streams = response.data?.getMVUrl?.data?.[vid]?.mp4;
+    const selected = pickQqMvStream(streams, videoQuality);
+    if (!selected) return null;
+
+    const urls = selected.stream.freeflow_url.filter(Boolean);
+    const url = urls.find((item) => /^https:\/\//i.test(item)) || urls[0];
+    if (!url) return null;
+
+    const expire = Number(selected.stream.expire);
+    return {
+      url: /^http:\/\//i.test(url) ? url.replace(/^http:/i, "https:") : url,
+      headers: {
+        Referer: "https://y.qq.com/",
+        "User-Agent": headers["user-agent"],
+      },
+      userAgent: headers["user-agent"],
+      videoQuality: selected.level.quality,
+      mimeType: "video/mp4",
+      expiresAt: Number.isFinite(expire) && expire > 0 ? Date.now() + expire * 1000 : undefined,
+    };
+  } catch (error) {
+    console.error(`[QQ音乐] 获取 MV 播放源错误: ${error.message}`);
+    return null;
+  }
+}
+
 async function getMusicInfoForComment(musicItem) {
   try {
     if (musicItem.id && typeof musicItem.id === 'number') {
@@ -562,6 +649,9 @@ async function getMusicInfo(musicBase) {
       albummid: musicBase.albummid,
       artwork: musicBase.artwork,
       qualities: musicBase.qualities,
+      mv: musicBase.mv,
+      mvId: musicBase.mvId,
+      mvVid: musicBase.mvVid,
       platform: 'QQ音乐',
     };
   }
@@ -628,6 +718,9 @@ async function getMusicInfo(musicBase) {
         artwork: buildQqArtwork(track),
         duration: track.interval,
         qualities: parseQualities(track.file),
+        mv: track.mv?.vid || track.mv?.id || undefined,
+        mvId: track.mv?.id || undefined,
+        mvVid: track.mv?.vid || undefined,
         platform: 'QQ音乐',
       };
     }
@@ -1152,11 +1245,12 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.0.8",
+  version: "1.1.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
   supportedQualities: ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master"],
+  supportedVideoQualities: ["360p", "480p", "720p", "1080p", "4k"],
   hints: {
     importMusicSheet: [
       "QQ音乐APP：自建歌单-分享-分享到微信好友/QQ好友；然后点开并复制链接，直接粘贴即可",
@@ -1183,6 +1277,7 @@ module.exports = {
     }
   },
   getMediaSource,
+  getMvSource,
   getMusicInfo,
   getMusicDetailPageUrl,
   getLyric,

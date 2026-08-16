@@ -1,7 +1,7 @@
 /**
  * 咪咕音乐 BakaMusic 免密插件
  * 内置官方听歌线路，无需 source/key；仅 128k（PQ）
- * @version 1.1.3
+ * @version 1.2.0
  */
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -644,6 +644,9 @@ async function searchMusic(query, page) {
           albumId: item.albumId,
           duration: pickDurationSeconds(item),
           lrcUrl: item.lrcUrl,
+          mv: item.mvId || undefined,
+          mvId: item.mvId || undefined,
+          mvCopyrightId: item.mvCopyrightId || item.mvList?.[0]?.copyrightId || undefined,
           mrcUrl: item.mrcurl,          trcUrl: item.trcUrl,
         });
       });
@@ -709,6 +712,9 @@ async function searchMusic(query, page) {
         qualities: qualities,
         duration: pickDurationSeconds(_),
         vipFlag: _.vipFlag,
+        mv: _.mvId || undefined,
+        mvId: _.mvId || undefined,
+        mvCopyrightId: _.mvCopyrightId || _.mvList?.[0]?.copyrightId || undefined,
         lrcUrl: _.lrcUrl,
         mrcUrl: _.mrcurl,
         trcUrl: _.trcUrl,
@@ -1192,6 +1198,118 @@ async function getMiGuMusicInfo(copyrightId) {
   }
 }
 
+const MIGU_MV_HEADERS = {
+  channel: "0140210",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  Referer: "https://m.music.migu.cn/",
+};
+
+function parseMiguVideoDuration(value) {
+  if (typeof value === "number") return value > 10000 ? Math.round(value / 1000) : Math.round(value);
+  const parts = String(value || "").split(":").map(Number);
+  if (parts.length === 3 && parts.every(Number.isFinite)) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2 && parts.every(Number.isFinite)) return parts[0] * 60 + parts[1];
+  return undefined;
+}
+
+function orderMiguMvFormats(rateFormats, requestedQuality) {
+  const formats = Array.isArray(rateFormats) ? rateFormats.filter((item) => item?.url) : [];
+  if (!formats.length) return [];
+  const requested = String(requestedQuality || "1080p").toLowerCase();
+  const order = requested === "4k" || requested === "uhd"
+    ? ["UHD", "SQ", "HQ", "PQ"]
+    : Number(requested.replace(/p$/, "")) >= 1080
+      ? ["HQ", "SQ", "UHD", "PQ"]
+      : Number(requested.replace(/p$/, "")) >= 720
+        ? ["HQ", "PQ", "SQ", "UHD"]
+        : ["PQ", "HQ", "SQ", "UHD"];
+  const ordered = order
+    .map((formatType) => formats.find((item) => String(item.formatType).toUpperCase() === formatType))
+    .filter(Boolean);
+  return ordered.concat(formats.filter((item) => !ordered.includes(item)));
+}
+
+function getMiguMvQuality(formatType) {
+  const type = String(formatType || "").toUpperCase();
+  if (type === "UHD") return "4k";
+  if (type === "SQ" || type === "HQ") return "1080p";
+  return "720p";
+}
+
+function buildMiguMediaUrl(path) {
+  if (!path) return "";
+  if (/^\/\//.test(path)) return `https:${path}`;
+  if (/^https?:\/\//i.test(path)) {
+    return String(path).replace(/^http:\/\/freevod\.nf\.migu\.cn(?::8080)?/i, "https://freevod.nf.migu.cn");
+  }
+  return `https://freetyst.nf.migu.cn${path}`;
+}
+
+async function requestMiguMvPlayUrl(resource, format) {
+  if (!resource?.contentId || !format?.url) return "";
+  const response = await axios_1.default.get("https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/mvplayinfo.do", {
+    params: {
+      mvContentId: resource.contentId,
+      mvCopyrightId: resource.copyrightId,
+      format: format.format,
+      url: format.url,
+      size: format.size,
+      resourceType: resource.resourceType || "D",
+    },
+    headers: MIGU_MV_HEADERS,
+    timeout: 20000,
+  });
+  return response.data?.code === "000000" ? buildMiguMediaUrl(response.data.playUrl) : "";
+}
+
+async function getMvSource(musicItem, videoQuality = "1080p") {
+  const mvId = musicItem?.mvId || musicItem?.mv || musicItem?.mvCopyrightId;
+  if (!mvId) return null;
+
+  try {
+    const response = await axios_1.default.get("https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do", {
+      params: { resourceType: "D", resourceId: String(mvId) },
+      headers: MIGU_MV_HEADERS,
+      timeout: 20000,
+    });
+    const resource = response.data?.resource?.[0];
+    if (!resource) return null;
+    const orderedFormats = orderMiguMvFormats(resource.rateFormats, videoQuality);
+    let selected = orderedFormats[0] || null;
+    let url = "";
+    for (const format of orderedFormats) {
+      try {
+        url = await requestMiguMvPlayUrl(resource, format);
+      } catch (_) {}
+      if (url) {
+        selected = format;
+        break;
+      }
+    }
+    // Older fixtures may expose a directly playable URL instead of mvplayinfo.
+    if (!url) {
+      url = buildMiguMediaUrl(selected?.url || resource.widescreenPath || resource.highscreenPath);
+    }
+    if (!url) return null;
+    const isHls = /\.m3u8(?:\?|$)/i.test(url);
+    return {
+      url,
+      headers: MIGU_MV_HEADERS,
+      userAgent: MIGU_MV_HEADERS["User-Agent"],
+      videoQuality: getMiguMvQuality(selected?.formatType),
+      mimeType: isHls
+        ? "application/vnd.apple.mpegurl"
+        : selected?.fileType ? `video/${String(selected.fileType).toLowerCase()}` : "video/mp4",
+      duration: parseMiguVideoDuration(resource.migumvDuration),
+      // mvplayinfo 返回带 playSessionId 的临时 HLS 地址，保守刷新以免缓存过期会话。
+      expiresAt: isHls ? Date.now() + 30 * 60 * 1000 : undefined,
+    };
+  } catch (error) {
+    console.error(`[咪咕] 获取 MV 播放源错误: ${error.message}`);
+    return null;
+  }
+}
+
 async function getMusicInfo(musicBase) {
   if (musicBase.artwork && musicBase.qualities && Object.keys(musicBase.qualities).length > 0) {
     return {
@@ -1203,6 +1321,9 @@ async function getMusicInfo(musicBase) {
       albumId: musicBase.albumId,
       artwork: musicBase.artwork,
       qualities: musicBase.qualities,
+      mv: musicBase.mv,
+      mvId: musicBase.mvId,
+      mvCopyrightId: musicBase.mvCopyrightId,
       platform: '咪咕音乐',
     };
   }
@@ -1276,6 +1397,9 @@ async function getMusicInfo(musicBase) {
               artwork: artwork,
               duration: pickDurationSeconds(item),
               qualities: qualities,
+              mv: item.mvId || undefined,
+              mvId: item.mvId || undefined,
+              mvCopyrightId: item.mvCopyrightId || item.mvList?.[0]?.copyrightId || undefined,
               platform: '咪咕音乐',
             };
           }
@@ -2382,12 +2506,13 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.1.4",
+  version: "1.2.0",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",
   primaryKey: ["copyrightId"],
   supportedQualities: ["128k"],
+  supportedVideoQualities: ["480p", "720p", "1080p", "4k"],
   hints: {
     importMusicSheet: [
       "咪咕APP：自建歌单-分享-复制链接，直接粘贴即可",
@@ -2414,6 +2539,7 @@ module.exports = {
     }
   },
   getMediaSource,
+  getMvSource,
   getMusicInfo,
   getMusicDetailPageUrl,
   getLyric: getLyric,

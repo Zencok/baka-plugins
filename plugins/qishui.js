@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.1.5
+ * @version 3.2.0
  * @description 汽水音乐插件：搜索/歌词/取流走 Android API（lossless 音质与逐字歌词）；专辑、歌手、歌单、榜单、评论走 PC API；兼容汽水视频音乐。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -1178,6 +1178,7 @@ function parseTrackItem(track) {
     "duration": normalizeDurationSeconds(track.duration),
     "qualities": qualities,
     "fee": vipFee,
+    "mv": isVideo ? videoId : undefined,
     "vid": track.vid || track.video_id,
     "is_video": isVideo || undefined,
     "videoId": isVideo ? videoId : undefined,
@@ -1458,7 +1459,7 @@ function prepareMusicList(musicList = []) {
 }
 
 async function getVideoPlaybackSource(musicItem, quality = "192k") {
-  const id = musicItem?.videoId || musicItem?.vid || musicItem?.id;
+  const id = musicItem?.videoId || musicItem?.vid || musicItem?.mv || musicItem?.id;
   let videoItem = musicItem || {};
   let picked = pickVideoQualityEntry(videoItem.qualities, quality);
 
@@ -1478,7 +1479,32 @@ async function getVideoPlaybackSource(musicItem, quality = "192k") {
   return {
     "url": playUrl,
     "headers": AUDIO_PLAYBACK_HEADERS,
-    "quality": picked?.quality || "192k"
+    "quality": picked?.quality || "192k",
+    "videoQuality": picked?.entry?.videoQuality || videoItem.videoQuality,
+    "width": picked?.entry?.width,
+    "height": picked?.entry?.height
+  };
+}
+
+async function getMvSource(musicItem, videoQuality = "1080p") {
+  if (!musicItem?.is_video && !musicItem?.videoId && !musicItem?.mv) {
+    return null;
+  }
+
+  const source = await getVideoPlaybackSource(musicItem, videoQuality);
+  if (!source?.url) return null;
+
+  const picked = pickVideoQualityEntry(musicItem?.qualities, source.quality);
+  const entry = picked?.entry || {};
+  return {
+    "url": source.url,
+    "headers": source.headers || AUDIO_PLAYBACK_HEADERS,
+    "userAgent": AUDIO_PLAYBACK_HEADERS["User-Agent"],
+    "videoQuality": source.videoQuality || entry.videoQuality || musicItem.videoQuality || videoQuality,
+    "mimeType": "video/mp4",
+    "duration": normalizeDurationSeconds(musicItem.duration),
+    "width": getPositiveNumber(source.width || entry.width) || undefined,
+    "height": getPositiveNumber(source.height || entry.height) || undefined
   };
 }
 
@@ -2225,11 +2251,12 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": QISHUI_PLATFORM_NAME,
   "author": "JanYun & Toskysun",
-  "version": "3.1.6",
+  "version": "3.2.0",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
   "supportedQualities": ["128k", "192k", "320k", "flac", "hires", "atmos", "atmos_plus"],
+  "supportedVideoQualities": ["360p", "480p", "720p", "1080p"],
   "userVariables": [
     {
       "key": "sessionid",
@@ -2262,6 +2289,7 @@ module.exports = {
   },
 
   "getMediaSource": getMusicPlaybackSource,
+  "getMvSource": getMvSource,
   "getMusicInfo": getMusicInfo,
   "getMusicDetailPageUrl": getMusicDetailPageUrl,
   "getLyric": getMusicDetailInfo,
