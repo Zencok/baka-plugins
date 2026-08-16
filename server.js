@@ -27,6 +27,7 @@ process.on('SIGTERM', () => {
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const csrf = require('csrf');
 console.log('[INIT] core modules loaded');
 
 let subscriptionHandler, pluginHandler;
@@ -47,6 +48,7 @@ try {
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
+const tokens = new csrf();
 
 // ── 适配器 ──
 async function callHandler(handler, req, res) {
@@ -69,6 +71,20 @@ app.use((req, res, next) => {
   console.log(`[REQ] ${req.method} ${req.path}`);
   next();
 });
+
+// ── CSRF protection ──
+app.use((req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const secret = req.headers['x-csrf-secret'] || '';
+    const token = req.headers['x-csrf-token'] || '';
+    if (!secret || !tokens.verify(secret, token)) {
+      return res.status(403).json({ error: 'Invalid CSRF token' });
+    }
+  }
+  next();
+});
+
+
 
 // ── 路由 ──
 app.get('/api/subscription.json', (req, res, next) =>
