@@ -26,18 +26,18 @@ const KUWO_MV_HEADERS = {
 const KUWO_MV_API = "https://anymatch.kuwo.cn/mobi.s";
 const KUWO_MV_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1";
 const KUWO_MV_REQUEST_QUALITY = {
-  "360p": "MP4L",
-  "480p": "MP4",
-  "720p": "MP4HV",
-  "1080p": "MP4UL",
-  "4k": "MP4BD",
+  "240p": "MP4L",
+  "360p": "MP4",
+  "480p": "MP4HV",
+  "720p": "MP4UL",
+  "1080p": "MP4BD",
 };
 const KUWO_MV_RESPONSE_QUALITY = {
-  MP4L: "360p",
-  MP4: "480p",
-  MP4HV: "720p",
-  MP4UL: "1080p",
-  MP4BD: "4k",
+  MP4L: "240p",
+  MP4: "360p",
+  MP4HV: "480p",
+  MP4UL: "720p",
+  MP4BD: "1080p",
 };
 
 function ensureQualities(qualities) {
@@ -952,7 +952,7 @@ async function requestKuwoMvSourceByVid(mvId, musicItem, videoQuality) {
     availableVideoQualities: [{
       key: actualQuality,
       label: actualQuality,
-      height: ({ "360p": 360, "480p": 480, "720p": 720, "1080p": 1080, "4k": 2160 })[actualQuality],
+      height: ({ "240p": 240, "360p": 360, "480p": 480, "720p": 720, "1080p": 1080 })[actualQuality],
       mimeType: "video/mp4",
     }],
     duration: Number(musicItem.duration) > 0 ? Number(musicItem.duration) : undefined,
@@ -1829,7 +1829,7 @@ module.exports = {
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   supportedQualities: ["128k", "320k", "flac"],
-  supportedVideoQualities: ["360p", "480p", "720p", "1080p", "4k"],
+  supportedVideoQualities: ["240p", "360p", "480p", "720p", "1080p"],
   hints: {
     importMusicSheet: [
       "酷我APP：自建歌单-分享-复制试听链接，直接粘贴即可",
