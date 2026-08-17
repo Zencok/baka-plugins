@@ -1,7 +1,7 @@
 /**
  * 咪咕音乐 BakaMusic 免密插件
- * 内置官方听歌线路，无需 source/key；仅 128k（PQ）
- * @version 1.2.0
+ * 内置官方听歌线路，无需 source/key；支持咪咕全部 8 档音质
+ * @version 1.3.0
  */
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -16,23 +16,127 @@ const { Buffer } = require('buffer');
 
 const searchRows = 20;
 
-/** 官方 toneFlag：仅免费 128k / PQ */
+const BASE_SUPPORTED_QUALITIES = [
+  "mgg",
+  "128k",
+  "320k",
+  "flac",
+  "flac24bit",
+  "hires",
+  "atmos",
+  "atmos_plus",
+];
+
+/** BakaMusic 音质键 -> 咪咕 toneFlag */
 const qualityLevels = {
+  mgg: "LQ",
   "128k": "PQ",
+  "320k": "HQ",
+  flac: "SQ",
+  flac24bit: "ZQ24",
+  hires: "ZQ32",
+  atmos: "Z3D",
+  atmos_plus: "3D60",
 };
 
-/**
- * 官方线路：copyrightId → resourceinfo → listen-url v2.0（PQ）
- * 返回 { code: 200, url } 或抛错
- */
-async function requestMusicUrl(_source, songId, quality) {
-  const copyrightId = String(songId || "");
-  if (!copyrightId) throw new Error("缺少 copyrightId");
-  if (quality && quality !== "128k" && quality !== "PQ") {
-    throw new Error("咪咕免密插件仅支持 128k");
+const MIGU_QUALITY_INFO = {
+  LQ: { key: "mgg", bitrate: 64000 },
+  PQ: { key: "128k", bitrate: 128000 },
+  HQ: { key: "320k", bitrate: 320000 },
+  SQ: { key: "flac", bitrate: 1411000 },
+  ZQ: { key: "flac24bit", bitrate: 2304000 },
+  ZQ24: { key: "flac24bit", bitrate: 2304000 },
+  ZQ32: { key: "hires", bitrate: 4608000 },
+  Z3D: { key: "atmos", bitrate: 4608000 },
+  "3D60": { key: "atmos_plus", bitrate: 4608000 },
+};
+
+const MIGU_TONE_PATHS = {
+  LQ: encodeURI("全曲试听/Mp3_64_22_16"),
+  PQ: encodeURI("标清高清/MP3_128_16_Stero"),
+  HQ: encodeURI("标清高清/MP3_320_16_Stero"),
+  SQ: encodeURI("歌曲下载/flac"),
+  ZQ24: encodeURI("歌曲下载/flac_24bit"),
+  ZQ32: encodeURI("歌曲下载/wav_32bit"),
+  Z3D: encodeURI("歌曲下载/wav_3d"),
+  "3D60": encodeURI("歌曲下载/wav_3d_60s"),
+};
+
+const MIGU_TONE_EXTENSIONS = {
+  LQ: ".mp3",
+  PQ: ".mp3",
+  HQ: ".mp3",
+  SQ: ".flac",
+  ZQ24: ".flac",
+  ZQ32: ".wav",
+  Z3D: ".wav",
+  "3D60": ".wav",
+};
+
+const MIGU_STRATEGY_KEY = "Jk8qzuePiJ1qE3mDYhLQ3T73DtDoAhLP";
+
+function decodeMiguStrategyResponse(data) {
+  const encrypted = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  if (
+    encrypted.length < 4 ||
+    encrypted[0] !== 0xab ||
+    encrypted[1] !== 0xcd ||
+    encrypted[2] !== 0x01
+  ) {
+    throw new Error("咪咕播放接口返回了未知数据格式");
   }
 
-  const toneFlag = "PQ";
+  const offset = encrypted[3];
+  const key = Buffer.from(MIGU_STRATEGY_KEY, "utf8");
+  const decrypted = Buffer.alloc(encrypted.length - 4);
+  for (let i = 4; i < encrypted.length; i++) {
+    decrypted[i - 4] = (encrypted[i] + offset - key[(i - 4) % key.length] + 256) % 256;
+  }
+
+  return JSON.parse(decrypted.toString("utf8"));
+}
+
+function detectMiguToneFlag(url) {
+  for (const [toneFlag, path] of Object.entries(MIGU_TONE_PATHS)) {
+    if (String(url).includes(path)) return toneFlag;
+  }
+  return "";
+}
+
+function replaceMiguTone(url, targetToneFlag, sourceToneFlag, stripQuery = true) {
+  let result = String(url || "");
+  if (stripQuery) result = result.split("?")[0];
+  const source = sourceToneFlag || detectMiguToneFlag(result);
+  if (!MIGU_TONE_PATHS[targetToneFlag] || !MIGU_TONE_PATHS[source]) return result;
+
+  result = result.replace(MIGU_TONE_PATHS[source], MIGU_TONE_PATHS[targetToneFlag]);
+  return result.replace(MIGU_TONE_EXTENSIONS[source], MIGU_TONE_EXTENSIONS[targetToneFlag]);
+}
+
+function normalizeMiguToneFlag(quality) {
+  const requestedQuality = quality || "128k";
+  if (qualityLevels[requestedQuality]) return qualityLevels[requestedQuality];
+  if (MIGU_TONE_PATHS[requestedQuality]) return requestedQuality;
+  throw new Error(`咪咕音乐不支持 ${requestedQuality} 音质`);
+}
+
+/**
+ * 官方线路：resourceinfo 解析 ID -> strategy/listen-url 解密 -> CDN 音质路径转换
+ * 返回 { code: 200, url } 或抛错
+ */
+async function requestMusicUrl(_source, musicItem, quality) {
+  const item = musicItem && typeof musicItem === "object" ? musicItem : { copyrightId: musicItem };
+  const itemId = String(item.id || "");
+  let copyrightId = String(item.copyrightId || item.copyright_id || "");
+  let contentId = String(item.contentId || item.content_id || "");
+  let miguSongId = String(item.songId || "");
+
+  if (!contentId && /^\d{15,}$/.test(itemId)) contentId = itemId;
+  if (!miguSongId && itemId && itemId !== contentId) miguSongId = itemId;
+  if (!copyrightId && itemId && !contentId) copyrightId = itemId;
+  if (!copyrightId && !contentId) throw new Error("缺少 copyrightId/contentId");
+
+  const toneFlag = normalizeMiguToneFlag(quality);
   const headersC = {
     channel: "0140210",
     "User-Agent":
@@ -40,22 +144,22 @@ async function requestMusicUrl(_source, songId, quality) {
     Referer: "https://m.music.migu.cn/",
   };
 
-  let contentId = null;
-  let miguSongId = null;
-
-  try {
-    const info = await axios_1.default.get(
-      "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2&copyrightId=" +
-        encodeURIComponent(copyrightId),
-      { headers: headersC, timeout: 10000 }
-    );
-    const res = info.data && info.data.resource && info.data.resource[0];
-    if (res) {
-      contentId = res.contentId || null;
-      miguSongId = res.songId || null;
+  if (copyrightId && (!contentId || !miguSongId)) {
+    try {
+      const info = await axios_1.default.get(
+        "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2&copyrightId=" +
+          encodeURIComponent(copyrightId),
+        { headers: headersC, timeout: 10000 }
+      );
+      const resource = info.data && info.data.resource && info.data.resource[0];
+      if (resource) {
+        contentId = String(resource.contentId || contentId || "");
+        miguSongId = String(resource.songId || miguSongId || "");
+        copyrightId = String(resource.copyrightId || copyrightId || "");
+      }
+    } catch (e) {
+      console.error("[咪咕] resourceinfo 失败:", e.message);
     }
-  } catch (e) {
-    console.error("[咪咕] resourceinfo 失败:", e.message);
   }
 
   const extractUrl = (body) => {
@@ -78,7 +182,7 @@ async function requestMusicUrl(_source, songId, quality) {
       body.url;
     if (!url && body.data) {
       const s = JSON.stringify(body.data);
-      const m = s.match(/https?:\/\/[^"'\\]+?\.(?:mp3|m4a|aac)[^"'\\]*/i);
+      const m = s.match(/https?:\/\/[^"'\\]+?\.(?:mp3|m4a|aac|flac|wav)[^"'\\]*/i);
       if (m) url = m[0];
     }
     if (!url) return null;
@@ -86,7 +190,35 @@ async function requestMusicUrl(_source, songId, quality) {
     return String(url).replace(/\+/g, "%2B");
   };
 
-  // 实测可用：MIGUM2.0/v2.0/content/listen-url + toneFlag=PQ
+  if (contentId) {
+    try {
+      const strategyHeaders = {
+        birth: "h5page",
+        channel: "014X031",
+        Referer: "https://y.migu.cn/",
+        "location-data": "30.6698676660,104.1229614820",
+        "location-info": "",
+      };
+      const response = await axios_1.default.get(
+        "https://c.musicapp.migu.cn/strategy/listen-url/h5/v2.4?contentId=" +
+          encodeURIComponent(contentId) +
+          "&copyrightId=" +
+          encodeURIComponent(copyrightId) +
+          "&resourceType=2&netType=01&toneFlag=PQ&scene=&lowerQualityContentId=" +
+          encodeURIComponent(contentId),
+        { headers: strategyHeaders, responseType: "arraybuffer", timeout: 10000 }
+      );
+      const decoded = decodeMiguStrategyResponse(response.data);
+      const url = extractUrl(decoded);
+      if (url) {
+        return { code: 200, url: replaceMiguTone(url, toneFlag, "PQ") };
+      }
+    } catch (e) {
+      console.error("[咪咕] strategy listen-url 失败:", e.message);
+    }
+  }
+
+  // 兼容旧线路；部分歌曲或接口异常时仍可直接按 toneFlag 获取。
   if (miguSongId && contentId) {
     try {
       const r = await axios_1.default.get(
@@ -101,12 +233,11 @@ async function requestMusicUrl(_source, songId, quality) {
         { headers: headersC, timeout: 10000 }
       );
       const url = extractUrl(r.data);
-      if (url) return { code: 200, url };
+      if (url) return { code: 200, url: replaceMiguTone(url, toneFlag, undefined, false) };
       if (r.data && r.data.data && r.data.data.dialogInfo) {
         throw new Error(r.data.data.dialogInfo.text || "无法获取播放链接");
       }
     } catch (e) {
-      if (e.message && e.message.indexOf("无法获取") !== -1) throw e;
       console.error("[咪咕] listen-url v2.0 失败:", e.message);
     }
   }
@@ -128,7 +259,7 @@ async function requestMusicUrl(_source, songId, quality) {
         { headers: headersC, timeout: 10000 }
       );
       const url = extractUrl(r.data);
-      if (url) return { code: 200, url };
+      if (url) return { code: 200, url: replaceMiguTone(url, toneFlag, undefined, false) };
     } catch (e) {
       console.error("[咪咕] listen-url 兜底失败:", e.message);
     }
@@ -277,24 +408,53 @@ function musicCanPlayFilter(_) {
   return _.mp3 || _.listenUrl || _.lisQq || _.lisCr;
 }
 
-function getMiGuQualitiesFromSong(songData) {
-  // 免密官方线路仅暴露 128k（PQ）
-  const qualities = {};
-  let size128 = null;
+function addMiguQuality(qualities, format) {
+  if (!format) return;
 
-  if (songData.audioFormats && Array.isArray(songData.audioFormats)) {
-    songData.audioFormats.forEach((format) => {
-      if (format.formatType === 'PQ') {
-        size128 = format.asize || format.isize || format.fileSize;
-      }
+  let formatType;
+  let size;
+  let bitrate;
+  if (typeof format === 'string') {
+    const parts = format.split('|');
+    formatType = parts[0];
+    bitrate = Number(parts[2]) || undefined;
+    size = Number(parts[3]) || undefined;
+  } else {
+    formatType = format.formatType || format.toneFlag;
+    size = format.asize || format.isize || format.size || format.androidSize || format.iosSize || format.fileSize;
+    bitrate = format.bitRate || format.bitrate;
+  }
+
+  const definition = MIGU_QUALITY_INFO[formatType];
+  if (!definition) return;
+  qualities[definition.key] = {
+    size: size ? sizeFormate(size) : 'N/A',
+    bitrate: bitrate || definition.bitrate,
+  };
+
+  // 3D60 与 Z3D 使用同一歌曲资源编号；接口只声明 Z3D 时也可取到 60s 版本。
+  if (formatType === 'Z3D' && !qualities.atmos_plus) {
+    qualities.atmos_plus = {};
+  }
+}
+
+function getMiGuQualitiesFromSong(songData) {
+  const qualities = {};
+  const formats = []
+    .concat(Array.isArray(songData.audioFormats) ? songData.audioFormats : [])
+    .concat(Array.isArray(songData.newRateFormats) ? songData.newRateFormats : [])
+    .concat(Array.isArray(songData.rateFormats) ? songData.rateFormats : []);
+
+  if (typeof songData.rateFormats === 'string') {
+    songData.rateFormats.split('|').filter(Boolean).forEach((formatType) => {
+      formats.push({ formatType });
     });
   }
 
-  qualities['128k'] = {
-    size: size128 ? sizeFormate(size128) : 'N/A',
-    bitrate: 128000,
-  };
-
+  formats.forEach((format) => addMiguQuality(qualities, format));
+  if (Object.keys(qualities).length === 0) {
+    qualities['128k'] = {};
+  }
   return qualities;
 }
 
@@ -574,23 +734,7 @@ async function searchMusic(query, page) {
         const qualities = {};
         
         if (item.audioFormats && Array.isArray(item.audioFormats)) {
-          item.audioFormats.forEach((format) => {
-            const size = format.asize || format.isize || format.fileSize;
-            switch (format.formatType) {
-              case 'PQ':
-                qualities['128k'] = { size: sizeFormate(size), bitrate: format.bitRate || 128000 };
-                break;
-              case 'HQ':
-                qualities['320k'] = { size: sizeFormate(size), bitrate: format.bitRate || 320000 };
-                break;
-              case 'SQ':
-                qualities['flac'] = { size: sizeFormate(size), bitrate: format.bitRate || 1411000 };
-                break;
-              case 'ZQ24':
-                qualities['hires'] = { size: sizeFormate(size), bitrate: format.bitRate || 2304000 };
-                break;
-            }
-          });
+          item.audioFormats.forEach((format) => addMiguQuality(qualities, format));
         }
         
         if (Object.keys(qualities).length === 0) {
@@ -1154,15 +1298,7 @@ async function searchLyric(query, page) {
 
 async function getMediaSource(musicItem, quality) {
   try {
-    if (quality && quality !== '128k') {
-      throw new Error('咪咕免密插件仅支持 128k');
-    }
-    const id =
-      musicItem.copyrightId ||
-      musicItem.copyright_id ||
-      musicItem.contentId ||
-      musicItem.id;
-    const res = await requestMusicUrl('mg', id, '128k');
+    const res = await requestMusicUrl('mg', musicItem, quality || '128k');
     if (res && res.code === 200 && res.url) {
       return { url: res.url };
     }
@@ -1372,15 +1508,7 @@ async function getMusicInfo(musicBase) {
 
             const qualities = {};
             if (item.audioFormats && Array.isArray(item.audioFormats)) {
-              item.audioFormats.forEach((format) => {
-                const size = format.asize || format.isize || format.fileSize;
-                switch (format.formatType) {
-                  case 'PQ': qualities['128k'] = { size: sizeFormate(size) }; break;
-                  case 'HQ': qualities['320k'] = { size: sizeFormate(size) }; break;
-                  case 'SQ': qualities['flac'] = { size: sizeFormate(size) }; break;
-                  case 'ZQ24': qualities['hires'] = { size: sizeFormate(size) }; break;
-                }
-              });
+              item.audioFormats.forEach((format) => addMiguQuality(qualities, format));
             }
             if (Object.keys(qualities).length === 0) {
               qualities['128k'] = {};
@@ -1568,24 +1696,7 @@ async function getArtistWorks(artistItem, page, type) {
             const qualities = {};
 
             if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
-              item.newRateFormats.forEach((format) => {
-                const size = format.size || format.androidSize;
-                switch (format.formatType) {
-                  case 'PQ':
-                    qualities['128k'] = { size: sizeFormate(size), bitrate: 128000 };
-                    break;
-                  case 'HQ':
-                    qualities['320k'] = { size: sizeFormate(size), bitrate: 320000 };
-                    break;
-                  case 'SQ':
-                    qualities['flac'] = { size: sizeFormate(size), bitrate: 1411000 };
-                    break;
-                  case 'ZQ':
-                  case 'ZQ24':
-                    qualities['hires'] = { size: sizeFormate(size), bitrate: 2304000 };
-                    break;
-                }
-              });
+              item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
             }
 
             if (Object.keys(qualities).length === 0) {
@@ -1654,58 +1765,11 @@ async function getMusicSheetInfo(sheet, page) {
           const lyricInfo = extractLyricInfo(item);
           
           if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
-            item.newRateFormats.forEach((format) => {
-              const size = format.size || format.androidSize || format.fileSize;
-              
-              switch (format.formatType) {
-                case 'PQ': // 标准音质 128k
-                  qualities['128k'] = {
-                    size: sizeFormate(size),
-                    bitrate: format.bitRate || 128000,
-                  };
-                  break;
-                case 'HQ': // 高音质 320k
-                  qualities['320k'] = {
-                    size: sizeFormate(size),
-                    bitrate: format.bitRate || 320000,
-                  };
-                  break;
-                case 'SQ': // 无损音质 flac
-                  qualities['flac'] = {
-                    size: sizeFormate(size),
-                    bitrate: format.bitRate || 1411000,
-                  };
-                  break;
-                case 'ZQ': // Hi-Res音质
-                case 'ZQ24':
-                  qualities['hires'] = {
-                    size: sizeFormate(size),
-                    bitrate: format.bitRate || 2304000,
-                  };
-                  break;
-              }
-            });
+            item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
           }
           
           if (Object.keys(qualities).length === 0 && item.rateFormats) {
-            const formats = item.rateFormats.split('|');
-            formats.forEach((format) => {
-              switch (format) {
-                case 'PQ':
-                  qualities['128k'] = { size: 'N/A', bitrate: 128000 };
-                  break;
-                case 'HQ':
-                  qualities['320k'] = { size: 'N/A', bitrate: 320000 };
-                  break;
-                case 'SQ':
-                  qualities['flac'] = { size: 'N/A', bitrate: 1411000 };
-                  break;
-                case 'ZQ':
-                case 'ZQ24':
-                  qualities['hires'] = { size: 'N/A', bitrate: 2304000 };
-                  break;
-              }
-            });
+            item.rateFormats.split('|').forEach((format) => addMiguQuality(qualities, format));
           }
           
           if (Object.keys(qualities).length === 0) {
@@ -1775,42 +1839,7 @@ async function getMusicSheetInfo(sheet, page) {
           const lyricInfo = extractLyricInfo(item);
           
           if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
-            item.newRateFormats.forEach((format) => {
-              const formatInfo = format.split('|');
-              if (formatInfo.length >= 4) {
-                const formatType = formatInfo[0];
-                const fileSize = parseInt(formatInfo[3]) || 0;
-                const bitRate = parseInt(formatInfo[2]) || 0;
-                
-                switch (formatType) {
-                  case 'PQ':
-                    qualities['128k'] = {
-                      size: sizeFormate(fileSize),
-                      bitrate: bitRate || 128000,
-                    };
-                    break;
-                  case 'HQ':
-                    qualities['320k'] = {
-                      size: sizeFormate(fileSize),
-                      bitrate: bitRate || 320000,
-                    };
-                    break;
-                  case 'SQ':
-                    qualities['flac'] = {
-                      size: sizeFormate(fileSize),
-                      bitrate: bitRate || 1411000,
-                    };
-                    break;
-                  case 'ZQ':
-                  case 'ZQ24':
-                    qualities['hires'] = {
-                      size: sizeFormate(fileSize),
-                      bitrate: bitRate || 2304000,
-                    };
-                    break;
-                }
-              }
-            });
+            item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
           }
           
           if (Object.keys(qualities).length === 0) {
@@ -2329,24 +2358,7 @@ async function getTopListDetail(topListItem) {
         const qualities = {};
 
         if (songInfo.newRateFormats && Array.isArray(songInfo.newRateFormats)) {
-          songInfo.newRateFormats.forEach((format) => {
-            const size = format.size || format.androidSize;
-            switch (format.formatType) {
-              case 'PQ':
-                qualities['128k'] = { size: sizeFormate(size), bitrate: 128000 };
-                break;
-              case 'HQ':
-                qualities['320k'] = { size: sizeFormate(size), bitrate: 320000 };
-                break;
-              case 'SQ':
-                qualities['flac'] = { size: sizeFormate(size), bitrate: 1411000 };
-                break;
-              case 'ZQ':
-              case 'ZQ24':
-                qualities['hires'] = { size: sizeFormate(size), bitrate: 2304000 };
-                break;
-            }
-          });
+          songInfo.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
         }
 
         if (Object.keys(qualities).length === 0) {
@@ -2515,12 +2527,12 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.2.0",
+  version: "1.3.0",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",
   primaryKey: ["copyrightId"],
-  supportedQualities: ["128k"],
+  supportedQualities: BASE_SUPPORTED_QUALITIES,
   supportedVideoQualities: ["480p", "720p", "1080p", "4k"],
   hints: {
     importMusicSheet: [
@@ -2639,24 +2651,7 @@ module.exports = {
       musicList: musicListData.songList.map((item) => {
         const qualities = {};
         if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
-          item.newRateFormats.forEach((format) => {
-            const size = format.size || format.androidSize;
-            switch (format.formatType) {
-              case 'PQ':
-                qualities['128k'] = { size: sizeFormate(size), bitrate: 128000 };
-                break;
-              case 'HQ':
-                qualities['320k'] = { size: sizeFormate(size), bitrate: 320000 };
-                break;
-              case 'SQ':
-                qualities['flac'] = { size: sizeFormate(size), bitrate: 1411000 };
-                break;
-              case 'ZQ':
-              case 'ZQ24':
-                qualities['hires'] = { size: sizeFormate(size), bitrate: 2304000 };
-                break;
-            }
-          });
+          item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
         }
         if (Object.keys(qualities).length === 0) {
           qualities['128k'] = { size: 'N/A', bitrate: 128000 };

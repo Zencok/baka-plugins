@@ -1535,7 +1535,7 @@
             { name: 'QQ音乐', file: 'qq.js', version: '1.1.0', emoji: '🐧', requiresKey: true },
             { name: '酷狗音乐', file: 'kg.js', version: '1.1.1', emoji: '🐕', requiresKey: true },
             { name: '酷我音乐', file: 'kw.js', version: '1.1.1', emoji: '🎵', requiresKey: true },
-            { name: '咪咕音乐', file: 'mg.js', version: '1.2.0', emoji: '🎧', requiresKey: false },
+            { name: '咪咕音乐', file: 'mg.js', version: '1.3.0', emoji: '🎧', requiresKey: false },
             { name: 'Bilibili', file: 'bilibili.js', version: '2.0.7', emoji: '📺', requiresKey: false },
             { name: '汽水音乐', file: 'qishui.js', version: '3.2.1', emoji: '🥤', requiresKey: false }
         ];
@@ -1567,10 +1567,12 @@
             'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
             'kg.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
             'kw.js':  ['128k', '320k', 'flac'],
+            'mg.js':  ['mgg', '128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus'],
         };
 
         // 音质显示信息
         const QUALITY_INFO = {
+            'mgg':        { label: 'LQ 64K',     cls: 'q-basic' },
             '96k':        { label: '96K',        cls: 'q-basic' },
             '128k':       { label: '128K',       cls: 'q-basic' },
             '192k':       { label: '192K',       cls: 'q-basic' },

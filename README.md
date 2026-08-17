@@ -24,11 +24,13 @@
 | QQ音乐 | `plugins/qq.js` | `1.1.0` | 音源相关、MV |
 | 酷狗音乐 | `plugins/kg.js` | `1.1.1` | 音源相关、MV |
 | 酷我音乐 | `plugins/kw.js` | `1.1.1` | 音源相关、MV |
-| 咪咕音乐 | `plugins/mg.js` | `1.2.0` | 免密、MV |
+| 咪咕音乐 | `plugins/mg.js` | `1.3.0` | 免密、全 8 档音质、MV |
 | Bilibili | `plugins/bilibili.js` | `2.0.7` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
 | 汽水音乐 | `plugins/qishui.js` | `3.2.1` | 免密、MV（登录态下补充视频音乐搜索结果） |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
+
+咪咕播放音质完整映射：`mgg=LQ 64k`、`128k=PQ`、`320k=HQ`、`flac=SQ`、`flac24bit=ZQ24`、`hires=ZQ32`、`atmos=Z3D`、`atmos_plus=3D60`。歌曲列表会按接口元数据仅展示该歌曲实际拥有的档位。
 
 酷狗 MV 播放会保留接口返回的 HTTP CDN 地址（并提供备用节点）。该 CDN 的 HTTPS
 证书与域名不匹配，强制升级为 HTTPS 会导致 Electron 播放器握手失败。
