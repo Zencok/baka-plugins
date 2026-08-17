@@ -1,7 +1,7 @@
 /**
  * 咪咕音乐 BakaMusic 免密插件
  * 内置官方听歌线路，无需 source/key；支持咪咕全部 8 档音质
- * @version 1.3.0
+ * @version 1.3.1
  */
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -37,6 +37,17 @@ const qualityLevels = {
   hires: "ZQ32",
   atmos: "Z3D",
   atmos_plus: "3D60",
+};
+
+const MIGU_QUALITY_FALLBACKS = {
+  mgg: ["mgg", "128k"],
+  "128k": ["128k", "mgg"],
+  "320k": ["320k", "128k", "mgg"],
+  flac: ["flac", "320k", "128k", "mgg"],
+  flac24bit: ["flac24bit", "flac", "320k", "128k", "mgg"],
+  hires: ["hires", "flac24bit", "flac", "320k", "128k", "mgg"],
+  atmos: ["atmos", "hires", "flac24bit", "flac", "320k", "128k", "mgg"],
+  atmos_plus: ["atmos_plus", "atmos", "hires", "flac24bit", "flac", "320k", "128k", "mgg"],
 };
 
 const MIGU_QUALITY_INFO = {
@@ -114,10 +125,50 @@ function replaceMiguTone(url, targetToneFlag, sourceToneFlag, stripQuery = true)
 }
 
 function normalizeMiguToneFlag(quality) {
+  const requestedQuality = normalizeMiguQualityKey(quality);
+  return qualityLevels[requestedQuality];
+}
+
+function normalizeMiguQualityKey(quality) {
   const requestedQuality = quality || "128k";
-  if (qualityLevels[requestedQuality]) return qualityLevels[requestedQuality];
-  if (MIGU_TONE_PATHS[requestedQuality]) return requestedQuality;
+  if (qualityLevels[requestedQuality]) return requestedQuality;
+  const entry = Object.entries(qualityLevels).find(([, toneFlag]) => toneFlag === requestedQuality);
+  if (entry) return entry[0];
   throw new Error(`咪咕音乐不支持 ${requestedQuality} 音质`);
+}
+
+async function probeMiguMediaUrl(url) {
+  try {
+    const response = await axios_1.default.head(url, {
+      timeout: 8000,
+      maxRedirects: 5,
+      validateStatus: () => true,
+    });
+    if (response.status >= 200 && response.status < 400) return true;
+    if (response.status === 404 || response.status === 410) return false;
+  } catch (_) {
+    // 网络波动时保留目标音质，避免错误降级。
+  }
+  return null;
+}
+
+async function resolveMiguStrategyUrl(baseUrl, requestedQuality) {
+  const candidates = MIGU_QUALITY_FALLBACKS[requestedQuality] || [requestedQuality, "128k"];
+  for (const candidateQuality of candidates) {
+    const candidateUrl = replaceMiguTone(baseUrl, qualityLevels[candidateQuality], "PQ");
+    if (candidateQuality === "128k") {
+      return { url: candidateUrl, quality: candidateQuality };
+    }
+
+    const available = await probeMiguMediaUrl(candidateUrl);
+    if (available !== false) {
+      if (candidateQuality !== requestedQuality) {
+        console.warn(`[咪咕] ${requestedQuality} 资源不可用，已降级至 ${candidateQuality}`);
+      }
+      return { url: candidateUrl, quality: candidateQuality };
+    }
+  }
+  return null;
 }
 
 /**
@@ -136,7 +187,8 @@ async function requestMusicUrl(_source, musicItem, quality) {
   if (!copyrightId && itemId && !contentId) copyrightId = itemId;
   if (!copyrightId && !contentId) throw new Error("缺少 copyrightId/contentId");
 
-  const toneFlag = normalizeMiguToneFlag(quality);
+  const requestedQuality = normalizeMiguQualityKey(quality);
+  const toneFlag = normalizeMiguToneFlag(requestedQuality);
   const headersC = {
     channel: "0140210",
     "User-Agent":
@@ -211,7 +263,8 @@ async function requestMusicUrl(_source, musicItem, quality) {
       const decoded = decodeMiguStrategyResponse(response.data);
       const url = extractUrl(decoded);
       if (url) {
-        return { code: 200, url: replaceMiguTone(url, toneFlag, "PQ") };
+        const resolved = await resolveMiguStrategyUrl(url, requestedQuality);
+        if (resolved) return { code: 200, ...resolved };
       }
     } catch (e) {
       console.error("[咪咕] strategy listen-url 失败:", e.message);
@@ -233,7 +286,13 @@ async function requestMusicUrl(_source, musicItem, quality) {
         { headers: headersC, timeout: 10000 }
       );
       const url = extractUrl(r.data);
-      if (url) return { code: 200, url: replaceMiguTone(url, toneFlag, undefined, false) };
+      if (url) {
+        return {
+          code: 200,
+          url: replaceMiguTone(url, toneFlag, undefined, false),
+          quality: requestedQuality,
+        };
+      }
       if (r.data && r.data.data && r.data.data.dialogInfo) {
         throw new Error(r.data.data.dialogInfo.text || "无法获取播放链接");
       }
@@ -259,7 +318,13 @@ async function requestMusicUrl(_source, musicItem, quality) {
         { headers: headersC, timeout: 10000 }
       );
       const url = extractUrl(r.data);
-      if (url) return { code: 200, url: replaceMiguTone(url, toneFlag, undefined, false) };
+      if (url) {
+        return {
+          code: 200,
+          url: replaceMiguTone(url, toneFlag, undefined, false),
+          quality: requestedQuality,
+        };
+      }
     } catch (e) {
       console.error("[咪咕] listen-url 兜底失败:", e.message);
     }
@@ -1300,7 +1365,7 @@ async function getMediaSource(musicItem, quality) {
   try {
     const res = await requestMusicUrl('mg', musicItem, quality || '128k');
     if (res && res.code === 200 && res.url) {
-      return { url: res.url };
+      return { url: res.url, quality: res.quality };
     }
     console.error(`[咪咕] 获取播放链接失败: ${(res && res.msg) || '未知错误'}`);
     return null;
@@ -2527,7 +2592,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.3.0",
+  version: "1.3.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",
