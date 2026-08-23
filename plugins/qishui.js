@@ -1,8 +1,8 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.2.1
- * @description 汽水音乐插件：歌曲搜索/歌词/取流走 Android API（lossless 音质与逐字歌词），视频音乐通过 PC 混合搜索补充；专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
+ * @version 3.2.2
+ * @description 汽水音乐插件：歌曲搜索/歌词/取流走 Android API（lossless 音质与逐字歌词），视频音乐通过 PC 混合搜索补充；专辑、歌手、歌单、榜单、评论走 PC API。X-Headers Key 与 sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
  * @srcLink https://music.cwo.cc.cd/plugins/qishui.js
@@ -33,6 +33,20 @@ const QISHUI_API_HEADERS = {
 const QISHUI_PC_API_BASE = "https://api.qishui.com/luna/pc";
 
 const QISHUI_ANDROID_API_BASE = "https://api.qishui.com/luna";
+
+const QISHUI_XHEADERS_SIGN_URL = "https://qm.xww.ccwu.cc/api/xheaders/sign";
+
+const QISHUI_XHEADERS_INSTANCE = "qishui-8478-android20";
+
+const QISHUI_XHEADERS_NAMES = [
+  "x-khronos",
+  "x-argus",
+  "x-gorgon",
+  "x-helios",
+  "x-ladon",
+  "x-ss-stub",
+  "x-medusa"
+];
 
 /** 默认 sessionid；过期后可在插件用户变量 sessionid 中覆盖 */
 const QISHUI_ANDROID_DEFAULT_SESSION_ID = "80b79adf758dd589f31c76d54e866828";
@@ -352,13 +366,36 @@ function getPcApiParams(extraParams = {}) {
   return Object.assign({}, QISHUI_PC_API_PARAMS, extraParams);
 }
 
+function getQishuiUserVariables() {
+  try {
+    return (typeof env !== "undefined" && env?.getUserVariables?.()) || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function getQishuiXHeadersKey() {
+  const userVariables = getQishuiUserVariables();
+  const raw = userVariables.xheadersKey
+    || userVariables.xheaders_key
+    || userVariables.XHEADERS_KEY
+    || "";
+  const key = typeof raw === "string" ? raw.trim() : "";
+
+  if (!/^xh_[A-Za-z0-9_-]{32}$/.test(key)) {
+    throw new Error("请在插件用户变量 xheadersKey 中填写有效的 X-Headers Key");
+  }
+
+  return key;
+}
+
 /**
  * 读取用户变量 sessionid（支持纯值或含 sessionid= 的 Cookie 片段）
  * BakaMusic: env.getUserVariables()
  */
 function getQishuiSessionId() {
   try {
-    const userVariables = (typeof env !== "undefined" && env?.getUserVariables?.()) || {};
+    const userVariables = getQishuiUserVariables();
     const raw = userVariables.sessionid
       || userVariables.SESSIONID
       || userVariables.SessionId
@@ -398,6 +435,48 @@ function getAndroidApiHeaders() {
   return Object.assign({}, QISHUI_ANDROID_API_HEADERS, {
     "Cookie": `sessionid=${getQishuiSessionId()}`
   });
+}
+
+function normalizeSignedXHeaders(headers) {
+  const normalized = {};
+  Object.entries(headers || {}).forEach(([name, value]) => {
+    normalized[String(name).toLowerCase()] = String(value);
+  });
+
+  const missing = QISHUI_XHEADERS_NAMES.filter(name => !normalized[name]);
+  if (missing.length > 0) {
+    throw new Error("X-Headers 签名结果不完整");
+  }
+
+  return {
+    "X-Khronos": normalized["x-khronos"],
+    "X-Argus": normalized["x-argus"],
+    "X-Gorgon": normalized["x-gorgon"],
+    "X-Helios": normalized["x-helios"],
+    "X-Ladon": normalized["x-ladon"],
+    "X-SS-STUB": normalized["x-ss-stub"],
+    "X-Medusa": normalized["x-medusa"]
+  };
+}
+
+async function signQishuiAndroidRequest(url, bodyBytes) {
+  const response = await axios.default.post(
+    QISHUI_XHEADERS_SIGN_URL,
+    {
+      "instance": QISHUI_XHEADERS_INSTANCE,
+      "url": url,
+      "body_b64": bodyBytes.toString("base64")
+    },
+    {
+      "headers": {
+        "Content-Type": "application/json",
+        "X-XHeaders-Key": getQishuiXHeadersKey()
+      },
+      "timeout": 20000
+    }
+  );
+
+  return normalizeSignedXHeaders(response.data?.headers);
 }
 
 function parseVideoModelToPlayInfoList(videoModel) {
@@ -487,15 +566,25 @@ function isPreviewVideoModel(videoModel) {
 }
 
 async function fetchAndroidTrackV2(trackId) {
+  const params = getAndroidApiParams();
+  const requestUrl = axios.default.getUri({
+    "url": `${QISHUI_ANDROID_API_BASE}/track_v2`,
+    "params": params
+  });
+  const bodyText = JSON.stringify(Object.assign({}, QISHUI_ANDROID_TRACK_BODY_TEMPLATE, {
+    "track_id": String(trackId)
+  }));
+  const bodyBytes = Buffer.from(bodyText, "utf8");
+  const signedHeaders = await signQishuiAndroidRequest(requestUrl, bodyBytes);
   const response = await axios.default.post(
-    `${QISHUI_ANDROID_API_BASE}/track_v2`,
-    Object.assign({}, QISHUI_ANDROID_TRACK_BODY_TEMPLATE, {
-      "track_id": String(trackId)
-    }),
+    requestUrl,
+    bodyBytes,
     {
-      "params": getAndroidApiParams(),
-      "headers": getAndroidApiHeaders(),
-      "timeout": 20000
+      "headers": Object.assign({}, getAndroidApiHeaders(), {
+        "X-SS-Req-Ticket": params._rticket
+      }, signedHeaders),
+      "timeout": 20000,
+      "transformRequest": [data => data]
     }
   );
 
@@ -2338,13 +2427,18 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": QISHUI_PLATFORM_NAME,
   "author": "JanYun & Toskysun",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
   "supportedQualities": ["128k", "192k", "320k", "flac", "hires", "atmos", "atmos_plus"],
   "supportedVideoQualities": ["360p", "480p", "720p", "1080p"],
   "userVariables": [
+    {
+      "key": "xheadersKey",
+      "name": "X-Headers Key",
+      "hint": "用于 Android API 实时签名，请填写在 X-Headers 服务中获取的 xh_ 开头 Key"
+    },
     {
       "key": "sessionid",
       "name": "sessionid",

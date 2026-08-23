@@ -26,7 +26,7 @@
 | 酷我音乐 | `plugins/kw.js` | `1.1.1` | 音源相关、MV |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.1` | 免密、全 8 档音质、播放时自动降级、MV |
 | Bilibili | `plugins/bilibili.js` | `2.0.7` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
-| 汽水音乐 | `plugins/qishui.js` | `3.2.1` | 免密、MV（登录态下补充视频音乐搜索结果） |
+| 汽水音乐 | `plugins/qishui.js` | `3.2.2` | 下载免密、Android 取流实时签名、MV（登录态下补充视频音乐搜索结果） |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 
@@ -107,6 +107,12 @@ Bilibili 图片使用无 Referer 加载，用于底栏封面、沉浸背景和�
 
 插件同时提供视频 `getMvSource`（360p～8K）、音频 `getMediaSource`（128K～杜比）、
 歌单/收藏夹导入、歌单搜索、每周必看/分区排行榜、歌词和评论接口。
+
+### 汽水音乐签名与登录
+
+`qishui.js` 的 Android `track_v2` 请求会在发送前调用 X-Headers 服务实时生成请求头。
+请在 BakaMusic 插件用户变量 `xheadersKey` 中填写 `xh_` 开头的访问 Key；插件源码不含访问 Key。
+如需登录态内容，可继续在用户变量 `sessionid` 中填写纯值或包含 `sessionid=...` 的 Cookie 片段。
 
 ---
 
