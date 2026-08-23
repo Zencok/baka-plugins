@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.2.2
+ * @version 3.2.3
  * @description 汽水音乐插件：歌曲搜索/歌词/取流走 Android API（lossless 音质与逐字歌词），视频音乐通过 PC 混合搜索补充；专辑、歌手、歌单、榜单、评论走 PC API。X-Headers Key 与 sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -37,6 +37,10 @@ const QISHUI_ANDROID_API_BASE = "https://api.qishui.com/luna";
 const QISHUI_XHEADERS_SIGN_URL = "https://qm.xww.ccwu.cc/api/xheaders/sign";
 
 const QISHUI_XHEADERS_INSTANCE = "qishui-8478-android20";
+
+const QISHUI_XHEADERS_SIGN_ATTEMPTS = 6;
+
+const QISHUI_XHEADERS_CLIENT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36";
 
 const QISHUI_XHEADERS_NAMES = [
   "x-khronos",
@@ -425,9 +429,9 @@ function getQishuiSessionId() {
   return QISHUI_ANDROID_DEFAULT_SESSION_ID;
 }
 
-function getAndroidApiParams(extraParams = {}) {
+function getAndroidApiParams(extraParams = {}, requestTicket = String(Date.now())) {
   return Object.assign({}, QISHUI_ANDROID_API_PARAMS, {
-    "_rticket": String(Date.now())
+    "_rticket": requestTicket
   }, extraParams);
 }
 
@@ -460,6 +464,7 @@ function normalizeSignedXHeaders(headers) {
 }
 
 async function signQishuiAndroidRequest(url, bodyBytes) {
+  const key = getQishuiXHeadersKey();
   const response = await axios.default.post(
     QISHUI_XHEADERS_SIGN_URL,
     {
@@ -470,13 +475,59 @@ async function signQishuiAndroidRequest(url, bodyBytes) {
     {
       "headers": {
         "Content-Type": "application/json",
-        "X-XHeaders-Key": getQishuiXHeadersKey()
+        "Accept": "application/json",
+        "Authorization": `Bearer ${key}`,
+        "User-Agent": QISHUI_XHEADERS_CLIENT_USER_AGENT
       },
-      "timeout": 20000
+      "timeout": 15000
     }
   );
 
   return normalizeSignedXHeaders(response.data?.headers);
+}
+
+function isRetryableQishuiSignError(error) {
+  const status = Number(error?.response?.status || 0);
+  const code = String(error?.response?.data?.code || "");
+  return (status === 400 || status === 500)
+    && (code === "invalid_request" || code === "signing_error");
+}
+
+async function prepareSignedQishuiAndroidRequest(endpoint, bodyBytes, extraParams = {}) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < QISHUI_XHEADERS_SIGN_ATTEMPTS; attempt++) {
+    const requestTicket = String(Date.now() + attempt);
+    const params = getAndroidApiParams(extraParams, requestTicket);
+    const requestUrl = axios.default.getUri({
+      "url": `${QISHUI_ANDROID_API_BASE}/${endpoint}`,
+      "params": params
+    });
+
+    try {
+      const signedHeaders = await signQishuiAndroidRequest(requestUrl, bodyBytes);
+      const expectedKhronos = String(Math.floor(Number(requestTicket) / 1000));
+      if (signedHeaders["X-Khronos"] !== expectedKhronos) {
+        lastError = new Error("X-Headers 时间参数不一致");
+        continue;
+      }
+
+      return {
+        "requestUrl": requestUrl,
+        "requestTicket": requestTicket,
+        "headers": Object.assign({}, getAndroidApiHeaders(), {
+          "X-SS-Req-Ticket": requestTicket
+        }, signedHeaders)
+      };
+    } catch (error) {
+      if (!isRetryableQishuiSignError(error)) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("X-Headers 签名失败，请稍后重试");
 }
 
 function parseVideoModelToPlayInfoList(videoModel) {
@@ -566,23 +617,19 @@ function isPreviewVideoModel(videoModel) {
 }
 
 async function fetchAndroidTrackV2(trackId) {
-  const params = getAndroidApiParams();
-  const requestUrl = axios.default.getUri({
-    "url": `${QISHUI_ANDROID_API_BASE}/track_v2`,
-    "params": params
-  });
   const bodyText = JSON.stringify(Object.assign({}, QISHUI_ANDROID_TRACK_BODY_TEMPLATE, {
     "track_id": String(trackId)
   }));
   const bodyBytes = Buffer.from(bodyText, "utf8");
-  const signedHeaders = await signQishuiAndroidRequest(requestUrl, bodyBytes);
+  const signedRequest = await prepareSignedQishuiAndroidRequest(
+    "track_v2",
+    bodyBytes
+  );
   const response = await axios.default.post(
-    requestUrl,
+    signedRequest.requestUrl,
     bodyBytes,
     {
-      "headers": Object.assign({}, getAndroidApiHeaders(), {
-        "X-SS-Req-Ticket": params._rticket
-      }, signedHeaders),
+      "headers": signedRequest.headers,
       "timeout": 20000,
       "transformRequest": [data => data]
     }
@@ -2427,7 +2474,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": QISHUI_PLATFORM_NAME,
   "author": "JanYun & Toskysun",
-  "version": "3.2.2",
+  "version": "3.2.3",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
