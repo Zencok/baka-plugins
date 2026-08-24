@@ -1,8 +1,8 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.2.5
- * @description 汽水音乐插件：歌曲搜索/歌词/取流走 Android API（lossless 音质与逐字歌词），视频音乐通过 PC 混合搜索补充；专辑、歌手、歌单、榜单、评论走 PC API。X-Headers Key 与 sessionid 支持用户变量自定义
+ * @version 3.2.6
+ * @description 汽水音乐插件：歌曲搜索/歌词/取流走 Android API（lossless 音质与逐字歌词），视频音乐通过 PC 混合搜索补充；专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
  * @srcLink https://music.cwo.cc.cd/plugins/qishui.js
@@ -34,13 +34,18 @@ const QISHUI_PC_API_BASE = "https://api.qishui.com/luna/pc";
 
 const QISHUI_ANDROID_API_BASE = "https://api.qishui.com/luna";
 
-const QISHUI_XHEADERS_SIGN_URL = "https://qm.xww.ccwu.cc/api/xheaders/sign";
-
-const QISHUI_XHEADERS_INSTANCE = "qishui-8478-android20";
+const QISHUI_XHEADERS_SIGN_URL = "http://api.music.qishui.vsaa.cn/qm/api.php";
 
 const QISHUI_XHEADERS_SIGN_ATTEMPTS = 6;
 
-const QISHUI_XHEADERS_CLIENT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36";
+const QISHUI_XHEADERS_SIGN_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+  "Accept-Encoding": "gzip, deflate",
+  "Content-Type": "application/json",
+  "Origin": "http://api.music.qishui.vsaa.cn",
+  "Referer": "http://api.music.qishui.vsaa.cn/qm/",
+  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"
+};
 
 const QISHUI_XHEADERS_NAMES = [
   "x-khronos",
@@ -53,7 +58,7 @@ const QISHUI_XHEADERS_NAMES = [
 ];
 
 /** 默认 sessionid；过期后可在插件用户变量 sessionid 中覆盖 */
-const QISHUI_ANDROID_DEFAULT_SESSION_ID = "80b79adf758dd589f31c76d54e866828";
+const QISHUI_ANDROID_DEFAULT_SESSION_ID = "3e60f931253128d953e15144ba7105f1";
 
 const QISHUI_ANDROID_API_HEADERS = {
   "User-Agent": "com.luna.music/100198030 (Linux; U; Android 15; zh_CN_#Hans; ABR-AL80; Build/V417IR;tt-ok/3.12.13.19)",
@@ -378,25 +383,6 @@ function getQishuiUserVariables() {
   }
 }
 
-function getQishuiXHeadersKey(options = {}) {
-  const userVariables = getQishuiUserVariables();
-  const raw = userVariables.xheadersKey
-    || userVariables.xheaders_key
-    || userVariables.XHEADERS_KEY
-    || "";
-  const key = typeof raw === "string" ? raw.trim() : "";
-
-  if (!key && options.allowEmpty) {
-    return "";
-  }
-
-  if (!/^xh_[A-Za-z0-9_-]{32}$/.test(key)) {
-    throw new Error("请在插件用户变量 xheadersKey 中填写有效的 X-Headers Key");
-  }
-
-  return key;
-}
-
 /**
  * 读取用户变量 sessionid（支持纯值或含 sessionid= 的 Cookie 片段）
  * BakaMusic: env.getUserVariables()
@@ -404,12 +390,7 @@ function getQishuiXHeadersKey(options = {}) {
 function getQishuiSessionId() {
   try {
     const userVariables = getQishuiUserVariables();
-    const raw = userVariables.sessionid
-      || userVariables.SESSIONID
-      || userVariables.SessionId
-      || userVariables.cookie
-      || userVariables.Cookie
-      || "";
+    const raw = userVariables.sessionid || "";
 
     if (raw && typeof raw === "string") {
       const trimmed = raw.trim();
@@ -468,41 +449,40 @@ function normalizeSignedXHeaders(headers) {
 }
 
 async function signQishuiAndroidRequest(url, bodyBytes) {
-  const key = getQishuiXHeadersKey();
   const response = await axios.default.post(
     QISHUI_XHEADERS_SIGN_URL,
     {
-      "instance": QISHUI_XHEADERS_INSTANCE,
       "url": url,
-      "body_b64": bodyBytes.toString("base64")
+      "body": bodyBytes.toString("base64"),
+      "cookie": `sessionid=${getQishuiSessionId()}`,
+      "ua": "",
+      "send": false
     },
     {
-      "headers": {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Authorization": `Bearer ${key}`,
-        "User-Agent": QISHUI_XHEADERS_CLIENT_USER_AGENT
-      },
-      "timeout": 15000
+      "headers": QISHUI_XHEADERS_SIGN_HEADERS,
+      "timeout": 15000,
+      "maxRedirects": 5
     }
   );
+
+  if (Number(response.data?.code) !== 0 || !response.data?.headers) {
+    const error = new Error(response.data?.msg || "X-Headers 签名服务返回异常");
+    error.qishuiSignRetryable = true;
+    throw error;
+  }
 
   return normalizeSignedXHeaders(response.data?.headers);
 }
 
 function isRetryableQishuiSignError(error) {
   const status = Number(error?.response?.status || 0);
-  const code = String(error?.response?.data?.code || "");
-  return (status === 400 || status === 500)
-    && (code === "invalid_request" || code === "signing_error");
+  return error?.qishuiSignRetryable === true
+    || status === 408
+    || status === 429
+    || status >= 500;
 }
 
 async function prepareSignedQishuiAndroidRequest(endpoint, bodyBytes, extraParams = {}) {
-  // 未配置 X-Headers Key 时跳过签名服务，直接走上层回落逻辑。
-  if (!getQishuiXHeadersKey({ "allowEmpty": true })) {
-    return null;
-  }
-
   let lastError = null;
 
   for (let attempt = 0; attempt < QISHUI_XHEADERS_SIGN_ATTEMPTS; attempt++) {
@@ -2487,18 +2467,13 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.2.5",
+  "version": "3.2.6",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
   "supportedQualities": ["128k", "192k", "320k", "flac", "hires", "atmos", "atmos_plus"],
   "supportedVideoQualities": ["360p", "480p", "720p", "1080p"],
   "userVariables": [
-    {
-      "key": "xheadersKey",
-      "name": "X-Headers Key",
-      "hint": "用于实时签名，请填写 X-Headers Key"
-    },
     {
       "key": "sessionid",
       "name": "sessionid",
