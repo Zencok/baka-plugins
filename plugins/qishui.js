@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.2.4
+ * @version 3.2.5
  * @description 汽水音乐插件：歌曲搜索/歌词/取流走 Android API（lossless 音质与逐字歌词），视频音乐通过 PC 混合搜索补充；专辑、歌手、歌单、榜单、评论走 PC API。X-Headers Key 与 sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -378,13 +378,17 @@ function getQishuiUserVariables() {
   }
 }
 
-function getQishuiXHeadersKey() {
+function getQishuiXHeadersKey(options = {}) {
   const userVariables = getQishuiUserVariables();
   const raw = userVariables.xheadersKey
     || userVariables.xheaders_key
     || userVariables.XHEADERS_KEY
     || "";
   const key = typeof raw === "string" ? raw.trim() : "";
+
+  if (!key && options.allowEmpty) {
+    return "";
+  }
 
   if (!/^xh_[A-Za-z0-9_-]{32}$/.test(key)) {
     throw new Error("请在插件用户变量 xheadersKey 中填写有效的 X-Headers Key");
@@ -494,6 +498,11 @@ function isRetryableQishuiSignError(error) {
 }
 
 async function prepareSignedQishuiAndroidRequest(endpoint, bodyBytes, extraParams = {}) {
+  // 未配置 X-Headers Key 时跳过签名服务，直接走上层回落逻辑。
+  if (!getQishuiXHeadersKey({ "allowEmpty": true })) {
+    return null;
+  }
+
   let lastError = null;
 
   for (let attempt = 0; attempt < QISHUI_XHEADERS_SIGN_ATTEMPTS; attempt++) {
@@ -625,6 +634,10 @@ async function fetchAndroidTrackV2(trackId) {
     "track_v2",
     bodyBytes
   );
+  if (!signedRequest) {
+    return null;
+  }
+
   const response = await axios.default.post(
     signedRequest.requestUrl,
     bodyBytes,
@@ -2474,7 +2487,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.2.4",
+  "version": "3.2.5",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
@@ -2484,7 +2497,7 @@ module.exports = {
     {
       "key": "xheadersKey",
       "name": "X-Headers Key",
-      "hint": "用于 Android API 实时签名，请填写在 X-Headers 服务中获取的 xh_ 开头 Key"
+      "hint": "用于实时签名，请填写 X-Headers Key"
     },
     {
       "key": "sessionid",
