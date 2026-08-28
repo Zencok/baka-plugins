@@ -34,7 +34,7 @@ const QISHUI_PC_API_BASE = "https://api.qishui.com/luna/pc";
 
 const QISHUI_ANDROID_API_BASE = "https://api.qishui.com/luna";
 
-const QISHUI_XHEADERS_SIGN_URL = "http://api.music.qishui.vsaa.cn/qm/api.php";
+const QISHUI_XHEADERS_SIGN_URL = "http://api.music.qishui.vsaa.cn/v1/xheaders/sign";
 
 const QISHUI_XHEADERS_SIGN_ATTEMPTS = 6;
 
@@ -43,7 +43,7 @@ const QISHUI_XHEADERS_SIGN_HEADERS = {
   "Accept-Encoding": "gzip, deflate",
   "Content-Type": "application/json",
   "Origin": "http://api.music.qishui.vsaa.cn",
-  "Referer": "http://api.music.qishui.vsaa.cn/qm/",
+  "Referer": "http://api.music.qishui.vsaa.cn/",
   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"
 };
 
@@ -414,6 +414,42 @@ function getQishuiSessionId() {
   return QISHUI_ANDROID_DEFAULT_SESSION_ID;
 }
 
+/**
+ * 读用户变量 signUrl / signKey。旧版本只硬编码了 /qm/api.php，该接口已下线，
+ * 新版签名服务需要 Bearer qs_ key，支持通过用户变量覆盖默认地址。
+ */
+function getQishuiSignUrl() {
+  try {
+    const userVariables = getQishuiUserVariables();
+    return String(
+      userVariables.signUrl
+      || userVariables.qishui_sign_url
+      || userVariables.sign_url
+      || ""
+    ).trim() || QISHUI_XHEADERS_SIGN_URL;
+  } catch (error) {
+    return QISHUI_XHEADERS_SIGN_URL;
+  }
+}
+
+function getQishuiSignKey() {
+  try {
+    const userVariables = getQishuiUserVariables();
+    return String(
+      userVariables.signKey
+      || userVariables.qishui_key
+      || userVariables.sign_key
+      || ""
+    ).trim();
+  } catch (error) {
+    return "";
+  }
+}
+
+function hasQishuiSignKey() {
+  return Boolean(getQishuiSignKey());
+}
+
 function getAndroidApiParams(extraParams = {}, requestTicket = String(Date.now())) {
   return Object.assign({}, QISHUI_ANDROID_API_PARAMS, {
     "_rticket": requestTicket
@@ -449,29 +485,46 @@ function normalizeSignedXHeaders(headers) {
 }
 
 async function signQishuiAndroidRequest(url, bodyBytes) {
-  const response = await axios.default.post(
-    QISHUI_XHEADERS_SIGN_URL,
-    {
-      "url": url,
-      "body": bodyBytes.toString("base64"),
-      "cookie": `sessionid=${getQishuiSessionId()}`,
-      "ua": "",
-      "send": false
-    },
-    {
-      "headers": QISHUI_XHEADERS_SIGN_HEADERS,
-      "timeout": 15000,
-      "maxRedirects": 5
-    }
-  );
-
-  if (Number(response.data?.code) !== 0 || !response.data?.headers) {
-    const error = new Error(response.data?.msg || "X-Headers 签名服务返回异常");
-    error.qishuiSignRetryable = true;
+  const signKey = getQishuiSignKey();
+  if (!signKey) {
+    const error = new Error("未配置 qishui signKey，已跳过 Android 签名");
+    error.qishuiSignMissingKey = true;
     throw error;
   }
 
-  return normalizeSignedXHeaders(response.data?.headers);
+  const signUrl = getQishuiSignUrl();
+  const response = await axios.default.post(
+    signUrl,
+    {
+      "url": url,
+      "body_b64": bodyBytes.toString("base64")
+    },
+    {
+      "headers": Object.assign({}, QISHUI_XHEADERS_SIGN_HEADERS, {
+        "Authorization": `Bearer ${signKey}`
+      }),
+      "timeout": 15000,
+      "maxRedirects": 5,
+      "validateStatus": status => status >= 200 && status < 500
+    }
+  );
+
+  const payload = response.data || {};
+  const code = Number(payload?.code ?? 0);
+  const headersPayload = payload?.data?.headers || payload?.headers;
+  const errorMessage = payload?.message
+    || payload?.msg
+    || `签名服务返回异常 (HTTP ${response.status})`;
+
+  if (code !== 0 || !headersPayload) {
+    const error = new Error(errorMessage);
+    error.qishuiSignRetryable = response.status >= 500
+      || response.status === 429
+      || response.status === 408;
+    throw error;
+  }
+
+  return normalizeSignedXHeaders(headersPayload);
 }
 
 function isRetryableQishuiSignError(error) {
@@ -606,6 +659,11 @@ function isPreviewVideoModel(videoModel) {
 }
 
 async function fetchAndroidTrackV2(trackId) {
+  if (!hasQishuiSignKey()) {
+    console.warn("[汽水音乐] 未配置 signKey，跳过 Android track_v2，改用 SEO 播放地址");
+    return null;
+  }
+
   const bodyText = JSON.stringify(Object.assign({}, QISHUI_ANDROID_TRACK_BODY_TEMPLATE, {
     "track_id": String(trackId)
   }));
@@ -641,6 +699,15 @@ async function fetchTrackPlaybackData(trackId) {
 
   try {
     androidData = await fetchAndroidTrackV2(trackId);
+    if (!androidData) {
+      const seoResult = await fetchSeoTrackData(trackId);
+      return {
+        "trackData": seoResult.seoData,
+        "playInfoList": seoResult.playInfoList || [],
+        "source": "seo_fallback"
+      };
+    }
+
     const videoModel = androidData?.track_player?.video_model;
     const playInfoList = parseVideoModelToPlayInfoList(videoModel);
     const isPreview = isPreviewVideoModel(videoModel);
@@ -1498,17 +1565,23 @@ async function fetchSeoTrackData(trackId, preferredVid = "") {
   const fullDuration = seoResponse?.data?.seo_track?.track?.duration;
   const isSeoPreview = previewDuration && fullDuration && previewDuration < fullDuration;
 
-  // 试听 / 无 media_id：用完整 vid 走 luna/player（不再回落 PC track_v2）
-  if (isSeoPreview || !seoResponse?.data?.track_player?.media_id) {
-    console.log(`[汽水音乐] fetchSeoTrackData: 使用完整 vid 取流, trackId=${trackId}, vid=${vid}, seoPreview=${!!isSeoPreview}`);
-    if (vid) {
-      const playInfoResponse = await fetchSeoTrackDataByVid(vid);
-      playInfoList = playInfoResponse?.playInfoList || [];
+  // SEO 返回的 url_player_info 无需签名即可出播放地址，优先使用；
+  // 之前的 luna/player 已返回 ERR_REQUEST_FORBIDDEN，不能再作为主路径。
+  if (playInfoUrl) {
+    try {
+      console.log(`[汽水音乐] fetchSeoTrackData: 使用 SEO url_player_info, trackId=${trackId}, seoPreview=${!!isSeoPreview}`);
+      const playInfoResponse = await axios.default.get(playInfoUrl);
+      playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
+    } catch (error) {
+      console.warn(`[汽水音乐] fetchSeoTrackData: url_player_info 拉取失败, ${error.message}`);
     }
-  } else if (playInfoUrl) {
-    console.log(`[汽水音乐] fetchSeoTrackData: 获取播放信息，trackId=${trackId}`);
-    const playInfoResponse = await axios.default.get(playInfoUrl);
-    playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
+  }
+
+  // 直连失败后才尝试完整 vid（luna/player 已封禁，通常拿不到）。
+  if (playInfoList.length === 0 && vid) {
+    console.log(`[汽水音乐] fetchSeoTrackData: url_player_info 无结果, 尝试 vid 取流, trackId=${trackId}, vid=${vid}`);
+    const playInfoResponse = await fetchSeoTrackDataByVid(vid);
+    playInfoList = playInfoResponse?.playInfoList || [];
   }
 
   return {
@@ -1936,6 +2009,31 @@ async function getLegacyMusicDetailInfo(trackId) {
   };
 }
 
+function buildMusicDetailResult(lyric, track, artwork) {
+  const rawLrc = parseQishuiKrcToQrc(lyric?.content);
+  const trackInfo = parseTrackItem(track);
+  const result = {
+    "artwork": trackInfo?.artwork || artwork
+  };
+  const translation = extractTranslationLyric(lyric);
+  const romanization = extractRomanizationLyric(lyric);
+
+  if (rawLrc) {
+    result.rawLrc = rawLrc;
+  } else if (typeof lyric?.content === "string" && /^\[\d{1,2}:\d{2}/.test(lyric.content.trim())) {
+    result.rawLrc = lyric.content;
+  }
+
+  if (translation) {
+    result.translation = translation;
+  }
+  if (romanization) {
+    result.romanization = romanization;
+  }
+
+  return result;
+}
+
 async function getMusicDetailInfo(musicItem) {
   const trackId = musicItem?.id || musicItem?.item_id;
   if (!trackId) {
@@ -1948,35 +2046,29 @@ async function getMusicDetailInfo(musicItem) {
 
   try {
     const detail = await fetchTrackDetail(trackId);
-    const lyric = detail?.lyric || {};
-    const rawLrc = parseQishuiKrcToQrc(lyric.content);
-    const trackInfo = parseTrackItem(detail?.track);
-    artwork = trackInfo?.artwork || artwork;
-    const result = {
-      "artwork": artwork
-    };
-    const translation = extractTranslationLyric(lyric);
-    const romanization = extractRomanizationLyric(lyric);
-
-    if (rawLrc) {
-      result.rawLrc = rawLrc;
-    } else if (typeof lyric.content === "string" && /^\[\d{1,2}:\d{2}/.test(lyric.content.trim())) {
-      result.rawLrc = lyric.content;
-    }
-
-    if (translation) {
-      result.translation = translation;
-    }
-
-    if (romanization) {
-      result.romanization = romanization;
-    }
-
+    const result = buildMusicDetailResult(detail?.lyric, detail?.track, artwork);
     if (result.rawLrc || result.translation || result.romanization) {
       return result;
     }
   } catch (error) {
     console.error(`[汽水音乐] track_v2 获取歌词错误: ${error.message}`);
+  }
+
+  // 无 signKey 时 Android track_v2 不可用，SEO 接口同样返回 KRC 歌词。
+  try {
+    const seoResponse = await axios.default.get(
+      `https://beta-luna.douyin.com/luna/h5/seo_track?track_id=${trackId}&device_platform=web`
+    );
+    const result = buildMusicDetailResult(
+      seoResponse?.data?.lyric,
+      seoResponse?.data?.seo_track?.track,
+      artwork
+    );
+    if (result.rawLrc || result.translation || result.romanization) {
+      return result;
+    }
+  } catch (error) {
+    console.error(`[汽水音乐] SEO 获取歌词错误: ${error.message}`);
   }
 
   try {
@@ -2467,7 +2559,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.2.6",
+  "version": "3.3.0",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
@@ -2478,6 +2570,16 @@ module.exports = {
       "key": "sessionid",
       "name": "sessionid",
       "hint": "汽水/抖音登录 Cookie 中的 sessionid。可填纯 sessionid 或 sessionid=xxx 片段；过期后请更新"
+    },
+    {
+      "key": "signUrl",
+      "name": "signUrl",
+      "hint": "七头签名服务地址，默认 http://api.music.qishui.vsaa.cn/v1/xheaders/sign"
+    },
+    {
+      "key": "signKey",
+      "name": "signKey",
+      "hint": "汽水签名服务控制台签发的 qs_ 开头 API Key；不填则只走 SEO 播放地址"
     }
   ],
   "hints": {
