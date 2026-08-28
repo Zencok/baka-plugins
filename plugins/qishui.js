@@ -2559,7 +2559,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.3.0",
+  "version": "3.2.7",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
