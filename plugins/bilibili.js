@@ -115,11 +115,33 @@ function buildCookieHeader() {
 
 function cookieValue(name) { return getUserCookieJar()[name] || ""; }
 function csrfToken() { return cookieValue("bili_jct") || cookieValue("csrf"); }
+
+// Bilibili's image CDN appends an `@...` transform to many API responses
+// (for example `@320w_180h_1c_!web-search-common-cover.avif`).  Those URLs are
+// intentionally small thumbnails and become visibly soft when BakaMusic uses
+// them for the now-playing artwork or immersive background.  Keep the CDN
+// host/path and remove only its image-processing suffix so the original asset
+// is requested.  The same normalization is used for video covers, favorites,
+// and user avatars.
+function stripBilibiliImageTransform(value) {
+  try {
+    const parsed = new URL(value);
+    const host = String(parsed.hostname || "").toLowerCase();
+    const isBilibiliCdn = /(?:^|\.)hdslb\.com$/.test(host) || /(?:^|\.)biliimg\.com$/.test(host);
+    if (isBilibiliCdn && /\/bfs\//i.test(parsed.pathname)) {
+      parsed.pathname = parsed.pathname.replace(/@[^/]*$/, "");
+      return parsed.toString();
+    }
+  } catch (_) {}
+  return value;
+}
+
 function normalizeImage(url) {
   if (!url) return "";
-  const value = String(url).trim();
-  if (value.startsWith("//")) return `https:${value}`;
-  return value.replace(/^http:\/\//i, "https://");
+  let value = String(url).trim();
+  if (value.startsWith("//")) value = `https:${value}`;
+  value = value.replace(/^http:\/\//i, "https://");
+  return stripBilibiliImageTransform(value);
 }
 
 function decodeHtml(value) {
@@ -984,7 +1006,7 @@ async function importMusicItem(urlLike) {
 module.exports = {
   platform: "bilibili",
   author: "Toskysun",
-  version: "2.0.7",
+  version: "2.0.8",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
   cacheControl: "no-cache",
