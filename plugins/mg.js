@@ -2122,6 +2122,8 @@ async function importMusicSheet(urlLike) {
   const playlistInfo = res.rsp.playList[0];
   const contentCount = parseInt(playlistInfo.contentCount);
   const cids = [];
+  const pageSignatures = new Set();
+  if (!Number.isFinite(contentCount) || contentCount < 0) throw new Error("[咪咕] 歌单总数异常");
   let pageNo = 1;
   while ((pageNo - 1) * 20 < contentCount) {
     const listPage = (
@@ -2130,28 +2132,32 @@ async function importMusicSheet(urlLike) {
       )
     ).data;
     const $ = (0, cheerio_1.load)(listPage);
+    const pageIds = [];
     $(".row.J_CopySong").each((i, v) => {
-      cids.push($(v).attr("data-cid"));
+      const cid = $(v).attr("data-cid");
+      if (cid) pageIds.push(cid);
     });
+    const signature = JSON.stringify(pageIds);
+    if (!pageIds.length || pageSignatures.has(signature)) throw new Error('[咪咕] 歌单分页未推进');
+    pageSignatures.add(signature);
+    cids.push(...pageIds);
     pageNo += 1;
   }
   if (cids.length === 0) {
     return;
   }
-  const songs = (
-    await axios_1.default({
-      url: `https://music.migu.cn/v3/api/music/audioPlayer/songs?type=1&copyrightId=${cids.join(
-        ","
-      )}`,
-      headers: {
-        referer: "http://m.music.migu.cn/v3",
-      },
-      xsrfCookieName: "XSRF-TOKEN",
-      withCredentials: true,
-    })
-  ).data;
-  const musicList = songs.items
-    .filter((_) => _.vipFlag === 0)
+  const uniqueCids = [...new Set(cids)];
+  const items = [];
+  for (let offset = 0; offset < uniqueCids.length; offset += 100) {
+    const songs = (await axios_1.default({
+      url: `https://music.migu.cn/v3/api/music/audioPlayer/songs?type=1&copyrightId=${uniqueCids.slice(offset, offset + 100).join(",")}`,
+      headers: { referer: "http://m.music.migu.cn/v3" },
+      xsrfCookieName: "XSRF-TOKEN", withCredentials: true,
+    })).data;
+    if (!Array.isArray(songs?.items) || !songs.items.length) throw new Error('[咪咕] 歌曲详情批次异常');
+    items.push(...songs.items);
+  }
+  const musicList = items
     .map((_) => {
       var _a, _b, _c, _d, _e, _f;
       const lyricInfo = extractLyricInfo(_);
@@ -2592,7 +2598,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.3.1",
+  version: "1.3.2",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",

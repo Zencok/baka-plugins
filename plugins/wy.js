@@ -397,6 +397,7 @@ async function getValidMusicItems(trackIds, options = {}) {
 
     if (res.code !== 200 || !res.songs || !res.privileges) {
       console.error("[网易云] 获取歌曲详情失败:", res.code, res.msg);
+      if (options.strict) throw new Error('[网易云] 歌曲详情批次失败');
       return [];
     }
 
@@ -420,6 +421,7 @@ async function getValidMusicItems(trackIds, options = {}) {
     return validMusicItems;
   } catch (e) {
     console.error("[网易云] 获取歌单歌曲失败:", e);
+    if (options.strict) throw e;
     return [];
   }
 }
@@ -1036,12 +1038,15 @@ async function getSheetMusicById(id, withSheetInfo = false) {
     )
   ).data;
   const playlist = sheetDetail.playlist;
+  if (!playlist || !Array.isArray(playlist.trackIds)) {
+    throw new Error('[网易云] 歌单详情数据异常');
+  }
   const trackIds = (playlist?.trackIds || []).map((_) => _.id);
   let result = [];
   let idx = 0;
   while (idx * 200 < trackIds.length) {
     const res = await getValidMusicItems(
-      trackIds.slice(idx * 200, (idx + 1) * 200)
+      trackIds.slice(idx * 200, (idx + 1) * 200), { strict: true }
     );
     result = result.concat(res);
     ++idx;
@@ -1440,7 +1445,7 @@ async function getArtistInfo(artistItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.0",
+  version: "1.1.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",

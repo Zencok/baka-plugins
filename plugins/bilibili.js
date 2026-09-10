@@ -738,11 +738,12 @@ async function getArtistWorks(artistItem = {}, page = 1, type = "music") {
 async function getFavoriteList(id, page = 1, all = false) {
   const result = [];
   let info = null, hasMore = false, pn = Number(page) || 1;
-  const maxPages = all ? 100 : 1;
+  const maxPages = all ? 10000 : 1;
+  const pageSignatures = new Set();
   for (let count = 0; count < maxPages; count += 1) {
     const body = await rawApiGet("/x/v3/fav/resource/list", { media_id: id, platform: "web", ps: 36, pn }, { useCookie: true });
     const data = body?.data;
-    if (!data) break;
+    if (!data || body.code !== 0) throw new Error('[bilibili] 收藏夹分页请求失败');
     info = info || data.info || null;
     if (!Array.isArray(data.medias) && data.info?.mid && count === 0) {
       // Older links expose `fid`; the resource endpoint now expects the
@@ -752,14 +753,22 @@ async function getFavoriteList(id, page = 1, all = false) {
       if (folder && String(folder.id) !== String(id)) return getFavoriteList(String(folder.id), page, all);
     }
     if (!Array.isArray(data.medias)) {
+      if (result.length || data.has_more || Number(info?.media_count) > 0) {
+        throw new Error('[bilibili] 收藏夹分页数据异常');
+      }
       hasMore = false;
       break;
     }
-    result.push(...(Array.isArray(data.medias) ? data.medias : []));
-    hasMore = Boolean(data.has_more);
+    const signature = JSON.stringify(data.medias.map(item => item.id ?? item.bvid ?? item.aid));
+    if (data.medias.length && pageSignatures.has(signature)) throw new Error('[bilibili] 收藏夹分页重复');
+    pageSignatures.add(signature);
+    result.push(...data.medias);
+    hasMore = data.has_more === true || data.has_more === 1 || data.has_more === '1';
+    if (hasMore && !data.medias.length) throw new Error('[bilibili] 收藏夹分页提前结束');
     if (!hasMore || !all) break;
     pn += 1;
   }
+  if (all && hasMore) throw new Error('[bilibili] 收藏夹分页超出合理范围，请重试');
   return { info, medias: result, hasMore };
 }
 
@@ -1006,7 +1015,7 @@ async function importMusicItem(urlLike) {
 module.exports = {
   platform: "bilibili",
   author: "Toskysun",
-  version: "2.0.8",
+  version: "2.0.9",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
   cacheControl: "no-cache",

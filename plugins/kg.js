@@ -1345,6 +1345,7 @@ async function getUserListDetail2(global_collection_id) {
 
     while (totalCount === null || beginIdx < totalCount) {
       page += 1;
+      if (page > 10000) throw new Error('[酷狗] 歌单分页超出合理范围');
       const clienttime = Math.floor(Date.now() / 1000);
       const gatewayParams =
         `area_code=1&appid=1005&begin_idx=${beginIdx}&clienttime=${clienttime}` +
@@ -1359,11 +1360,13 @@ async function getUserListDetail2(global_collection_id) {
       const pageData = pageRes.data?.data;
       const songs = pageData?.songs || [];
 
+      if (!Array.isArray(pageData?.songs)) throw new Error('[酷狗] 歌单分页数据异常');
       if (!songs.length) {
+        if (totalCount !== null && beginIdx < totalCount) throw new Error('[酷狗] 歌单分页提前结束');
         break;
       }
-
-      totalCount = pageData?.count || totalCount || songs.length;
+      const reported = Number(pageData.count);
+      if (Number.isFinite(reported) && reported > 0) totalCount = Math.max(totalCount || 0, reported);
       const beforeSize = songMap.size;
 
       songs.forEach((song) => {
@@ -1377,11 +1380,9 @@ async function getUserListDetail2(global_collection_id) {
       console.log(`[酷狗] global_collection_id分页 ${page} 获取 ${songs.length} 首，去重后累计 ${songMap.size}/${totalCount}`);
 
       const addedCount = songMap.size - beforeSize;
-      if (songs.length < fetchPageSize || addedCount <= 0) {
-        break;
-      }
-
+      if (addedCount <= 0) throw new Error('[酷狗] 歌单分页重复');
       beginIdx += songs.length;
+      if (totalCount === null && songs.length < fetchPageSize) break;
     }
 
     const songInfos = Array.from(songMap.values());
@@ -1429,9 +1430,9 @@ async function getUserListDetail2(global_collection_id) {
         }
       );
 
-      if (detailResult.status !== 200 || !detailResult.data || detailResult.data.status !== 1 || !detailResult.data.data) {
-        console.warn(`[酷狗] global_collection_id详情批次失败，跳过区间 ${i}-${i + batchSongs.length - 1}`);
-        continue;
+      if (detailResult.status !== 200 || detailResult.data?.status !== 1 ||
+          !Array.isArray(detailResult.data.data) || !detailResult.data.data.length) {
+        throw new Error(`[酷狗] 歌曲详情批次失败：${i}-${i + batchSongs.length - 1}`);
       }
 
       const detailItems = detailResult.data.data;
@@ -1456,7 +1457,7 @@ async function getUserListDetail2(global_collection_id) {
     return musicList;
   } catch (error) {
     console.error(`[酷狗] getUserListDetail2异常: ${error.message}`);
-    return [];
+    throw error;
   }
 }
 
@@ -1620,6 +1621,47 @@ function buildImportedKugouSheet(id, info, musicList) {
   };
 }
 
+// The command response can contain only a preview. Fetch every shared-list page.
+async function getKugouSharedSongs(info) {
+  const pageSize = 100;
+  const total = Number(info.count) || null;
+  const songs = [];
+  const signatures = new Set();
+  for (let page = 1; ; page++) {
+    if (page > 10000) throw new Error('[酷狗] 歌单分页超出合理范围');
+    const response = await axios_1.default.post('http://www2.kugou.kugou.com/apps/kucodeAndShare/app/', {
+      appid: 1001, clientver: 10112, mid: "70a02aad1ce4648e7dca77f2afa7b182",
+      clienttime: 722219501, key: "381d7062030e8a5a94cfbe50bfe65433",
+      data: { id: info.id, type: 3, userid: info.userid, collect_type: info.collect_type || 0,
+        page, pagesize: pageSize },
+    });
+    const data = response.data?.status === 1 ? response.data.data : response.data;
+    if (response.status !== 200 || !Array.isArray(data)) throw new Error('[酷狗] 歌单分页数据异常');
+    const signature = JSON.stringify(data.map(song => song.hash));
+    if (data.length && signatures.has(signature)) throw new Error('[酷狗] 歌单分页重复');
+    signatures.add(signature);
+    if (!data.length && total !== null && songs.length < total) throw new Error('[酷狗] 歌单分页提前结束');
+    songs.push(...data);
+    if (total !== null ? page * pageSize >= total : data.length < pageSize) return songs;
+  }
+}
+
+async function getKugouImportDetails(postData) {
+  const data = [];
+  for (let offset = 0; offset < postData.resource.length; offset += 200) {
+    const response = await axios_1.default.post(
+      'https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=390523108&uuid=92691C6246F86F28B149BAA1FD370DF1',
+      { ...postData, resource: postData.resource.slice(offset, offset + 200) },
+      { headers: { 'x-router': 'media.store.kugou.com' } },
+    );
+    if (response.status !== 200 || response.data?.status !== 1 || !Array.isArray(response.data.data) || !response.data.data.length) {
+      throw new Error('[酷狗] 歌曲详情批次异常');
+    }
+    data.push(...response.data.data);
+  }
+  return { status: 200, data: { status: 1, data } };
+}
+
 async function importMusicSheet(urlLike) {
   var _a;
   let id =
@@ -1668,7 +1710,8 @@ async function importMusicSheet(urlLike) {
       return buildImportedKugouSheet(id, info, musicList);
     }
     
-    if (res.data.data.list && res.data.data.list.length > 0) {
+    if (res.data.data.list && res.data.data.list.length > 0 &&
+        (!Number(info.count) || res.data.data.list.length >= Number(info.count))) {
       console.log(`[酷狗] 直接获取到歌曲列表，数量: ${res.data.data.list.length}`);
       let resource = res.data.data.list.map((song) => ({
         album_audio_id: 0,
@@ -1695,15 +1738,7 @@ async function importMusicSheet(urlLike) {
         vip: 0,
       };
       
-      let detailResult = await axios_1.default.post(
-        `https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=390523108&uuid=92691C6246F86F28B149BAA1FD370DF1`,
-        postData,
-        {
-          headers: {
-            "x-router": "media.store.kugou.com",
-          },
-        }
-      );
+      let detailResult = await getKugouImportDetails(postData);
       
       if (detailResult.status === 200 && detailResult.data && detailResult.data.status === 1 && detailResult.data.data) {
         console.log(`[酷狗] 获取歌曲详情成功，数量: ${detailResult.data.data.length}`);
@@ -1741,25 +1776,8 @@ async function importMusicSheet(urlLike) {
     if (info.userid != null && info.id) {
       console.log(`[酷狗] 使用userid方式获取歌单，userid: ${info.userid}, id: ${info.id}`);
       
-      let response = await axios_1.default.post(
-        `http://www2.kugou.kugou.com/apps/kucodeAndShare/app/`,
-        {
-          appid: 1001,
-          clientver: 10112,
-          mid: "70a02aad1ce4648e7dca77f2afa7b182",
-          clienttime: 722219501,
-          key: "381d7062030e8a5a94cfbe50bfe65433",
-          data: {
-            id: info.id,
-            type: 3,
-            userid: info.userid,
-            collect_type: info.collect_type || 0,
-            page: 1,
-            pagesize: info.count || 100,
-          },
-        }
-      );
-      
+      const response = { status: 200, data: await getKugouSharedSongs(info) };
+
       if (response.status === 200 && response.data) {
         let songData = response.data;
         
@@ -1798,15 +1816,7 @@ async function importMusicSheet(urlLike) {
             vip: 0,
           };
           
-          var result = await axios_1.default.post(
-            `https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=390523108&uuid=92691C6246F86F28B149BAA1FD370DF1`,
-            postData,
-            {
-              headers: {
-                "x-router": "media.store.kugou.com",
-              },
-            }
-          );
+          var result = await getKugouImportDetails(postData);
           
           if (result.status === 200 && result.data && result.data.status === 1 && result.data.data) {
             console.log(`[酷狗] 获取歌曲详情成功，数量: ${result.data.data.length}`);
@@ -1851,6 +1861,7 @@ async function importMusicSheet(urlLike) {
     }
   } catch (error) {
     console.error(`[酷狗] 导入歌单异常: ${error.message}`);
+    throw error;
   }
 
   return buildImportedKugouSheet(id, sheetInfo, musicList);
@@ -2209,7 +2220,7 @@ async function getArtistInfo(artistItem) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.1.1",
+  version: "1.1.2",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

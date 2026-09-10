@@ -1004,81 +1004,99 @@ async function importMusicSheet(urlLike) {
     return;
   }
 
-  // 使用 musicu 常规歌单接口，loginUin 固定为 0。
-  const result = (
-    await axios_1.default({
-      url: "https://u.y.qq.com/cgi-bin/musicu.fcg",
-      method: "POST",
-      data: {
-        loginUin: 0,
-        comm: {
-          ct: 24,
-          cv: 4747474,
-          uin: 0,
-        },
-        req: {
-          module: "music.srfDissInfo.aiDissInfo",
-          method: "uniform_get_Dissinfo",
-          param: {
-            disstid: Number(id),
-            userinfo: 1,
-            tag: 1,
-            orderlist: 1,
-            song_begin: 0,
-            song_num: 1000,
-            onlysonglist: 0,
-            enc_host_uin: "",
-          },
-        },
-      },
-      headers: {
-        Referer: "https://y.qq.com/",
-        Origin: "https://y.qq.com",
-        "User-Agent": headers["user-agent"],
-        "Content-Type": "application/json;charset=UTF-8",
-      },
-      timeout: 20000,
-    })
-  ).data;
-
-  const playlistData = result?.req?.data;
-  if (
-    result?.code !== 0 ||
-    result?.req?.code !== 0 ||
-    playlistData?.code !== 0 ||
-    !playlistData?.dirinfo
-  ) {
-    return;
+  const pageSize = 500;
+  const musicList = [];
+  const seen = new Set();
+  const pageSignatures = new Set();
+  let sheetData = null;
+  let total = null;
+  for (let begin = 0; ; begin += pageSize) {
+    // A runaway/changing provider must fail rather than report a partial import.
+    if (begin >= 1000000) throw new Error('[QQ音乐] 歌单分页超出合理范围，请重试');
+    const page = await getQQPlaylistPage(id, begin, pageSize);
+    sheetData = sheetData || page.dirinfo;
+    const reported = Number(page.dirinfo.songnum ?? page.dirinfo.song_num);
+    if (Number.isFinite(reported) && reported > 0) total = Math.max(total || 0, reported);
+    const songs = page.songlist;
+    const signature = JSON.stringify(songs.map(song => song.id ?? song.mid));
+    if (songs.length && pageSignatures.has(signature)) {
+      throw new Error('[QQ音乐] 歌单接口重复返回同一页，请重试');
+    }
+    pageSignatures.add(signature);
+    if (!songs.length && total !== null && begin < total) {
+      throw new Error('[QQ音乐] 歌单分页提前结束，请重试');
+    }
+    const qualityInfo = await getBatchQualities(songs);
+    for (const song of songs) {
+      const item = formatMusicItem(song, qualityInfo);
+      if (item.id == null || seen.has(String(item.id))) continue;
+      seen.add(String(item.id));
+      musicList.push(item);
+    }
+    // QQ offsets count source slots, including entries omitted by the API.
+    // A short page is NOT the end while dirinfo still advertises more slots.
+    if (total !== null ? begin + pageSize >= total : songs.length < pageSize) break;
   }
-  const sheetData = playlistData.dirinfo;
-  const songList = playlistData.songlist || [];
-  const qualityInfo = await getBatchQualities(songList);
-  const musicList = songList.map((song) => formatMusicItem(song, qualityInfo));
+  return buildQQImportedSheet(id, sheetData, musicList, total);
+}
 
+async function getQQPlaylistPage(id, begin, count) {
+  const result = (await axios_1.default({
+    url: "https://u.y.qq.com/cgi-bin/musicu.fcg",
+    method: "POST",
+    data: {
+      loginUin: 0,
+      comm: { ct: 24, cv: 4747474, uin: 0 },
+      req: {
+        module: "music.srfDissInfo.aiDissInfo",
+        method: "uniform_get_Dissinfo",
+        param: {
+          disstid: Number(id), userinfo: 1, tag: 1, orderlist: 1,
+          song_begin: begin, song_num: count, onlysonglist: 0, enc_host_uin: "",
+        },
+      },
+    },
+    headers: {
+      Referer: "https://y.qq.com/", Origin: "https://y.qq.com",
+      "User-Agent": headers["user-agent"],
+      "Content-Type": "application/json;charset=UTF-8",
+    },
+    timeout: 20000,
+  })).data;
+  const page = result?.req?.data;
+  if (result?.code !== 0 || result?.req?.code !== 0 || page?.code !== 0 ||
+      !page.dirinfo || !Array.isArray(page.songlist)) {
+    throw new Error('[QQ音乐] 获取歌单分页失败，请检查链接或稍后重试');
+  }
+  return page;
+}
+
+function buildQQImportedSheet(id, sheetData, musicList, total) {
   return {
     id: String(sheetData.disstid || sheetData.id || id),
     title: he.decode(sheetData.dissname || sheetData.dirname || sheetData.title || ""),
     artwork: sheetData.logo || sheetData.logo1 || sheetData.picurl || sheetData.picurl2,
-    artist:
-      sheetData.nickname ||
-      sheetData.nick ||
-      sheetData.host_nick ||
-      sheetData.creator?.nick ||
-      "",
+    artist: sheetData.nickname || sheetData.nick || sheetData.host_nick || sheetData.creator?.nick || "",
     description: he.decode(sheetData.desc || sheetData.desc2 || ""),
-    worksNum: Number(sheetData.songnum || sheetData.song_num) || musicList.length,
+    worksNum: total ?? (Number(sheetData.songnum || sheetData.song_num) || musicList.length),
     playCount: Number(sheetData.visitnum || sheetData.listennum) || 0,
     createAt: Number(sheetData.ctime) > 0 ? Number(sheetData.ctime) * 1000 : undefined,
     musicList,
   };
 }
 
-async function getMusicSheetInfo(sheet, page) {
-  const importedSheet = await importMusicSheet(sheet.id);
+async function getMusicSheetInfo(sheet, page = 1) {
+  const size = 100;
+  const begin = (Math.max(1, Number(page) || 1) - 1) * size;
+  const result = await getQQPlaylistPage(sheet.id, begin, size);
+  const qualityInfo = await getBatchQualities(result.songlist);
+  const musicList = result.songlist.map(song => formatMusicItem(song, qualityInfo));
+  const total = Number(result.dirinfo.songnum ?? result.dirinfo.song_num);
+  const knownTotal = Number.isFinite(total) && total > 0;
   return {
-    isEnd: true,
-    sheetItem: importedSheet || sheet,
-    musicList: importedSheet?.musicList || [],
+    isEnd: knownTotal ? begin + size >= total : musicList.length < size,
+    sheetItem: buildQQImportedSheet(sheet.id, result.dirinfo, [], knownTotal ? total : null),
+    musicList,
   };
 }
 
@@ -1302,7 +1320,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.1.1",
+  version: "1.1.2",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

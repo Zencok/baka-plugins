@@ -20,15 +20,22 @@
 
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
-| 网易云音乐 | `plugins/wy.js` | `1.1.0` | 音源相关、MV |
-| QQ音乐 | `plugins/qq.js` | `1.1.1` | 音源相关、MV |
-| 酷狗音乐 | `plugins/kg.js` | `1.1.1` | 音源相关、MV |
-| 酷我音乐 | `plugins/kw.js` | `1.1.1` | 音源相关、MV |
-| 咪咕音乐 | `plugins/mg.js` | `1.3.1` | 免密、全 8 档音质、播放时自动降级、MV |
-| Bilibili | `plugins/bilibili.js` | `2.0.8` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
-| 汽水音乐 | `plugins/qishui.js` | `3.2.6` | 下载免密、Android 取流实时签名、MV（登录态下补充视频音乐搜索结果） |
+| 网易云音乐 | `plugins/wy.js` | `1.1.1` | 音源相关、MV |
+| QQ音乐 | `plugins/qq.js` | `1.1.2` | 音源相关、MV |
+| 酷狗音乐 | `plugins/kg.js` | `1.1.2` | 音源相关、MV |
+| 酷我音乐 | `plugins/kw.js` | `1.1.2` | 音源相关、MV |
+| 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、全 8 档音质、播放时自动降级、MV |
+| Bilibili | `plugins/bilibili.js` | `2.0.9` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
+| 汽水音乐 | `plugins/qishui.js` | `3.2.7` | 下载免密、Android 取流实时签名、MV（登录态下补充视频音乐搜索结果） |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
+
+歌单导入的分页、游标和详情分批请求由插件负责，客户端无需内置平台 API。
+QQ 按来源总数继续分页，酷我包含最后一页，酷狗分批获取分享歌单及详情，
+Bilibili 收藏夹不再静默截断于 100 页，汽水跟随 `next_cursor`，咪咕分批请求歌曲详情。
+网易云保留完整 `trackIds` 分批机制；网络或业务错误不再作为空批次跳过。
+来源总数 `worksNum` 与实际返回的 `musicList.length` 分别保留；下架、权限限制和去重可能导致差异。
+回归测试：`node --test tests/playlist-import.test.cjs`。详见 [歌单导入检查](docs/playlist-import-pagination.md)。
 
 咪咕播放音质完整映射：`mgg=LQ 64k`、`128k=PQ`、`320k=HQ`、`flac=SQ`、`flac24bit=ZQ24`、`hires=ZQ32`、`atmos=Z3D`、`atmos_plus=3D60`。歌曲列表会按接口元数据仅展示该歌曲实际拥有的档位。
 

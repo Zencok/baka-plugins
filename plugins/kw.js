@@ -1427,7 +1427,8 @@ async function importMusicSheet(urlLike) {
   }
 
   let page = 1;
-  let totalPage = 30;
+  let totalPage = Infinity;
+  const pageSignatures = new Set();
   let musicList = [];
   let sheetInfo = null;
 
@@ -1435,7 +1436,8 @@ async function importMusicSheet(urlLike) {
   let useNewApi = isNewApiUrl;
   let userProvidedUrl = fullUrl;
 
-  while (page < totalPage) {
+  while (page <= totalPage) {
+    if (page > 10000) throw new Error("[酷我] 歌单分页超出合理范围，请重试");
     try {
       let data;
 
@@ -1461,21 +1463,28 @@ async function importMusicSheet(urlLike) {
         userProvidedUrl = null;
         page = 1;
         musicList = [];
+        sheetInfo = null;
+        totalPage = Infinity;
+        pageSignatures.clear();
         continue;
       }
 
       // 新接口从 data.info 中取数据
       const responseData = useNewApi ? data.info : data;
+      if (!responseData || !Array.isArray(responseData.musiclist || responseData.musicList)) {
+        throw new Error('[酷我] 歌单分页数据异常');
+      }
       if (!sheetInfo) {
         sheetInfo = responseData.playlistinfo || responseData.playlistInfo || responseData;
       }
-
-      totalPage = Math.ceil(responseData.total / 80);
-      if (isNaN(totalPage)) {
-        totalPage = 1;
-      }
-
-      const songs = responseData.musiclist || responseData.musicList || [];
+      const songs = responseData.musiclist || responseData.musicList;
+      const total = Number(responseData.total);
+      totalPage = Number.isFinite(total) && total >= 0 ? Math.ceil(total / 80) : Infinity;
+      const signature = JSON.stringify(songs.map(song => song.id ?? song.musicrid));
+      if (songs.length && pageSignatures.has(signature)) throw new Error('[酷我] 歌单分页重复');
+      pageSignatures.add(signature);
+      if (!songs.length && page <= totalPage && totalPage !== Infinity) throw new Error('[酷我] 歌单分页提前结束');
+      if (totalPage === Infinity && songs.length < 80) totalPage = page;
 
       musicList = musicList.concat(
         songs.map((_) => {
@@ -1511,8 +1520,12 @@ async function importMusicSheet(urlLike) {
         userProvidedUrl = null;
         page = 1;
         musicList = [];
+        sheetInfo = null;
+        totalPage = Infinity;
+        pageSignatures.clear();
         continue;
       }
+      throw error;
     }
 
     await new Promise((resolve) => {
@@ -1824,7 +1837,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.1.1",
+  version: "1.1.2",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",

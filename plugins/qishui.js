@@ -2140,26 +2140,36 @@ async function fetchSeoTrackDataByVid(vid) {
 }
 
 async function fetchPlaylistDetailFromApi(playlistId) {
-  try {
-    const apiData = await qishuiPcGet("/playlist/detail", {
-      "playlist_id": playlistId,
-      "cursor": "",
-      "count": "-1"
-    });
-
-    if (apiData && Array.isArray(apiData.media_resources)) {
-      return {
-        "playlistInfo": apiData.playlist || null,
-        "media_resources": apiData.media_resources,
-        "has_more": apiData.has_more,
-        "next_cursor": apiData.next_cursor
-      };
+  let cursor = "";
+  let playlistInfo = null;
+  const resources = [];
+  const cursors = new Set();
+  for (let page = 0; ; page++) {
+    if (page >= 10000) throw new Error('[汽水音乐] 歌单分页超出合理范围，请重试');
+    let data;
+    try {
+      data = await qishuiPcGet("/playlist/detail", {
+        "playlist_id": playlistId, "cursor": cursor, "count": "100"
+      });
+    } catch (error) {
+      if (page === 0) return null;
+      throw error;
     }
-  } catch (error) {
-    return null;
+    if (!data || !Array.isArray(data.media_resources)) {
+      if (page === 0) return null;
+      throw new Error('[汽水音乐] 歌单分页数据异常');
+    }
+    playlistInfo = playlistInfo || data.playlist || null;
+    resources.push(...data.media_resources);
+    const hasMore = data.has_more === true || data.has_more === 1 || data.has_more === '1';
+    if (!hasMore) return { playlistInfo, media_resources: resources, has_more: false, next_cursor: data.next_cursor };
+    const next = data.next_cursor == null ? '' : String(data.next_cursor);
+    if (!data.media_resources.length || !next || next === cursor || cursors.has(next)) {
+      throw new Error('[汽水音乐] 歌单分页游标未推进');
+    }
+    cursors.add(next);
+    cursor = next;
   }
-
-  return null;
 }
 
 async function fetchPlaylistDetailFromWeb(playlistId) {
@@ -2467,7 +2477,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.2.6",
+  "version": "3.2.7",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
