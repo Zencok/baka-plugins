@@ -172,48 +172,13 @@ function buildQqArtwork(track, size = 800) {
   return singerPmid ? getQqCoverUrl("T001", singerPmid, 300) : undefined;
 }
 
-async function getBatchQualities(songList) {
-  if (!songList || songList.length === 0) return {};
+// 备注：QQ 的 musicu.fcg 接口中，comm.ct 决定 file（音质）字段的完整度。
+// ct 19 = QQ 客户端，会下发完整的 size_hires / hires_sample / hires_bitdepth；
+// ct 24 = web 端，同一接口会把 hires 抹成 0（size_flac 等不受影响）。
+// 因此所有需要逐曲音质的接口（专辑、歌手歌曲、歌单、排行榜）都必须用 ct 19。
+const TRACK_QUALITY_COMM = { ct: 19, cv: 1859 };
 
-  try {
-    const res = await axios_1.default({
-      url: "https://u.y.qq.com/cgi-bin/musicu.fcg",
-      method: "POST",
-      data: {
-        comm: { ct: '19', cv: '1859', uin: '0' },
-        req: {
-          module: 'music.trackInfo.UniformRuleCtrl',
-          method: 'CgiGetTrackInfo',
-          param: {
-            types: songList.map(() => 1),
-            ids: songList.map(item => item.songid || item.id),
-            ctx: 0,
-          },
-        },
-      },
-      headers: {
-        referer: "https://y.qq.com",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Cookie: "uin=",
-      },
-      xsrfCookieName: "XSRF-TOKEN",
-      withCredentials: true,
-    });
-
-    const qualityMap = {};
-    if (res.data?.req?.data?.tracks) {
-      res.data.req.data.tracks.forEach((track) => {
-        qualityMap[track.id] = parseQualities(track.file);
-      });
-    }
-    return qualityMap;
-  } catch (error) {
-    console.error('[QQ音乐] 批量获取音质失败:', error);
-    return {};
-  }
-}
-
-function formatMusicItem(_, qualityInfo = {}) {
+function formatMusicItem(_) {
   var _a, _b, _c;
   const albumid =
     _.albumid || ((_a = _.album) === null || _a === void 0 ? void 0 : _a.id);
@@ -223,8 +188,7 @@ function formatMusicItem(_, qualityInfo = {}) {
     _.albumname ||
     ((_c = _.album) === null || _c === void 0 ? void 0 : _c.title);
 
-  const songId = _.id || _.songid;
-  let qualities = qualityInfo[songId] || parseQualities(_.file);
+  const qualities = parseQualities(_.file);
 
   const singerList = (_.singer || []).map(s => ({
     id: s.id,
@@ -679,10 +643,29 @@ async function getMusicInfo(musicBase) {
   }
 
   try {
-    const songmid = musicBase.songmid || musicBase.mid || musicBase.id;
-    const songid = musicBase.id || musicBase.songid;
+    // 智能识别：纯数字是 songid，包含字母是 songmid
+    let songmid = null;
+    let songid = null;
+
+    // 优先检查 songmid 字段（如果包含字母，则是有效的 songmid）
+    const midCandidate = musicBase.songmid || musicBase.mid;
+    if (midCandidate && /[a-zA-Z]/.test(String(midCandidate))) {
+      songmid = String(midCandidate);
+    }
+
+    // 检查 id/songid 字段（纯数字）
+    const idCandidate = musicBase.id || musicBase.songid;
+    if (idCandidate && /^\d+$/.test(String(idCandidate))) {
+      songid = Number(idCandidate);
+    }
+
+    // 如果 songmid 字段是纯数字，说明是误传的 songid
+    if (!songid && midCandidate && /^\d+$/.test(String(midCandidate))) {
+      songid = Number(midCandidate);
+    }
 
     if (!songmid && !songid) {
+      console.error('[QQ音乐] getMusicInfo: 缺少有效的歌曲标识');
       return null;
     }
 
@@ -699,8 +682,8 @@ async function getMusicInfo(musicBase) {
           method: 'CgiGetTrackInfo',
           param: {
             types: [1],
-            ids: songid && !isNaN(Number(songid)) ? [Number(songid)] : [0],
-            mids: songmid ? [String(songmid)] : [],
+            ids: songid ? [songid] : [0],
+            mids: songmid ? [songmid] : [],
             ctx: 0,
           },
         },
@@ -841,21 +824,23 @@ async function getLyricLegacy(musicItem) {
   };
 }
 
-async function getAlbumInfo(albumItem) {
+// 上游单次最多稳定返回 999 首，专辑需要按 begin 继续取全
+const ALBUM_PAGE_SIZE = 999;
+// 异常保护：超过该数量视为上游返回异常，报错而不是交付被截断的专辑
+const ALBUM_MAX_SONGS = 100000;
+
+async function getAlbumSongPage(albumItem, begin, num) {
   const url = changeUrlQuery(
     {
       data: JSON.stringify({
-        comm: {
-          ct: 24,
-          cv: 10000,
-        },
+        comm: { ...TRACK_QUALITY_COMM },
         albumSonglist: {
           method: "GetAlbumSongList",
           param: {
             albumMid: albumItem.albumMID,
             albumID: 0,
-            begin: 0,
-            num: 999,
+            begin: begin,
+            num: num,
             order: 2,
           },
           module: "music.musichallAlbum.AlbumSongList",
@@ -873,31 +858,73 @@ async function getAlbumInfo(albumItem) {
     })
   ).data;
 
-  const songList = res.albumSonglist.data.songList.map(item => item.songInfo);
-  // Album list file often stops at flac; hires/master/atmos need CgiGetTrackInfo
-  const qualityInfo = await getBatchQualities(songList);
+  const data = res?.albumSonglist?.data;
+  const code = res?.albumSonglist?.code;
+  if (!data || !Array.isArray(data.songList) || (code != null && code !== 0)) {
+    throw new Error("[QQ音乐] 获取专辑歌曲失败，请稍后重试");
+  }
+  return data;
+}
+
+async function getAlbumInfo(albumItem) {
+  const songList = [];
+  const pageSignatures = new Set();
+  let total = null;
+
+  for (let begin = 0; ; begin += ALBUM_PAGE_SIZE) {
+    if (begin >= ALBUM_MAX_SONGS) {
+      throw new Error("[QQ音乐] 专辑分页超出合理范围，请重试");
+    }
+    const page = await getAlbumSongPage(albumItem, begin, ALBUM_PAGE_SIZE);
+    const reported = Number(page.totalNum ?? page.songNum);
+    if (Number.isFinite(reported) && reported > 0) {
+      total = Math.max(total || 0, reported);
+    }
+    const entries = page.songList;
+    const signature = JSON.stringify(entries.map((item) => item?.songInfo?.id ?? item?.songInfo?.mid));
+    if (entries.length && pageSignatures.has(signature)) {
+      throw new Error("[QQ音乐] 专辑接口重复返回同一页，请重试");
+    }
+    pageSignatures.add(signature);
+    // 总数已知时，空页意味着上游提前结束，不能当作完整专辑交付
+    if (!entries.length && total !== null && begin < total) {
+      throw new Error("[QQ音乐] 专辑分页提前结束，请重试");
+    }
+    for (const entry of entries) {
+      const song = entry?.songInfo;
+      if (!song || song.id == null) continue;
+      if (!Array.isArray(song.singer)) song.singer = [];
+      songList.push(song);
+    }
+    // 上限固定、顺序固定的专辑列表：按总数判断结束，短页不代表取完
+    if (total !== null ? begin + ALBUM_PAGE_SIZE >= total : entries.length < ALBUM_PAGE_SIZE) break;
+  }
+
+  // ct 19 的专辑接口已直接下发完整 file（128k/320k/flac/hires/master/atmos…），
+  // 与 CgiGetTrackInfo 逐字段一致，因此无需再额外请求批量音质。
   return {
-    musicList: songList.map((song) => formatMusicItem(song, qualityInfo)),
+    musicList: songList.map((song) => formatMusicItem(song)),
   };
 }
 
 async function getArtistSongs(artistItem, page) {
+  // 改用 musichall.song_list_server/GetSingerSongList：
+  // 旧接口 music.web_singer_info_svr/get_singer_detail_info 即使 ct:19 也不下发
+  // size_new（master/atmos/atmos_plus/vinyl），file 只到 flac/hires；
+  // GetSingerSongList 在 ct:19 下返回完整 file（size_new + size_hires），与批量接口一致。
   const url = changeUrlQuery(
     {
       data: JSON.stringify({
-        comm: {
-          ct: 24,
-          cv: 0,
-        },
-        singer: {
-          method: "get_singer_detail_info",
+        comm: { ...TRACK_QUALITY_COMM },
+        singerSongList: {
+          method: "GetSingerSongList",
           param: {
-            sort: 5,
-            singermid: artistItem.singerMID,
-            sin: (page - 1) * pageSize,
+            order: 1,
+            singerMid: artistItem.singerMID,
+            begin: (page - 1) * pageSize,
             num: pageSize,
           },
-          module: "music.web_singer_info_svr",
+          module: "musichall.song_list_server",
         },
       }),
     },
@@ -913,13 +940,11 @@ async function getArtistSongs(artistItem, page) {
     })
   ).data;
 
-  const songList = res.singer.data.songlist || [];
-  // get_singer_detail_info file often only has up to flac(SQ); HR+ via batch
-  const qualityInfo = await getBatchQualities(songList);
+  const songList = (res.singerSongList.data.songList || []).map(item => item.songInfo);
 
   return {
-    isEnd: res.singer.data.total_song <= page * pageSize,
-    data: songList.map((song) => formatMusicItem(song, qualityInfo)),
+    isEnd: res.singerSongList.data.totalNum <= page * pageSize,
+    data: songList.map((song) => formatMusicItem(song)),
   };
 }
 
@@ -1026,9 +1051,8 @@ async function importMusicSheet(urlLike) {
     if (!songs.length && total !== null && begin < total) {
       throw new Error('[QQ音乐] 歌单分页提前结束，请重试');
     }
-    const qualityInfo = await getBatchQualities(songs);
     for (const song of songs) {
-      const item = formatMusicItem(song, qualityInfo);
+      const item = formatMusicItem(song);
       if (item.id == null || seen.has(String(item.id))) continue;
       seen.add(String(item.id));
       musicList.push(item);
@@ -1046,7 +1070,7 @@ async function getQQPlaylistPage(id, begin, count) {
     method: "POST",
     data: {
       loginUin: 0,
-      comm: { ct: 24, cv: 4747474, uin: 0 },
+      comm: { ...TRACK_QUALITY_COMM, uin: 0 },
       req: {
         module: "music.srfDissInfo.aiDissInfo",
         method: "uniform_get_Dissinfo",
@@ -1089,8 +1113,7 @@ async function getMusicSheetInfo(sheet, page = 1) {
   const size = 100;
   const begin = (Math.max(1, Number(page) || 1) - 1) * size;
   const result = await getQQPlaylistPage(sheet.id, begin, size);
-  const qualityInfo = await getBatchQualities(result.songlist);
-  const musicList = result.songlist.map(song => formatMusicItem(song, qualityInfo));
+  const musicList = result.songlist.map(song => formatMusicItem(song));
   const total = Number(result.dirinfo.songnum ?? result.dirinfo.song_num);
   const knownTotal = Number.isFinite(total) && total > 0;
   return {
@@ -1207,7 +1230,7 @@ async function getTopListDetail(topListItem) {
       topListItem.id
     }%2C%22offset%22%3A0%2C%22num%22%3A100%2C%22period%22%3A%22${
       (_a = topListItem.period) !== null && _a !== void 0 ? _a : ""
-    }%22%7D%7D%2C%22comm%22%3A%7B%22ct%22%3A24%2C%22cv%22%3A0%7D%7D`,
+    }%22%7D%7D%2C%22comm%22%3A%7B%22ct%22%3A19%2C%22cv%22%3A1859%7D%7D`,
     method: "get",
     headers: {
       Cookie: "uin=",
@@ -1217,9 +1240,8 @@ async function getTopListDetail(topListItem) {
   });
 
   const songList = res.data.detail.data.songInfoList;
-  const qualityInfo = await getBatchQualities(songList);
 
-  return { ...topListItem, musicList: songList.map(song => formatMusicItem(song, qualityInfo)) };
+  return { ...topListItem, musicList: songList.map(song => formatMusicItem(song)) };
 }
 
 async function getMusicComments(musicItem, page = 1) {
@@ -1320,7 +1342,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.1.2",
+  version: "1.1.4",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

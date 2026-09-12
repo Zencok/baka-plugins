@@ -21,7 +21,7 @@
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
 | 网易云音乐 | `plugins/wy.js` | `1.1.1` | 音源相关、MV |
-| QQ音乐 | `plugins/qq.js` | `1.1.2` | 音源相关、MV |
+| QQ音乐 | `plugins/qq.js` | `1.1.4` | 音源相关、MV |
 | 酷狗音乐 | `plugins/kg.js` | `1.1.2` | 音源相关、MV |
 | 酷我音乐 | `plugins/kw.js` | `1.1.2` | 音源相关、MV |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、全 8 档音质、播放时自动降级、MV |
@@ -35,7 +35,15 @@ QQ 按来源总数继续分页，酷我包含最后一页，酷狗分批获取�
 Bilibili 收藏夹不再静默截断于 100 页，汽水跟随 `next_cursor`，咪咕分批请求歌曲详情。
 网易云保留完整 `trackIds` 分批机制；网络或业务错误不再作为空批次跳过。
 来源总数 `worksNum` 与实际返回的 `musicList.length` 分别保留；下架、权限限制和去重可能导致差异。
-回归测试：`node --test tests/playlist-import.test.cjs`。详见 [歌单导入检查](docs/playlist-import-pagination.md)。
+
+QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求固定上限为 999 首，但
+有声剧、合集类专辑常见数千首，插件会继续按 `begin` 翻页直到总数取满，不再在
+999 首处截断。
+
+逐曲音质（专辑详情、歌手歌曲、歌单、排行榜）统一使用 `comm.ct = 19`：同一个
+`musicu.fcg` 接口在 `ct = 24`（web）下会把 `size_hires` 抹成 0，只保留
+`size_flac` 等字段，播放器因此判定曲目不支持 Hi-Res。`ct = 19`（客户端）下这些
+接口的 `file` 与 `CgiGetTrackInfo` 逐字段一致，所以不再需要额外的批量音质请求。
 
 咪咕播放音质完整映射：`mgg=LQ 64k`、`128k=PQ`、`320k=HQ`、`flac=SQ`、`flac24bit=ZQ24`、`hires=ZQ32`、`atmos=Z3D`、`atmos_plus=3D60`。歌曲列表会按接口元数据仅展示该歌曲实际拥有的档位。
 
