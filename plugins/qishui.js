@@ -15,7 +15,6 @@ Object.defineProperty(exports, "__esModule", {
 });
 
 const axios = require("axios");
-const https = require("https");
 
 const PAGE_SIZE = 20;
 
@@ -91,7 +90,6 @@ const QISHUI_ANDROID_API_PARAMS = {
 const QISHUI_XHEADERS_SIGN_URL = "https://211.161.236.45/api/music/soda/sign-pc.php";
 const QISHUI_XHEADERS_INSTANCE = "soda-386088-pc";
 const QISHUI_XHEADERS_KEY = "xh_9K5EgmaNu-hTx48CwL48wkcLVPtR50U0";
-const QISHUI_SIGN_AGENT = new https.Agent({ "rejectUnauthorized": false });
 
 const QISHUI_XHEADERS_NAMES = [
   "x-ss-stub",
@@ -452,8 +450,7 @@ async function signQishuiPcRequest(url, bodyBytes, khronos) {
         "Authorization": `Bearer ${QISHUI_XHEADERS_KEY}`
       },
       "timeout": 15000,
-      "maxRedirects": 5,
-      "httpsAgent": QISHUI_SIGN_AGENT
+      "maxRedirects": 5
     }
   );
 
