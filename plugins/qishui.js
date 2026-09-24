@@ -1,8 +1,8 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.2.6
- * @description 汽水音乐插件：歌曲搜索/歌词/取流走 Android API（lossless 音质与逐字歌词），视频音乐通过 PC 混合搜索补充；专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
+ * @version 3.2.8
+ * @description 汽水音乐插件：歌词和取流走 PC track_v2，签名经转发。专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
  * @srcLink https://music.cwo.cc.cd/plugins/qishui.js
@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", {
 });
 
 const axios = require("axios");
+const https = require("https");
 
 const PAGE_SIZE = 20;
 
@@ -27,38 +28,11 @@ const QISHUI_API_HEADERS = {
   "Content-Type": "application/json; charset=UTF-8",
   "User-Agent": "com.luna.music/100159040 (Linux; U; Android 11; zh_CN; Cronet/TTNetVersion:dd1b0931 2024-06-28 QuicVersion:d299248d 2024-04-09)",
   "X-Argus": "=",
-  "x-common-params-v2": "channel=appstore&aid=8478&device_id=1100210274091033"
+  "x-common-params-v2": "channel=official&aid=386088&device_id=2081836196178571"
 };
 
 const QISHUI_PC_API_BASE = "https://api.qishui.com/luna/pc";
-
 const QISHUI_ANDROID_API_BASE = "https://api.qishui.com/luna";
-
-const QISHUI_XHEADERS_SIGN_URL = "http://api.music.qishui.vsaa.cn/qm/api.php";
-
-const QISHUI_XHEADERS_SIGN_ATTEMPTS = 6;
-
-const QISHUI_XHEADERS_SIGN_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
-  "Accept-Encoding": "gzip, deflate",
-  "Content-Type": "application/json",
-  "Origin": "http://api.music.qishui.vsaa.cn",
-  "Referer": "http://api.music.qishui.vsaa.cn/qm/",
-  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"
-};
-
-const QISHUI_XHEADERS_NAMES = [
-  "x-khronos",
-  "x-argus",
-  "x-gorgon",
-  "x-helios",
-  "x-ladon",
-  "x-ss-stub",
-  "x-medusa"
-];
-
-/** 默认 sessionid；过期后可在插件用户变量 sessionid 中覆盖 */
-const QISHUI_ANDROID_DEFAULT_SESSION_ID = "3e60f931253128d953e15144ba7105f1";
 
 const QISHUI_ANDROID_API_HEADERS = {
   "User-Agent": "com.luna.music/100198030 (Linux; U; Android 15; zh_CN_#Hans; ABR-AL80; Build/V417IR;tt-ok/3.12.13.19)",
@@ -98,7 +72,6 @@ const QISHUI_ANDROID_API_PARAMS = {
   "tz_name": "Asia/Shanghai",
   "tz_offset": "28800",
   "luna_register_time": "1784311292",
-  // 与抓包原文一致（保留 %E5 编码，勿解码为中文；axios 会再把 % 编成 %25）
   "diversion_category_level_two": "Xiaomi%E5%95%86%E5%BA%97-%E8%87%AA%E7%84%B6",
   "package": "com.luna.music",
   "charge": "0",
@@ -115,30 +88,25 @@ const QISHUI_ANDROID_API_PARAMS = {
   "device_id": "2204957404565290"
 };
 
-const QISHUI_ANDROID_TRACK_BODY_TEMPLATE = {
-  "enable_refresh_api": true,
-  "limited_free_param": {
-    "expire_time": 0,
-    "from_other_queue": false,
-    "intercept_type": "",
-    "is_login_support": true,
-    "is_logout_support": true,
-    "limited_free": false,
-    "limited_free_type": "",
-    "rewind_prev_intercept_type": "",
-    "sign": "",
-    "sign_version": ""
-  },
-  "media_type": "track",
-  "queue_type": "search_one_track",
-  "scene_name": "search_track_reco"
-};
+const QISHUI_XHEADERS_SIGN_URL = "https://211.161.236.45/api/music/soda/sign-pc.php";
+const QISHUI_XHEADERS_INSTANCE = "soda-386088-pc";
+const QISHUI_XHEADERS_KEY = "xh_9K5EgmaNu-hTx48CwL48wkcLVPtR50U0";
+const QISHUI_SIGN_AGENT = new https.Agent({ "rejectUnauthorized": false });
+
+const QISHUI_XHEADERS_NAMES = [
+  "x-ss-stub",
+  "x-helios",
+  "x-medusa"
+];
+
+/** 默认 sessionid；过期后可在插件用户变量 sessionid 中覆盖 */
+const QISHUI_DEFAULT_SESSION_ID = "3e60f931253128d953e15144ba7105f1";
 
 const QISHUI_PC_API_HEADERS = {
   "Accept": "*/*",
   "Content-Type": "application/json; charset=utf-8",
   "Accept-Encoding": "gzip, deflate",
-  "User-Agent": "LunaPC/3.2.1(343009595)",
+  "User-Agent": "LunaPC/3.8.0(467160162)",
   "x-luna-background-type": "foreground",
   "x-luna-is-background-req": "0",
   "x-luna-is-local-user": "0"
@@ -151,11 +119,11 @@ const QISHUI_PC_API_PARAMS = {
   "geo_region": "cn",
   "os_region": "cn",
   "sim_region": "",
-  "device_id": "100000305367703244",
+  "device_id": "2081836196178571",
   "cdid": "",
-  "iid": "",
-  "version_name": "3.2.1",
-  "version_code": "30020100",
+  "iid": "2081836196182667",
+  "version_name": "3.8.0",
+  "version_code": "30080000",
   "channel": "official",
   "build_mode": "master",
   "network_carrier": "",
@@ -164,8 +132,8 @@ const QISHUI_PC_API_PARAMS = {
   "resolution": "",
   "device_platform": "windows",
   "device_type": "Windows",
-  "os_version": "Windows 11 Home China",
-  "fp": "100000305367703244"
+  "os_version": "Windows 11 Pro for Workstations",
+  "fp": "2081836196178571"
 };
 
 const AUDIO_PLAYBACK_HEADERS = {
@@ -371,8 +339,36 @@ function createSearchId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+let qishuiDevice = null;
+
+function rememberQishuiDevice(device) {
+  if (!device || typeof device !== "object") {
+    return;
+  }
+  const next = Object.assign({}, qishuiDevice);
+  Object.entries(device).forEach(([key, value]) => {
+    if (value == null || value === "") {
+      return;
+    }
+    next[key] = String(value);
+  });
+  qishuiDevice = next;
+}
+
+function qishuiDeviceDrift(params, device) {
+  if (!device || typeof device !== "object") {
+    return false;
+  }
+  return Object.entries(device).some(([key, value]) => {
+    if (value == null || value === "") {
+      return false;
+    }
+    return String(params[key] ?? "") !== String(value);
+  });
+}
+
 function getPcApiParams(extraParams = {}) {
-  return Object.assign({}, QISHUI_PC_API_PARAMS, extraParams);
+  return Object.assign({}, QISHUI_PC_API_PARAMS, qishuiDevice || {}, extraParams);
 }
 
 function getQishuiUserVariables() {
@@ -395,7 +391,7 @@ function getQishuiSessionId() {
     if (raw && typeof raw === "string") {
       const trimmed = raw.trim();
       if (!trimmed) {
-        return QISHUI_ANDROID_DEFAULT_SESSION_ID;
+        return QISHUI_DEFAULT_SESSION_ID;
       }
 
       const match = trimmed.match(/(?:^|[;\s])sessionid=([^;]+)/i);
@@ -411,17 +407,11 @@ function getQishuiSessionId() {
     // env 在非插件宿主环境下可能不存在
   }
 
-  return QISHUI_ANDROID_DEFAULT_SESSION_ID;
+  return QISHUI_DEFAULT_SESSION_ID;
 }
 
-function getAndroidApiParams(extraParams = {}, requestTicket = String(Date.now())) {
-  return Object.assign({}, QISHUI_ANDROID_API_PARAMS, {
-    "_rticket": requestTicket
-  }, extraParams);
-}
-
-function getAndroidApiHeaders() {
-  return Object.assign({}, QISHUI_ANDROID_API_HEADERS, {
+function getPcApiHeaders() {
+  return Object.assign({}, QISHUI_PC_API_HEADERS, {
     "Cookie": `sessionid=${getQishuiSessionId()}`
   });
 }
@@ -438,85 +428,70 @@ function normalizeSignedXHeaders(headers) {
   }
 
   return {
-    "X-Khronos": normalized["x-khronos"],
-    "X-Argus": normalized["x-argus"],
-    "X-Gorgon": normalized["x-gorgon"],
     "X-Helios": normalized["x-helios"],
-    "X-Ladon": normalized["x-ladon"],
     "X-SS-STUB": normalized["x-ss-stub"],
     "X-Medusa": normalized["x-medusa"]
   };
 }
 
-async function signQishuiAndroidRequest(url, bodyBytes) {
+async function signQishuiPcRequest(url, bodyBytes, khronos) {
   const response = await axios.default.post(
     QISHUI_XHEADERS_SIGN_URL,
     {
+      "instance": QISHUI_XHEADERS_INSTANCE,
       "url": url,
-      "body": bodyBytes.toString("base64"),
-      "cookie": `sessionid=${getQishuiSessionId()}`,
-      "ua": "",
-      "send": false
+      "body_b64": bodyBytes.toString("base64"),
+      "options": {
+        "khronos": Number(khronos)
+      }
     },
     {
-      "headers": QISHUI_XHEADERS_SIGN_HEADERS,
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": `Bearer ${QISHUI_XHEADERS_KEY}`
+      },
       "timeout": 15000,
-      "maxRedirects": 5
+      "maxRedirects": 5,
+      "httpsAgent": QISHUI_SIGN_AGENT
     }
   );
 
-  if (Number(response.data?.code) !== 0 || !response.data?.headers) {
-    const error = new Error(response.data?.msg || "X-Headers 签名服务返回异常");
+  const payload = response.data?.headers ? response.data : (response.data?.data || {});
+  if (!payload.headers) {
+    const error = new Error(response.data?.msg || response.data?.message || "X-Headers 签名服务返回异常");
     error.qishuiSignRetryable = true;
     throw error;
   }
 
-  return normalizeSignedXHeaders(response.data?.headers);
+  return {
+    "headers": normalizeSignedXHeaders(payload.headers),
+    "device": payload.device && typeof payload.device === "object" ? payload.device : null
+  };
 }
 
-function isRetryableQishuiSignError(error) {
-  const status = Number(error?.response?.status || 0);
-  return error?.qishuiSignRetryable === true
-    || status === 408
-    || status === 429
-    || status >= 500;
-}
-
-async function prepareSignedQishuiAndroidRequest(endpoint, bodyBytes, extraParams = {}) {
-  let lastError = null;
-
-  for (let attempt = 0; attempt < QISHUI_XHEADERS_SIGN_ATTEMPTS; attempt++) {
-    const requestTicket = String(Date.now() + attempt);
-    const params = getAndroidApiParams(extraParams, requestTicket);
-    const requestUrl = axios.default.getUri({
-      "url": `${QISHUI_ANDROID_API_BASE}/${endpoint}`,
-      "params": params
+async function prepareSignedQishuiPcRequest(endpoint, bodyBytes) {
+  const khronos = Math.floor(Date.now() / 1000);
+  let requestUrl = axios.default.getUri({
+    "url": `${QISHUI_PC_API_BASE}/${endpoint}`,
+    "params": getPcApiParams()
+  });
+  let signed = await signQishuiPcRequest(requestUrl, bodyBytes, khronos);
+  if (qishuiDeviceDrift(getPcApiParams(), signed.device)) {
+    rememberQishuiDevice(signed.device);
+    requestUrl = axios.default.getUri({
+      "url": `${QISHUI_PC_API_BASE}/${endpoint}`,
+      "params": getPcApiParams()
     });
-
-    try {
-      const signedHeaders = await signQishuiAndroidRequest(requestUrl, bodyBytes);
-      const expectedKhronos = String(Math.floor(Number(requestTicket) / 1000));
-      if (signedHeaders["X-Khronos"] !== expectedKhronos) {
-        lastError = new Error("X-Headers 时间参数不一致");
-        continue;
-      }
-
-      return {
-        "requestUrl": requestUrl,
-        "requestTicket": requestTicket,
-        "headers": Object.assign({}, getAndroidApiHeaders(), {
-          "X-SS-Req-Ticket": requestTicket
-        }, signedHeaders)
-      };
-    } catch (error) {
-      if (!isRetryableQishuiSignError(error)) {
-        throw error;
-      }
-      lastError = error;
-    }
+    signed = await signQishuiPcRequest(requestUrl, bodyBytes, khronos);
   }
-
-  throw lastError || new Error("X-Headers 签名失败，请稍后重试");
+  rememberQishuiDevice(signed.device);
+  return {
+    "requestUrl": requestUrl,
+    "headers": Object.assign({}, getPcApiHeaders(), {
+      "x-khronos": String(khronos)
+    }, signed.headers)
+  };
 }
 
 function parseVideoModelToPlayInfoList(videoModel) {
@@ -594,7 +569,7 @@ function parseVideoModelObject(videoModel) {
   return videoModel;
 }
 
-/** Android track_v2 的 video_model 若条目 duration 固定 30/60，说明是试听流 */
+/** track_v2 的 video_model 若条目 duration 固定 30/60，说明是试听流 */
 function isPreviewVideoModel(videoModel) {
   const videoModelObj = parseVideoModelObject(videoModel);
   const videoList = videoModelObj?.video_list;
@@ -605,19 +580,33 @@ function isPreviewVideoModel(videoModel) {
   return videoList.some(video => isFixedPreviewDuration(video?.video_duration));
 }
 
-async function fetchAndroidTrackV2(trackId) {
-  const bodyText = JSON.stringify(Object.assign({}, QISHUI_ANDROID_TRACK_BODY_TEMPLATE, {
-    "track_id": String(trackId)
-  }));
-  const bodyBytes = Buffer.from(bodyText, "utf8");
-  const signedRequest = await prepareSignedQishuiAndroidRequest(
-    "track_v2",
-    bodyBytes
-  );
-  if (!signedRequest) {
-    return null;
-  }
+function normalizePcTrackData(apiData, trackId) {
+  const media = Array.isArray(apiData?.media)
+    ? (apiData.media.find(item => String(item?.id) === String(trackId)) || apiData.media[0])
+    : null;
+  const item = Array.isArray(apiData?.items)
+    ? (apiData.items.find(entry => String(entry?.id) === String(trackId)) || apiData.items[0])
+    : null;
+  const wrapper = media?.entity?.track_wrapper || item?.entity?.track_wrapper || {};
+  const track = wrapper.track || media?.entity?.track || item?.entity?.track || media?.track || apiData?.track || null;
 
+  return {
+    "status_info": apiData?.status_info,
+    "track": track,
+    "track_player": track?.player_info || wrapper.player_info || media?.track_player || apiData?.track_player || null,
+    "lyric": track?.lyric || wrapper.lyric || media?.lyric || apiData?.lyric || null
+  };
+}
+
+async function fetchPcTrackV2(trackId) {
+  const bodyText = JSON.stringify({
+    "track_id": String(trackId),
+    "media_type": "track",
+    "queue_type": "daily_mix",
+    "scene_name": "track_reco"
+  });
+  const bodyBytes = Buffer.from(bodyText, "utf8");
+  const signedRequest = await prepareSignedQishuiPcRequest("track_v2", bodyBytes);
   const response = await axios.default.post(
     signedRequest.requestUrl,
     bodyBytes,
@@ -628,37 +617,37 @@ async function fetchAndroidTrackV2(trackId) {
     }
   );
 
-  return response.data;
+  return normalizePcTrackData(response.data, trackId);
 }
 
 /**
- * 优先 Android track_v2；
+ * 优先 PC track_v2；
  * video_duration 为 30/60 试听则用完整 vid 走 luna/player；
- * 再失败回落 SEO（不再走 PC track_v2）
+ * 再失败回落 SEO
  */
 async function fetchTrackPlaybackData(trackId) {
-  let androidData = null;
+  let pcData = null;
 
   try {
-    androidData = await fetchAndroidTrackV2(trackId);
-    const videoModel = androidData?.track_player?.video_model;
+    pcData = await fetchPcTrackV2(trackId);
+    const videoModel = pcData?.track_player?.video_model;
     const playInfoList = parseVideoModelToPlayInfoList(videoModel);
     const isPreview = isPreviewVideoModel(videoModel);
-    const fullVid = androidData?.track?.vid;
+    const fullVid = pcData?.track?.vid;
 
     if (playInfoList.length > 0 && !isPreview) {
-      console.log(`[汽水音乐] Android track_v2 成功: trackId=${trackId}, qualities=${playInfoList.map(item => item.Quality).join(",")}`);
+      console.log(`[汽水音乐] PC track_v2 成功: trackId=${trackId}, qualities=${playInfoList.map(item => item.Quality).join(",")}`);
       return {
-        "trackData": androidData,
+        "trackData": pcData,
         "playInfoList": playInfoList,
-        "source": "android_track_v2"
+        "source": "pc_track_v2"
       };
     }
 
     if (isPreview) {
-      console.log(`[汽水音乐] Android track_v2 为试听流(30/60s)，改用完整 vid 取流: trackId=${trackId}, vid=${fullVid || ""}`);
+      console.log(`[汽水音乐] PC track_v2 为试听流(30/60s)，改用完整 vid 取流: trackId=${trackId}, vid=${fullVid || ""}`);
     } else {
-      console.warn(`[汽水音乐] Android track_v2 无播放列表, trackId=${trackId}, status=${androidData?.status_code || androidData?.status_info?.status_msg || "unknown"}`);
+      console.warn(`[汽水音乐] PC track_v2 无播放列表, trackId=${trackId}, status=${pcData?.status_info?.status_msg || "unknown"}`);
     }
 
     if (fullVid) {
@@ -666,22 +655,28 @@ async function fetchTrackPlaybackData(trackId) {
       if (Array.isArray(byVid?.playInfoList) && byVid.playInfoList.length > 0) {
         console.log(`[汽水音乐] luna/player(vid) 成功: trackId=${trackId}, qualities=${byVid.playInfoList.map(item => item.Quality).join(",")}`);
         return {
-          "trackData": androidData,
+          "trackData": pcData,
           "playInfoList": byVid.playInfoList,
-          "source": "android_vid_player"
+          "source": "pc_vid_player"
         };
       }
     }
   } catch (error) {
-    console.error(`[汽水音乐] Android track_v2 失败: ${error.message}`);
+    console.error(`[汽水音乐] PC track_v2 失败: ${error.message}`);
   }
 
-  const seoResult = await fetchSeoTrackData(trackId, androidData?.track?.vid);
+  const seoResult = await fetchSeoTrackData(trackId, pcData?.track?.vid);
   return {
-    "trackData": androidData || seoResult.seoData,
+    "trackData": pcData || seoResult.seoData,
     "playInfoList": seoResult.playInfoList || [],
     "source": "seo_fallback"
   };
+}
+
+function getAndroidApiParams(extraParams = {}, requestTicket = String(Date.now())) {
+  return Object.assign({}, QISHUI_ANDROID_API_PARAMS, {
+    "_rticket": requestTicket
+  }, extraParams);
 }
 
 async function qishuiAndroidGet(path, params = {}) {
@@ -1517,7 +1512,7 @@ async function fetchSeoTrackData(trackId, preferredVid = "") {
   };
 }
 
-async function getMusicInfoFromAndroid(trackId) {
+async function getMusicInfoFromPc(trackId) {
   try {
     const { trackData, playInfoList, source } = await fetchTrackPlaybackData(trackId);
     const track = trackData?.track
@@ -1547,7 +1542,7 @@ async function getMusicInfoFromAndroid(trackId) {
     result._playSource = source;
     return result;
   } catch (error) {
-    console.error(`[汽水音乐] getMusicInfoFromAndroid 错误: ${error.message}`);
+    console.error(`[汽水音乐] getMusicInfo 取流错误: ${error.message}`);
     return null;
   }
 }
@@ -1843,9 +1838,9 @@ async function getMusicInfo(musicBase) {
     }
   }
 
-  const androidMusicInfo = await getMusicInfoFromAndroid(songId);
-  if (androidMusicInfo) {
-    return withQishuiPlatform(androidMusicInfo);
+  const pcMusicInfo = await getMusicInfoFromPc(songId);
+  if (pcMusicInfo) {
+    return withQishuiPlatform(pcMusicInfo);
   }
 
   const seoMusicInfo = await getMusicInfoFromSeo(songId);
@@ -1904,9 +1899,8 @@ async function getMusicInfo(musicBase) {
   }
 }
 
-/** PC track_v2 已下线（返回空响应），歌词统一走 Android track_v2 */
 async function fetchTrackDetail(trackId) {
-  return fetchAndroidTrackV2(trackId);
+  return fetchPcTrackV2(trackId);
 }
 
 async function getLegacyMusicDetailInfo(trackId) {
@@ -2477,7 +2471,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.2.7",
+  "version": "3.2.8",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
