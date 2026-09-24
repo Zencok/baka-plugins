@@ -26,7 +26,7 @@
 | 酷我音乐 | `plugins/kw.js` | `1.1.2` | 音源相关、MV |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、全 8 档音质、播放时自动降级、MV |
 | Bilibili | `plugins/bilibili.js` | `2.0.9` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
-| 汽水音乐 | `plugins/qishui.js` | `3.2.8` | 下载免密、Android 取流实时签名、MV（登录态下补充视频音乐搜索结果） |
+| 汽水音乐 | `plugins/qishui.js` | `3.2.9` | 下载免密、Android 取流实时签名、MV（登录态下补充视频音乐搜索结果） |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 

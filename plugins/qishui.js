@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.2.8
+ * @version 3.2.9
  * @description 汽水音乐插件：歌词和取流走 PC track_v2，签名经转发。专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -100,7 +100,7 @@ const QISHUI_XHEADERS_NAMES = [
 ];
 
 /** 默认 sessionid；过期后可在插件用户变量 sessionid 中覆盖 */
-const QISHUI_DEFAULT_SESSION_ID = "3e60f931253128d953e15144ba7105f1";
+const QISHUI_DEFAULT_SESSION_ID = "1512ef1b523456980d81f3d04a7b7057";
 
 const QISHUI_PC_API_HEADERS = {
   "Accept": "*/*",
@@ -622,8 +622,7 @@ async function fetchPcTrackV2(trackId) {
 
 /**
  * 优先 PC track_v2；
- * video_duration 为 30/60 试听则用完整 vid 走 luna/player；
- * 再失败回落 SEO
+ * 试听或没有播放列表时回落 SEO url_player_info
  */
 async function fetchTrackPlaybackData(trackId) {
   let pcData = null;
@@ -633,7 +632,6 @@ async function fetchTrackPlaybackData(trackId) {
     const videoModel = pcData?.track_player?.video_model;
     const playInfoList = parseVideoModelToPlayInfoList(videoModel);
     const isPreview = isPreviewVideoModel(videoModel);
-    const fullVid = pcData?.track?.vid;
 
     if (playInfoList.length > 0 && !isPreview) {
       console.log(`[汽水音乐] PC track_v2 成功: trackId=${trackId}, qualities=${playInfoList.map(item => item.Quality).join(",")}`);
@@ -645,27 +643,15 @@ async function fetchTrackPlaybackData(trackId) {
     }
 
     if (isPreview) {
-      console.log(`[汽水音乐] PC track_v2 为试听流(30/60s)，改用完整 vid 取流: trackId=${trackId}, vid=${fullVid || ""}`);
+      console.log(`[汽水音乐] PC track_v2 为试听流(30/60s)，改用 SEO url_player_info: trackId=${trackId}`);
     } else {
       console.warn(`[汽水音乐] PC track_v2 无播放列表, trackId=${trackId}, status=${pcData?.status_info?.status_msg || "unknown"}`);
-    }
-
-    if (fullVid) {
-      const byVid = await fetchSeoTrackDataByVid(fullVid);
-      if (Array.isArray(byVid?.playInfoList) && byVid.playInfoList.length > 0) {
-        console.log(`[汽水音乐] luna/player(vid) 成功: trackId=${trackId}, qualities=${byVid.playInfoList.map(item => item.Quality).join(",")}`);
-        return {
-          "trackData": pcData,
-          "playInfoList": byVid.playInfoList,
-          "source": "pc_vid_player"
-        };
-      }
     }
   } catch (error) {
     console.error(`[汽水音乐] PC track_v2 失败: ${error.message}`);
   }
 
-  const seoResult = await fetchSeoTrackData(trackId, pcData?.track?.vid);
+  const seoResult = await fetchSeoTrackData(trackId);
   return {
     "trackData": pcData || seoResult.seoData,
     "playInfoList": seoResult.playInfoList || [],
@@ -1480,30 +1466,20 @@ async function searchQishui(keyword, page, type = "music") {
 
 
 
-async function fetchSeoTrackData(trackId, preferredVid = "") {
+async function fetchSeoTrackData(trackId) {
   const seoUrl = `https://beta-luna.douyin.com/luna/h5/seo_track?track_id=${trackId}&device_platform=web`;
   const seoResponse = await axios.default.get(seoUrl);
   const playInfoUrl = seoResponse?.data?.track_player?.url_player_info;
-  const vid = preferredVid
-    || seoResponse?.data?.seo_track?.track?.vid
-    || "";
   let playInfoList = [];
 
-  const previewDuration = seoResponse?.data?.seo_track?.track?.preview?.duration;
-  const fullDuration = seoResponse?.data?.seo_track?.track?.duration;
-  const isSeoPreview = previewDuration && fullDuration && previewDuration < fullDuration;
-
-  // 试听 / 无 media_id：用完整 vid 走 luna/player（不再回落 PC track_v2）
-  if (isSeoPreview || !seoResponse?.data?.track_player?.media_id) {
-    console.log(`[汽水音乐] fetchSeoTrackData: 使用完整 vid 取流, trackId=${trackId}, vid=${vid}, seoPreview=${!!isSeoPreview}`);
-    if (vid) {
-      const playInfoResponse = await fetchSeoTrackDataByVid(vid);
-      playInfoList = playInfoResponse?.playInfoList || [];
+  if (playInfoUrl) {
+    try {
+      console.log(`[汽水音乐] fetchSeoTrackData: 使用 SEO url_player_info, trackId=${trackId}`);
+      const playInfoResponse = await axios.default.get(playInfoUrl);
+      playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
+    } catch (error) {
+      console.warn(`[汽水音乐] fetchSeoTrackData: url_player_info 拉取失败, ${error.message}`);
     }
-  } else if (playInfoUrl) {
-    console.log(`[汽水音乐] fetchSeoTrackData: 获取播放信息，trackId=${trackId}`);
-    const playInfoResponse = await axios.default.get(playInfoUrl);
-    playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
   }
 
   return {
@@ -2068,71 +2044,6 @@ async function getArtistWorks(artist, page, type) {
   };
 }
 
-async function fetchSeoTrackDataByVid(vid) {
-  const params = {
-    "media_id": vid,
-    "type": "audio",
-    "player_ver": "2",
-    "media_source": "luna_pc",
-    "device_platform": "web",
-    "os": "web",
-    "ssmix": "a",
-    "_rticket": String(Date.now()),
-    "cdid": "",
-    "channel": "official",
-    "aid": "386088",
-    "app_name": "luna",
-    "version_code": "100030010",
-    "version_name": "10.3.0",
-    "manifest_version_code": "100030010",
-    "update_version_code": "100030010",
-    "resolution": "1920*1080",
-    "dpi": "560",
-    "device_type": "Windows",
-    "language": "zh",
-    "os_api": "0",
-    "os_version": "10",
-    "ac": "wifi",
-    "package": "com.luna.music",
-    "device_model": "Windows",
-    "hybrid_version_code": "100030010",
-    "network_carrier": "",
-    "network_speed": "10",
-    "tz_offset": "28800",
-    "tz_name": "Asia/Shanghai",
-    "device_id": "",
-    "mac_address": ""
-  };
-
-  try {
-    const response = await axios.default.get("https://api.qishui.com/luna/player", {
-      "params": params,
-      "headers": QISHUI_PC_API_HEADERS
-    });
-
-    const data = response.data;
-    const playerInfo = data?.player_info || {};
-    const playInfoUrl = playerInfo?.url_player_info;
-    let playInfoList = [];
-
-    if (playInfoUrl) {
-      const playInfoResponse = await axios.default.get(playInfoUrl);
-      playInfoList = playInfoResponse?.data?.Result?.Data?.PlayInfoList || [];
-    }
-
-    return {
-      "playInfoList": playInfoList,
-      "playerInfo": playerInfo
-    };
-  } catch (error) {
-    console.error(`[汽水音乐] fetchSeoTrackDataByVid 错误: ${error.message}`);
-    return {
-      "playInfoList": [],
-      "playerInfo": {}
-    };
-  }
-}
-
 async function fetchPlaylistDetailFromApi(playlistId) {
   let cursor = "";
   let playlistInfo = null;
@@ -2471,7 +2382,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.2.8",
+  "version": "3.2.9",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
