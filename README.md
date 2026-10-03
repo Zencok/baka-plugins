@@ -72,6 +72,33 @@ QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求�
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
 
+### 全豆要 / 次合代端点（2026-10-03）
+
+网易云、酷狗、酷我采用 `K_H_v3.Toskysun.js` 中实测可用的念心 / 星海端点。
+全豆要的网易云、酷我优先念心；次合代优先星海；两者酷狗均优先星海，失败后切换另一端点。
+
+| 平台 | 端点与 GET 参数 | 声明音质 |
+|------|-----------------|----------|
+| 网易云 | `https://mcp.nianxinxz.com/share/ceshi/wy.php?id=&level=`；`https://yy.zddyr.top/lx/api/?source=netease&name=&songmid=&quality=` | 128k / 320k / flac / hires / master |
+| 酷狗 | `https://yy.zddyr.top/lx/api/?source=kg&name=&songmid=&quality=`；`https://mcp.nianxinxz.com/share/ceshi/kg.php?id=&level=` | 128k / 320k / flac / hires |
+| 酷我 | `https://mcp.nianxinxz.com/share/ceshi/kw.php?id=&level=`；`https://yy.zddyr.top/lx/api/?source=kw&name=&songmid=&quality=` | 128k / 320k / flac |
+| QQ | `https://tang.api.s01s.cn/music_open_api.php?mid=`，按 `song_play_url_standard / hq / sq` 取对应字段 | 128k / 320k / flac |
+
+这些端点不发送认证头、不需要用户填 Key；没有复制参考脚本中的登录 Cookie 或账号凭据。
+念心网易云/酷我使用 `standard / exhigh / lossless`，网易云高音质使用 `hires / jymaster`；
+念心酷狗使用 `128kmp3 / 320kmp3 / 2000kflac / hires`。
+星海网易云使用同样的网易云 level；星海酷狗/酷我使用 `128kmp3 / 320kmp3 / flac`，酷狗高音质使用 `hires`。
+
+QQ 未强行换成参考脚本中失败的接口：ygking 域名无法解析、本地 3035 路由返回 404、
+星海 QQ 要求认证、溯音 QQ 返回 403、FFAPI 已关闭；妖狐样例没有返回直链。
+因此两组 QQ 均保留实测可播放的 s01s。移除全豆要 vkeys（样例仅返回 28kbps 试听）及 Atmos 声明；
+次合代不再声明旧 GD 的 192k 和 QQ 的 96k 档位。
+
+请求处理器会先校验 JSON 状态和 URL，再用 `Range: bytes=0-1023` 校验音频签名；
+拒绝错误 JSON、HTML、网易云外链及页面 URL，主端点坏链时自动尝试备用端点。
+单次解析超时 8 秒、音频校验超时 5 秒；第三方仍可能限流、换源或降级，声明音质不保证每首歌均有对应资源。
+免密插件下载及更新链接继续不附加 `source`。
+
 ---
 
 ## 🚀 导入方式

@@ -11,6 +11,7 @@
  * - authHeader:   自定义认证头名称 (默认 X-API-Key)
  * - qualityMap:   音质键映射 (仅 changqing 类型)
  * - platformUrls: 按插件文件的平台 URL (仅 changqing 类型)
+ * - platformProviders: 按插件文件排序的聚合端点 (cihedai/quandouyao)
  * - plugins:      支持的插件映射 { 文件名 → 音质数组 | null }
  *                 null = 使用插件文件内置的默认音质
  *                 数组 = 覆盖插件的 supportedQualities
@@ -20,10 +21,29 @@
  *   query      - GET  ${url}/url?source=&songId=&quality=                 header: X-API-Key
  *   lxmusic    - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
  *   changqing  - 按平台独立 URL, 音质键映射 (standard/exhigh/lossless)
- *   cihedai    - 次合代多端点: wy=GD音乐台, qq=s01s链, kw=念心酷我, kg=长青
- *   quandouyao - 全豆要聚合: wy/kw 多端点, qq=vkeys, kg=长青
+ *   cihedai    - 次合代: 星海优先、念心备用；QQ=s01s
+ *   quandouyao - 全豆要: 念心优先、星海备用；酷狗星海优先；QQ=s01s
  *   hyw        - GET  ${url}/api/music/url?source=&songId=&quality=&key=  header: X-Script-Version + X-Card-Key
  */
+
+const KH_LEVELS = { '128k': 'standard', '320k': 'exhigh', flac: 'lossless', hires: 'hires', master: 'jymaster' };
+const KH_PROVIDERS = {
+  nianxinWy: { type: 'nianxin', url: 'https://mcp.nianxinxz.com/share/ceshi/wy.php', qualityMap: KH_LEVELS },
+  nianxinKw: { type: 'nianxin', url: 'https://mcp.nianxinxz.com/share/ceshi/kw.php', qualityMap: KH_LEVELS },
+  nianxinKg: {
+    type: 'nianxin', url: 'https://mcp.nianxinxz.com/share/ceshi/kg.php',
+    qualityMap: { '128k': '128kmp3', '320k': '320kmp3', flac: '2000kflac', hires: 'hires' },
+  },
+  xinghaiWy: { type: 'xinghai', url: 'https://yy.zddyr.top/lx/api/', source: 'netease', qualityMap: KH_LEVELS },
+  xinghaiKw: {
+    type: 'xinghai', url: 'https://yy.zddyr.top/lx/api/', source: 'kw',
+    qualityMap: { '128k': '128kmp3', '320k': '320kmp3', flac: 'flac' },
+  },
+  xinghaiKg: {
+    type: 'xinghai', url: 'https://yy.zddyr.top/lx/api/', source: 'kg',
+    qualityMap: { '128k': '128kmp3', '320k': '320kmp3', flac: 'flac', hires: 'hires' },
+  },
+};
 
 const SOURCE_CONFIG = {
   'ikun': {
@@ -55,18 +75,18 @@ const SOURCE_CONFIG = {
   },
   'cihedai': {
     name: '次合代',
-    // wy: GD (128/192/320/flac；br=999 保留为 hires)
-    // qq: s01s 分字段 (fq/C200=96k, standard/C400≈128, hq/C600, sq/flac)
-    // kw: 念心酷我
-    // kg: 长青酷狗
-    url: 'https://music-api.gdstudio.xyz/api.php?use_xbridge3=true&loader_name=forest',
+    url: 'https://yy.zddyr.top/lx/api/',
     requiresKey: false,
     builtinKey: '',
     apiType: 'cihedai',
+    platformProviders: {
+      'wy.js': [KH_PROVIDERS.xinghaiWy, KH_PROVIDERS.nianxinWy],
+      'kg.js': [KH_PROVIDERS.xinghaiKg, KH_PROVIDERS.nianxinKg],
+      'kw.js': [KH_PROVIDERS.xinghaiKw, KH_PROVIDERS.nianxinKw],
+    },
     plugins: {
-      'wy.js': ['128k', '192k', '320k', 'flac', 'hires'],
-      'qq.js': ['96k', '128k', '320k', 'flac'],
-      // kg=长青: standard/exhigh/lossless/hires → qu128/320/flac/high
+      'wy.js': ['128k', '320k', 'flac', 'hires', 'master'],
+      'qq.js': ['128k', '320k', 'flac'],
       'kg.js': ['128k', '320k', 'flac', 'hires'],
       'kw.js': ['128k', '320k', 'flac'],
     }
@@ -93,14 +113,17 @@ const SOURCE_CONFIG = {
   },
   'quandouyao': {
     name: '全豆要',
-    // 多端点聚合；QQ=vkeys；酷狗=长青 kg 模板
-    url: '',
+    url: 'https://mcp.nianxinxz.com/share/ceshi/',
     requiresKey: false,
     apiType: 'quandouyao',
+    platformProviders: {
+      'wy.js': [KH_PROVIDERS.nianxinWy, KH_PROVIDERS.xinghaiWy],
+      'kg.js': [KH_PROVIDERS.xinghaiKg, KH_PROVIDERS.nianxinKg],
+      'kw.js': [KH_PROVIDERS.nianxinKw, KH_PROVIDERS.xinghaiKw],
+    },
     plugins: {
       'wy.js':  ['128k', '320k', 'flac', 'hires', 'master'],
-      'qq.js':  ['128k', '320k', 'flac', 'atmos'],
-      // kg=长青: 含 hires(quhigh)
+      'qq.js':  ['128k', '320k', 'flac'],
       'kg.js':  ['128k', '320k', 'flac', 'hires'],
       'kw.js':  ['128k', '320k', 'flac'],
     }
