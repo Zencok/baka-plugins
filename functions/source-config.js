@@ -7,7 +7,7 @@
  * - url:          API 基础地址
  * - requiresKey:  用户是否需要提供 API Key
  * - builtinKey:   内置 Key (仅 requiresKey=false 时使用)
- * - apiType:      请求类型 (ikun|query|cihedai|quandouyao)
+ * - apiType:      请求类型 (ikun|em|query|cihedai|quandouyao)
  * - authHeader:   自定义认证头名称 (默认 X-API-Key)
  * - platformProviders: 按插件文件排序的聚合端点 (cihedai/quandouyao)
  * - plugins:      支持的插件映射 { 文件名 → 音质数组 | null }
@@ -17,6 +17,7 @@
  * apiType 说明:
  *   ikun       - POST ${url}/music/url  body: {source, musicId, quality}  header: X-API-Key
  *   query      - GET  ${url}/url?source=&songId=&quality=                 header: X-API-Key
+ *   em         - GET  ${url}/url?source=&songId=&quality=                 header: X-Request-Key + LX User-Agent
  *   lxmusic    - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
  *   cihedai    - 次合代: 星海优先、念心备用；QQ=s01s
  *   quandouyao - 全豆要: 念心优先、星海备用；酷狗星海优先；QQ=s01s
@@ -54,6 +55,19 @@ const SOURCE_CONFIG = {
       'kg.js':  null,
       // ikun 酷我额外开放环绕/母带（插件默认仅到 flac）
       'kw.js':  ['128k', '320k', 'flac', 'atmos', 'atmos_plus', 'master'],
+    }
+  },
+  'em': {
+    name: 'EM 音源',
+    url: 'https://api.guazi.fun/lx',
+    requiresKey: false,
+    builtinKey: 'fdb223c0d50f151f29dab3917a13bc06',
+    apiType: 'em',
+    plugins: {
+      'wy.js': ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
+      'qq.js': ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
+      'kg.js': ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
+      'kw.js': ['128k', '320k', 'flac', 'flac24bit', 'hires'],
     }
   },
   'linglan': {

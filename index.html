@@ -1444,7 +1444,7 @@
                     <div class="partner-identity">
                         <h2 class="partner-title" id="partnerTitle">万象音源<span class="partner-ad">广告</span></h2>
                     </div>
-                    <a class="partner-site" href="https://api2.vsaa.cn/" target="_blank" rel="noopener noreferrer sponsored">访问官网 ↗</a>
+                    <a class="partner-site" href="https://api.vsaa.cn/" target="_blank" rel="noopener noreferrer sponsored">访问官网 ↗</a>
                 </div>
                 <p class="partner-description">注册免费用 · 每日签到送积分</p>
                 <div class="link-row">
@@ -1482,25 +1482,11 @@
             </div>
             <div class="card">
                 <div class="source-grid" id="sourceGrid">
-                    <div class="source-card" data-source="linglan" data-url="https://source.shiqianjiang.cn/api/music" data-requires-key="true" tabindex="0" role="radio" aria-checked="false">
-                        <div class="source-icon" aria-hidden="true">🌊</div>
+                    <div class="source-card" data-source="em" data-url="https://api.guazi.fun/lx" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🎧</div>
                         <div class="source-info">
-                            <div class="source-name">聆澜音源</div>
-                            <div class="source-url">shiqianjiang.cn</div>
-                            <div class="source-quality-indicator">
-                                <span class="quality-tag q-master">Master</span>
-                                <span class="quality-tag q-spatial">Atmos</span>
-                            </div>
-                        </div>
-                        <div class="source-check" aria-hidden="true">
-                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-                        </div>
-                    </div>
-                    <div class="source-card" data-source="ikun" data-url="https://c.wwwweb.top" data-requires-key="true" tabindex="0" role="radio" aria-checked="false">
-                        <div class="source-icon" aria-hidden="true">🎵</div>
-                        <div class="source-info">
-                            <div class="source-name">ikun 音源</div>
-                            <div class="source-url">c.wwwweb.top</div>
+                            <div class="source-name">EM 音源</div>
+                            <div class="source-url">畅听音乐（免费）</div>
                             <div class="source-quality-indicator">
                                 <span class="quality-tag q-master">Master</span>
                                 <span class="quality-tag q-spatial">Atmos</span>
@@ -1531,6 +1517,34 @@
                             <div class="source-url">聚合二号（免费）</div>
                             <div class="source-quality-indicator">
                                 <span class="quality-tag q-hires">Hi-Res</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="ikun" data-url="https://c.wwwweb.top" data-requires-key="true" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🎵</div>
+                        <div class="source-info">
+                            <div class="source-name">ikun 音源</div>
+                            <div class="source-url">c.wwwweb.top（付费）</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-master">Master</span>
+                                <span class="quality-tag q-spatial">Atmos</span>
+                            </div>
+                        </div>
+                        <div class="source-check" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                    </div>
+                    <div class="source-card" data-source="linglan" data-url="https://source.shiqianjiang.cn/api/music" data-requires-key="true" tabindex="0" role="radio" aria-checked="false">
+                        <div class="source-icon" aria-hidden="true">🌊</div>
+                        <div class="source-info">
+                            <div class="source-name">聆澜音源</div>
+                            <div class="source-url">shiqianjiang.cn（付费）</div>
+                            <div class="source-quality-indicator">
+                                <span class="quality-tag q-master">Master</span>
+                                <span class="quality-tag q-spatial">Atmos</span>
                             </div>
                         </div>
                         <div class="source-check" aria-hidden="true">
@@ -1609,7 +1623,7 @@
                         <span class="step-number" aria-hidden="true">1</span>
                         <div class="step-content">
                             <div class="step-title">选择音源类型</div>
-                            <div class="step-desc">从聆澜、ikun、全豆要、次合代中选择一个</div>
+                            <div class="step-desc">从 EM、全豆要、次合代、ikun、聆澜中选择一个</div>
                         </div>
                     </li>
                     <li class="step-item">
@@ -1705,6 +1719,7 @@
         // 音源 → 支持的音源插件 (免密插件始终包含)
         const SOURCE_PLUGINS = {
             'ikun':       ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
+            'em':         ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'linglan':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'cihedai':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'quandouyao': ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
@@ -1714,6 +1729,7 @@
         const SOURCE_QUALITIES = {
             // 与 source-config ikun 一致：wy/qq/kg 用插件默认，kw 覆盖高阶环绕
             'ikun':       { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
+            'em':         { 'wy.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kw.js': ['128k','320k','flac','flac24bit','hires'] },
             'linglan':    { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus'], 'kg.js': null, 'kw.js': null },
             'cihedai':    { 'wy.js': ['128k','320k','flac','hires'], 'qq.js': ['96k','192k','flac'], 'kg.js': ['320k','flac','hires'], 'kw.js': ['flac'] },
             'quandouyao': { 'wy.js': ['128k','320k','flac','hires','master'], 'qq.js': ['96k','192k','flac'], 'kg.js': ['320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },

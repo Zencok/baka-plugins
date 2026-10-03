@@ -82,6 +82,25 @@ async function requestMusicUrl(source, songId, quality) {
 }`;
       break;
 
+    case 'em':
+      code += `
+async function requestMusicUrl(source, songId, quality) {
+  var response = await axios_1.default.get(API_URL + "/url", {
+    params: { source: source, songId: String(songId), quality: quality },
+    headers: {
+      "X-Request-Key": API_KEY,
+      "User-Agent": "lx-music-desktop/2.12.1",
+      "Content-Type": "application/json"
+    },
+    timeout: 10000
+  });
+  var body = response.data;
+  if (!body || Number(body.code) !== 200) throw new Error(body && body.message || "EM 音源获取失败");
+  if (typeof body.url !== "string" || !/^https?:\\/\\/\\S+$/i.test(body.url)) throw new Error("EM 音源未返回有效播放链接");
+  return { code: 200, url: body.url };
+}`;
+      break;
+
     // ── query: GET ${url}/url?source=&songId=&quality=, X-API-Key, {code:200} ──
     case 'query':
       code += `
