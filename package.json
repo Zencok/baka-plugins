@@ -8,7 +8,7 @@
     "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
-    "axios": "^1.18.1",
+    "axios": "^1.20.0",
     "express": "^4.22.2"
   },
   "engines": {
