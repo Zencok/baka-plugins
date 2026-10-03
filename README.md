@@ -63,7 +63,7 @@ QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求�
 
 | 名称 | 标识 | Key | 支持插件 |
 |---|---|---:|---|
-| EM 音源（免费） | `em` | 内置 | wy / qq / kg / kw |
+| EM 音源（白姬赞助） | `em` | 内置 | wy / qq / kg / kw |
 | 全豆要（免费） | `quandouyao` | 内置 | wy / qq / kg / kw |
 | 次合代（免费） | `cihedai` | 内置 | wy / qq / kg / kw |
 | ikun 音源（付费） | `ikun` | 需要 | wy / qq / kg / kw |
@@ -71,7 +71,7 @@ QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求�
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
 
-EM 音源接入 `EM音源 (永久).js` 的接口，网页展示为「畅听音乐（免费）」。免费音源在前，ikun、聆澜两款付费音源在后。EM 使用内置认证，无需填写 Key。
+EM 音源接入 `EM音源 (永久).js` 的接口，本身为付费音源，内置 Key 由「白姬」赞助提供，网页展示为「白姬赞助 · 内置 Key」，无需用户填写 Key。EM 与免费音源在前，需用户提供 Key 的 ikun、聆澜在后。
 接口为 GET `https://api.guazi.fun/lx/url?source=&songId=&quality=`，发送 `X-Request-Key` 和 LX `User-Agent`；QQ 使用 `tx`，酷狗使用歌曲 hash。
 音质按原脚本声明：网易云 / 酷狗支持 128K、320K、FLAC、24bit、Hi-Res、Atmos、Master；QQ 另支持 Atmos+；酷我支持 128K、320K、FLAC、24bit、Hi-Res。
 免密订阅示例：`https://music.cwo.cc.cd/api/subscription.json?source=em.json`。
