@@ -310,6 +310,14 @@ curl "http://localhost:3000/plugins/bilibili.js"
 
 ---
 
+## 万象音源
+
+首页展示万象音源简洁合作卡片，支持复制独立插件源，并提供官网入口及 12 款插件的折叠列表。
+合作站注册可免费使用，每日签到赠送积分；具体额度及插件版本以合作站为准。
+官网：`https://api2.vsaa.cn/`；插件源：`https://api.vsaa.cn/api/music/index.json`。该广告不改变本站音源配置或订阅内容。
+
+---
+
 ## 📌 维护约定
 
 - 插件版本、音源协议、展示文案变更时，同步更新 `README.md` 和 `index.html`

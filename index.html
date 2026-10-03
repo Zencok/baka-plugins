@@ -432,6 +432,125 @@
                         border-color var(--duration-normal) var(--ease-default);
         }
 
+        .partner-card {
+            padding: var(--space-8);
+            border: 1px solid var(--color-border);
+            box-shadow: 0 8px 28px var(--color-shadow);
+        }
+
+        .partner-heading {
+            display: flex;
+            align-items: center;
+            gap: var(--space-5);
+        }
+
+        .partner-mark {
+            width: 56px;
+            height: 56px;
+            flex-shrink: 0;
+            color: var(--color-green);
+        }
+
+        .partner-identity {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .partner-ad {
+            padding: 1px 5px;
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 400;
+            letter-spacing: normal;
+            color: var(--color-text-secondary);
+        }
+
+        .partner-title {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            font-size: 28px;
+            font-weight: 650;
+            letter-spacing: -0.8px;
+            line-height: 1.3;
+        }
+
+        .partner-description {
+            margin-top: var(--space-2);
+            font-size: 14px;
+            color: var(--color-text-secondary);
+        }
+
+        .partner-site {
+            color: var(--color-text-primary);
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            white-space: nowrap;
+            padding: var(--space-2) 0;
+        }
+
+        .partner-site:hover {
+            color: var(--color-accent);
+        }
+
+        .partner-card .link-row {
+            margin-top: var(--space-6);
+        }
+
+        .partner-card .link-box {
+            min-width: 0;
+            background: var(--color-surface-secondary);
+        }
+
+        .partner-card .btn-copy {
+            background: var(--color-accent);
+            color: #FFFFFF;
+        }
+
+        .partner-card .btn-copy:hover {
+            background: var(--color-accent-hover);
+        }
+
+        .partner-card .btn-copy.copied {
+            background: var(--color-green);
+        }
+
+        .partner-plugins {
+            margin-top: var(--space-5);
+            padding-top: var(--space-3);
+            border-top: 1px solid var(--color-separator);
+            font-size: 12px;
+        }
+
+        .partner-plugins summary {
+            padding: var(--space-2) 0;
+            cursor: pointer;
+            color: var(--color-text-secondary);
+        }
+
+        .partner-plugin-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-2);
+            margin-top: var(--space-3);
+            list-style: none;
+        }
+
+        .partner-plugin-list li {
+            padding: 5px 10px;
+            background: var(--color-surface-secondary);
+            border-radius: var(--radius-sm);
+            color: var(--color-text-secondary);
+        }
+
+        .partner-site:focus-visible,
+        .partner-plugins summary:focus-visible {
+            outline: 2px solid var(--color-accent);
+            outline-offset: 4px;
+        }
+
         .card + .card {
             margin-top: var(--space-5);
         }
@@ -1160,6 +1279,35 @@
                 border-radius: var(--radius-lg);
             }
 
+            .partner-heading {
+                display: grid;
+                grid-template-columns: 44px minmax(0, 1fr);
+                gap: var(--space-2) var(--space-3);
+            }
+
+            .partner-heading .partner-site {
+                grid-column: 2;
+                justify-self: start;
+                padding: 0;
+            }
+
+            .partner-mark {
+                width: 44px;
+                height: 44px;
+            }
+
+            .partner-title {
+                font-size: 24px;
+            }
+
+            .partner-card .link-row {
+                align-items: stretch;
+            }
+
+            .partner-card .link-row .btn-copy {
+                align-self: stretch;
+            }
+
             .source-grid {
                 grid-template-columns: 1fr;
                 gap: var(--space-2);
@@ -1283,6 +1431,46 @@
             <div class="status-badge">
                 <span class="status-dot" aria-hidden="true"></span>
                 <span>Service Online</span>
+            </div>
+        </section>
+
+        <section class="section fade-in" aria-labelledby="partnerTitle">
+            <div class="card partner-card">
+                <div class="partner-heading">
+                    <svg class="partner-mark" viewBox="0 0 56 56" fill="none" aria-hidden="true">
+                        <circle cx="28" cy="28" r="24" stroke="currentColor" stroke-width="1.5" opacity="0.3"/>
+                        <path d="M16 24v8m8-15v22m8-27v32m8-22v12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    </svg>
+                    <div class="partner-identity">
+                        <h2 class="partner-title" id="partnerTitle">万象音源<span class="partner-ad">广告</span></h2>
+                    </div>
+                    <a class="partner-site" href="https://api2.vsaa.cn/" target="_blank" rel="noopener noreferrer sponsored">访问官网 ↗</a>
+                </div>
+                <p class="partner-description">注册免费用 · 每日签到送积分</p>
+                <div class="link-row">
+                    <div class="link-box" id="partnerSubscriptionUrl">https://api.vsaa.cn/api/music/index.json</div>
+                    <button class="btn-copy" onclick="copyToClipboard('partnerSubscriptionUrl', this)" aria-label="复制万象音源插件源地址">
+                        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                        <span>复制插件源</span>
+                    </button>
+                </div>
+                <details class="partner-plugins">
+                    <summary>12 款插件 · 音乐与听书</summary>
+                    <ul class="partner-plugin-list">
+                        <li>汽水</li>
+                        <li>酷狗</li>
+                        <li>酷我</li>
+                        <li>QQ</li>
+                        <li>网易</li>
+                        <li>咪咕</li>
+                        <li>B站</li>
+                        <li>JOOX</li>
+                        <li>番茄听书</li>
+                        <li>七猫听书</li>
+                        <li>喜马拉雅</li>
+                        <li>懒人听书</li>
+                    </ul>
+                </details>
             </div>
         </section>
 
