@@ -1350,32 +1350,6 @@
                             <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
                         </div>
                     </div>
-                    <div class="source-card" data-source="changqing" data-url="https://musicapi.haitangw.net" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
-                        <div class="source-icon" aria-hidden="true">🌿</div>
-                        <div class="source-info">
-                            <div class="source-name">长青音源</div>
-                            <div class="source-url">haitangw.net (免费)</div>
-                            <div class="source-quality-indicator">
-                                <span class="quality-tag q-hires">Hi-Res</span>
-                            </div>
-                        </div>
-                        <div class="source-check" aria-hidden="true">
-                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-                        </div>
-                    </div>
-                    <div class="source-card" data-source="hyw" data-url="http://hywmusicsource.xn--9tra.work" data-requires-key="false" tabindex="0" role="radio" aria-checked="false">
-                        <div class="source-icon" aria-hidden="true">🌀</div>
-                        <div class="source-info">
-                            <div class="source-name">何意味</div>
-                            <div class="source-url">hywmusicsource (免费)</div>
-                            <div class="source-quality-indicator">
-                                <span class="quality-tag q-lossless">FLAC</span>
-                            </div>
-                        </div>
-                        <div class="source-check" aria-hidden="true">
-                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-                        </div>
-                    </div>
                 </div>
             </div>
         </section>
@@ -1448,7 +1422,7 @@
                         <span class="step-number" aria-hidden="true">1</span>
                         <div class="step-content">
                             <div class="step-title">选择音源类型</div>
-                            <div class="step-desc">从聆澜、ikun、何意味、全豆要、次合代、长青中选择一个</div>
+                            <div class="step-desc">从聆澜、ikun、全豆要、次合代中选择一个</div>
                         </div>
                     </li>
                     <li class="step-item">
@@ -1547,8 +1521,6 @@
             'linglan':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'cihedai':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'quandouyao': ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
-            'changqing':  ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
-            'hyw':        ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
         };
 
         // 音源 → 各插件音质 (null = 使用插件默认音质；键顺序 wy→qq→kg→kw 与 SOURCE_PLUGINS 一致)
@@ -1558,8 +1530,6 @@
             'linglan':    { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus'], 'kg.js': null, 'kw.js': null },
             'cihedai':    { 'wy.js': ['128k','320k','flac','hires','master'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
             'quandouyao': { 'wy.js': ['128k','320k','flac','hires','master'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
-            'changqing':  { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
-            'hyw':        { 'wy.js': ['128k','320k','flac'], 'qq.js': ['128k','320k','flac'], 'kg.js': ['128k','320k','flac'], 'kw.js': ['128k','320k','flac'] },
         };
 
         // 插件默认音质 (音源配置为 null 时使用；与 plugins/*.js supportedQualities 对齐)

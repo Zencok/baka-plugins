@@ -7,10 +7,8 @@
  * - url:          API 基础地址
  * - requiresKey:  用户是否需要提供 API Key
  * - builtinKey:   内置 Key (仅 requiresKey=false 时使用)
- * - apiType:      请求类型 (ikun|query|changqing|cihedai|quandouyao|hyw)
+ * - apiType:      请求类型 (ikun|query|cihedai|quandouyao)
  * - authHeader:   自定义认证头名称 (默认 X-API-Key)
- * - qualityMap:   音质键映射 (仅 changqing 类型)
- * - platformUrls: 按插件文件的平台 URL (仅 changqing 类型)
  * - platformProviders: 按插件文件排序的聚合端点 (cihedai/quandouyao)
  * - plugins:      支持的插件映射 { 文件名 → 音质数组 | null }
  *                 null = 使用插件文件内置的默认音质
@@ -20,10 +18,8 @@
  *   ikun       - POST ${url}/music/url  body: {source, musicId, quality}  header: X-API-Key
  *   query      - GET  ${url}/url?source=&songId=&quality=                 header: X-API-Key
  *   lxmusic    - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
- *   changqing  - 按平台独立 URL, 音质键映射 (standard/exhigh/lossless)
  *   cihedai    - 次合代: 星海优先、念心备用；QQ=s01s
  *   quandouyao - 全豆要: 念心优先、星海备用；酷狗星海优先；QQ=s01s
- *   hyw        - GET  ${url}/api/music/url?source=&songId=&quality=&key=  header: X-Script-Version + X-Card-Key
  */
 
 const KH_LEVELS = { '128k': 'standard', '320k': 'exhigh', flac: 'lossless', hires: 'hires', master: 'jymaster' };
@@ -91,26 +87,6 @@ const SOURCE_CONFIG = {
       'kw.js': ['128k', '320k', 'flac'],
     }
   },
-  'changqing': {
-    name: '长青音源',
-    url: 'https://musicapi.haitangw.net',
-    requiresKey: false,
-    apiType: 'changqing',
-    // kg 实测: standard→qu128, exhigh→qu320, lossless→quflac, hires→quhigh
-    qualityMap: { '128k': 'standard', '320k': 'exhigh', 'flac': 'lossless', 'hires': 'hires' },
-    platformUrls: {
-      'wy.js': 'http://175.27.166.236/wy/wy.php',
-      'qq.js': 'http://175.27.166.236/kgqq/qq.php',
-      'kg.js': 'https://music.haitangw.cc/kgqq/kg.php',
-      'kw.js': 'https://musicapi.haitangw.net/music/kw.php',
-    },
-    plugins: {
-      'wy.js':  ['128k', '320k', 'flac'],
-      'qq.js':  ['128k', '320k', 'flac'],
-      'kg.js':  ['128k', '320k', 'flac', 'hires'],
-      'kw.js':  ['128k', '320k', 'flac'],
-    }
-  },
   'quandouyao': {
     name: '全豆要',
     url: 'https://mcp.nianxinxz.com/share/ceshi/',
@@ -126,21 +102,6 @@ const SOURCE_CONFIG = {
       'qq.js':  ['128k', '320k', 'flac'],
       'kg.js':  ['128k', '320k', 'flac', 'hires'],
       'kw.js':  ['128k', '320k', 'flac'],
-    }
-  },
-  'hyw': {
-    name: '何意味',
-    // HYW×Koneko-API-Charity 公益卡密
-    url: 'http://hywmusicsource.xn--9tra.work',
-    requiresKey: false,
-    apiType: 'hyw',
-    builtinKey: 'charity',
-    scriptVersion: 'HYW\u00d7Koneko-API-Charity_v1.0.0',
-    plugins: {
-      'wy.js': ['128k', '320k', 'flac'],
-      'qq.js': ['128k', '320k', 'flac'],
-      'kg.js': ['128k', '320k', 'flac'],
-      'kw.js': ['128k', '320k', 'flac'],
     }
   }
 };

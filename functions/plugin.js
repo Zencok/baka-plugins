@@ -195,46 +195,6 @@ async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
-    // ── changqing: 按平台独立 URL, 音质映射 (standard/exhigh/lossless) ──
-    case 'changqing': {
-      const platformUrl = sourceConfig.platformUrls && sourceConfig.platformUrls[pluginName];
-      if (!platformUrl) {
-        code += `
-async function requestMusicUrl(source, songId, quality) {
-  throw new Error("Platform not configured for this source");
-}`;
-      } else {
-        code += `
-var _CQ_QUALITY_MAP = ${JSON.stringify(sourceConfig.qualityMap || {})};
-async function requestMusicUrl(source, songId, quality) {
-  var level = _CQ_QUALITY_MAP[quality] || quality;
-  return { code: 200, url: \`${platformUrl}?type=mp3&id=\${songId}&level=\${level}\` };
-}`;
-      }
-      break;
-    }
-
-
-    // ── hyw: Koneko Charity GET ${url}/api/music/url?key=  header: X-Script-Version + X-Card-Key ──
-    case 'hyw': {
-      const scriptVersion = sourceConfig.scriptVersion || 'HYW\u00d7Koneko-API-Charity_v1.0.0';
-      code += `
-async function requestMusicUrl(source, songId, quality) {
-  var resp = await axios_1.default.get(\`\${API_URL}/api/music/url?source=\${source}&songId=\${encodeURIComponent(songId)}&quality=\${quality}&key=\${encodeURIComponent(API_KEY)}\`, {
-    headers: {
-      "X-Script-Version": ${JSON.stringify(scriptVersion)},
-      "X-Card-Key": API_KEY
-    },
-    timeout: 25000
-  });
-  var body = resp.data;
-  if (body && body.code === 200 && body.url) return { code: 200, url: body.url };
-  if (body && body.url) return { code: 200, url: body.url };
-  return body;
-}`;
-      break;
-    }
-
     // ── 默认: 同 query 类型 ──
     default:
       code += `
