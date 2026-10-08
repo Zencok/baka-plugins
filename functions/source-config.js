@@ -64,9 +64,9 @@ const SOURCE_CONFIG = {
     apiType: 'oi',
     plugins: {
       'wy.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master'],
-      'qq.js': ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
-      'kg.js': ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos'],
-      'kw.js': ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
+      'qq.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master'],
+      'kg.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
+      'kw.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'atmos_plus', 'master'],
     }
   },
   'linglan': {

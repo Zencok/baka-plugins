@@ -2220,7 +2220,7 @@ async function getArtistInfo(artistItem) {
 
 module.exports = {
   platform: "酷狗音乐",
-  version: "1.1.3",
+  version: "1.1.4",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

@@ -21,9 +21,9 @@
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
 | 网易云音乐 | `plugins/wy.js` | `1.1.2` | 音源相关、MV |
-| QQ音乐 | `plugins/qq.js` | `1.1.6` | 音源相关、MV |
-| 酷狗音乐 | `plugins/kg.js` | `1.1.3` | 音源相关、MV |
-| 酷我音乐 | `plugins/kw.js` | `1.1.3` | 音源相关、MV |
+| QQ音乐 | `plugins/qq.js` | `1.1.7` | 音源相关、MV |
+| 酷狗音乐 | `plugins/kg.js` | `1.1.4` | 音源相关、MV |
+| 酷我音乐 | `plugins/kw.js` | `1.1.4` | 音源相关、MV |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、8 档音质、MV |
 | Bilibili | `plugins/bilibili.js` | `2.0.9` | 免密、MV、收藏夹与排行榜 |
 | 汽水音乐 | `plugins/qishui.js` | `3.2.9` | 免密、MV，可配置登录态 |
@@ -45,6 +45,8 @@
 | OI 音源 | `oi` | 用户提供签名盐 | wy / qq / kg / kw |
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
+
+OI 的音质对应：网易云 `atmos` / `atmos_plus` → `sky` / `jyeffect`；QQ、酷我 `atmos` / `atmos_plus` → `zpyz` / `zpqj`；酷狗 `atmos` / `master` → `zpqj` / `zpyz`，无 `atmos_plus`。OI 不使用 `flac24bit` 档位。
 
 OI 的 Key 填写当前会话的 `_oi_salt`（32 位小写十六进制），不是 GUID、`_oi_three_random` 或普通卡密。本站不自动获取签名盐；缺失或格式错误时，订阅和插件下载接口均会拒绝。
 

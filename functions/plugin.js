@@ -90,9 +90,9 @@ async function requestMusicUrl(source, songId, quality) {
   var patterns = { wy: /^[0-9]+$/, qq: /^[A-Za-z0-9]{14}$/, kg: /^[0-9a-f]{32}$/i, kw: /^[0-9]+$/ };
   var levels = {
     wy: { "128k": "standard", "320k": "exhigh", flac: "lossless", hires: "hires", atmos: "sky", atmos_plus: "jyeffect", master: "jymaster" },
-    qq: { "128k": "standard", "320k": "exhigh", flac: "lossless", flac24bit: "zpyz", hires: "hires", atmos: "zpqj", master: "jymaster" },
-    kg: { "128k": "standard", "320k": "exhigh", flac: "lossless", flac24bit: "zpyz", hires: "hires", atmos: "zpqj" },
-    kw: { "128k": "standard", "320k": "exhigh", flac: "lossless", flac24bit: "zpyz", hires: "hires", atmos: "zpqj", master: "jymaster" }
+    qq: { "128k": "standard", "320k": "exhigh", flac: "lossless", hires: "hires", atmos: "zpyz", atmos_plus: "zpqj", master: "jymaster" },
+    kg: { "128k": "standard", "320k": "exhigh", flac: "lossless", hires: "hires", atmos: "zpqj", master: "zpyz" },
+    kw: { "128k": "standard", "320k": "exhigh", flac: "lossless", hires: "hires", atmos: "zpyz", atmos_plus: "zpqj", master: "jymaster" }
   };
   var identifier = String(songId);
   if (!patterns[server] || !patterns[server].test(identifier)) throw new Error("OI 歌曲 ID 格式无效");

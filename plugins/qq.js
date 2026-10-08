@@ -1344,7 +1344,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.1.6",
+  version: "1.1.7",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

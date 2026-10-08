@@ -1837,7 +1837,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.1.3",
+  version: "1.1.4",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
