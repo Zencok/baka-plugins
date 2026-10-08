@@ -20,40 +20,15 @@
 
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
-| 网易云音乐 | `plugins/wy.js` | `1.1.1` | 音源相关、MV |
-| QQ音乐 | `plugins/qq.js` | `1.1.5` | 音源相关、MV |
-| 酷狗音乐 | `plugins/kg.js` | `1.1.2` | 音源相关、MV |
-| 酷我音乐 | `plugins/kw.js` | `1.1.2` | 音源相关、MV |
-| 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、全 8 档音质、播放时自动降级、MV |
-| Bilibili | `plugins/bilibili.js` | `2.0.9` | 免密、MV（支持 WBI、完整 Cookie/SESSDATA、收藏夹与排行榜） |
-| 汽水音乐 | `plugins/qishui.js` | `3.2.9` | 下载免密、Android 取流实时签名、MV（登录态下补充视频音乐搜索结果） |
+| 网易云音乐 | `plugins/wy.js` | `1.1.2` | 音源相关、MV |
+| QQ音乐 | `plugins/qq.js` | `1.1.6` | 音源相关、MV |
+| 酷狗音乐 | `plugins/kg.js` | `1.1.3` | 音源相关、MV |
+| 酷我音乐 | `plugins/kw.js` | `1.1.3` | 音源相关、MV |
+| 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、8 档音质、MV |
+| Bilibili | `plugins/bilibili.js` | `2.0.9` | 免密、MV、收藏夹与排行榜 |
+| 汽水音乐 | `plugins/qishui.js` | `3.2.9` | 免密、MV，可配置登录态 |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
-
-歌单导入的分页、游标和详情分批请求由插件负责，客户端无需内置平台 API。
-QQ 按来源总数继续分页，酷我包含最后一页，酷狗分批获取分享歌单及详情，
-Bilibili 收藏夹不再静默截断于 100 页，汽水跟随 `next_cursor`，咪咕分批请求歌曲详情。
-网易云保留完整 `trackIds` 分批机制；网络或业务错误不再作为空批次跳过。
-来源总数 `worksNum` 与实际返回的 `musicList.length` 分别保留；下架、权限限制和去重可能导致差异。
-
-QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求固定上限为 999 首，但
-有声剧、合集类专辑常见数千首，插件会继续按 `begin` 翻页直到总数取满，不再在
-999 首处截断。
-
-逐曲音质（专辑详情、歌手歌曲、歌单、排行榜）统一使用 `comm.ct = 19`：同一个
-`musicu.fcg` 接口在 `ct = 24`（web）下会把 `size_hires` 抹成 0，只保留
-`size_flac` 等字段，播放器因此判定曲目不支持 Hi-Res。`ct = 19`（客户端）下这些
-接口的 `file` 与 `CgiGetTrackInfo` 逐字段一致，所以不再需要额外的批量音质请求。
-
-咪咕播放音质完整映射：`mgg=LQ 64k`、`128k=PQ`、`320k=HQ`、`flac=SQ`、`flac24bit=ZQ24`、`hires=ZQ32`、`atmos=Z3D`、`atmos_plus=3D60`。歌曲列表会按接口元数据仅展示该歌曲实际拥有的档位。
-
-播放时会校验转换后的咪咕 CDN 地址；目标资源明确不存在时，插件会自动选择较低的可用音质，并在返回结果中标记实际播放档位。
-
-酷狗 MV 播放会保留接口返回的 HTTP CDN 地址（并提供备用节点）。该 CDN 的 HTTPS
-证书与域名不匹配，强制升级为 HTTPS 会导致 Electron 播放器握手失败。
-
-酷我 MV 使用 VID 分画质取源，并按接口实际返回档位识别服务端回落；播放器仅展示
-真正可用且不重复的清晰度，同时保留接口返回的 HTTP CDN 地址交由应用内代理加载。
 
 ---
 
@@ -63,66 +38,15 @@ QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求�
 
 | 名称 | 标识 | Key | 支持插件 |
 |---|---|---:|---|
-| OI 音源 | `oi` | 用户提供签名盐 | wy / qq / kg / kw |
-| 全豆要（免费） | `quandouyao` | 内置 | wy / qq / kg / kw |
-| 次合代（免费） | `cihedai` | 内置 | wy / qq / kg / kw |
+| 全豆要（免费） | `quandouyao` | 无需填写 | wy / qq / kg / kw |
+| 次合代（免费） | `cihedai` | 无需填写 | wy / qq / kg / kw |
 | ikun 音源（付费） | `ikun` | 需要 | wy / qq / kg / kw |
 | 聆澜音源（付费） | `linglan` | 需要 | wy / qq / kg / kw |
+| OI 音源 | `oi` | 用户提供签名盐 | wy / qq / kg / kw |
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
 
-OI 按本地 `com.oimusic.xg/OI音源/oimc.py` 的四平台 OIMC v2 协议接入（2026-10-08）。
-**不内置 `_oi_salt`、样本盐或自动获取盐的逻辑**；用户须将自己合法会话的当前 `SALT_MUSIC`（32 位小写十六进制）作为卡密填写，不是 `threeRandom` 或 `APP_V5_KEY`。网页、订阅接口、音源插件下载均拒绝缺失或格式错误的 OI 卡密。
-订阅示例：`https://music.cwo.cc.cd/api/subscription.json?source=oi&key=YOUR_OI_SALT.json`（将占位符替换为实际卡密）。
-接口为 GET `http://music-api.cenguigui.cn?Oimc=...`；下载插件用用户卡密计算 SHA-256 抽取核心签名、随机 XOR 载荷及 MD5 尾校验，每次请求使用当前毫秒时间戳。只发送 `Oimc`，不发送裸盐或明文歌曲参数。QQ 将 `tx` 转为 `qq` 并使用 songmid；酷狗使用歌曲 hash；网易云、酷我使用数字 ID。
-
-| 插件音质 | OI level |
-|---|---|
-| `128k` / `320k` / `flac` / `hires` | `standard` / `exhigh` / `lossless` / `hires`（四平台） |
-| `flac24bit` | `zpyz`（QQ、酷狗、酷我；复用客户端档位表示臻品/超清/至臻，不保证返回 24bit FLAC） |
-| `atmos` | 网易云 `sky`；QQ、酷狗、酷我 `zpqj` |
-| `atmos_plus` | 网易云 `jyeffect` |
-| `master` | `jymaster`（网易云、QQ、酷我；酷狗不支持） |
-
-按业务 `code` 和 `data.url` 校验结果，请求处理器保留 `data.quality` / `data.ekey`。QQ（1.1.5 起）与酷我插件的 `getMediaSource` 在返回播放 URL 时同时原样透传非空 `ekey`，供客户端解码；上游没有 `ekey` 时保持仅返回 `{ url }`。音质声明来自参考协议，并非实时可用性保证。
-服务使用 HTTP；签名不是 TLS 或服务端身份认证。卡密会写入订阅链接、插件内容和更新地址，请勿公开分享这些文件/链接；应用日志不输出 OI 卡密。
-部分 OI 媒体可能需要专用容器解码，返回 URL 不保证 BakaMusic 可直接播放；本接入不实现容器解码、设备绑定或会员授权逻辑。
-
-网页音质按 2026-10-03 实测结果展示，请求参数保持不变：
-
-| 平台 | 全豆要（聚合一号） | 次合代（聚合二号） |
-|------|-------------------|-------------------|
-| 网易云 | 128K / 320K / FLAC / Hi-Res / Master | 128K / 320K / FLAC / Hi-Res |
-| QQ | AAC 96K / 192K / FLAC | AAC 96K / 192K / FLAC |
-| 酷狗 | 320K / FLAC / Hi-Res | 320K / FLAC / Hi-Res |
-| 酷我 | 128K / 320K / FLAC | FLAC |
-
-### 全豆要 / 次合代端点（2026-10-03）
-
-网易云、酷狗、酷我采用 `K_H_v3.Toskysun.js` 中实测可用的念心 / 星海端点。
-全豆要的网易云、酷我优先念心；次合代优先星海；两者酷狗均优先星海，失败后切换另一端点。
-
-| 平台 | 端点与 GET 参数 | 声明音质 |
-|------|-----------------|----------|
-| 网易云 | `https://mcp.nianxinxz.com/share/ceshi/wy.php?id=&level=`；`https://yy.zddyr.top/lx/api/?source=netease&name=&songmid=&quality=` | 128k / 320k / flac / hires / master |
-| 酷狗 | `https://yy.zddyr.top/lx/api/?source=kg&name=&songmid=&quality=`；`https://mcp.nianxinxz.com/share/ceshi/kg.php?id=&level=` | 128k / 320k / flac / hires |
-| 酷我 | `https://mcp.nianxinxz.com/share/ceshi/kw.php?id=&level=`；`https://yy.zddyr.top/lx/api/?source=kw&name=&songmid=&quality=` | 128k / 320k / flac |
-| QQ | `https://tang.api.s01s.cn/music_open_api.php?mid=`，按 `song_play_url_standard / hq / sq` 取对应字段 | 128k / 320k / flac |
-
-这些端点不发送认证头、不需要用户填 Key；没有复制参考脚本中的登录 Cookie 或账号凭据。
-念心网易云/酷我使用 `standard / exhigh / lossless`，网易云高音质使用 `hires / jymaster`；
-念心酷狗使用 `128kmp3 / 320kmp3 / 2000kflac / hires`。
-星海网易云使用同样的网易云 level；星海酷狗/酷我使用 `128kmp3 / 320kmp3 / flac`，酷狗高音质使用 `hires`。
-
-QQ 未强行换成参考脚本中失败的接口：ygking 域名无法解析、本地 3035 路由返回 404、
-星海 QQ 要求认证、溯音 QQ 返回 403、FFAPI 已关闭；妖狐样例没有返回直链。
-因此两组 QQ 均保留实测可播放的 s01s。移除全豆要 vkeys（样例仅返回 28kbps 试听）及 Atmos 声明；
-次合代不再声明旧 GD 的 192k 和 QQ 的 96k 档位。
-
-请求处理器会先校验 JSON 状态和 URL，再用 `Range: bytes=0-1023` 校验音频签名；
-拒绝错误 JSON、HTML、网易云外链及页面 URL，主端点坏链时自动尝试备用端点。
-单次解析超时 8 秒、音频校验超时 5 秒；第三方仍可能限流、换源或降级，声明音质不保证每首歌均有对应资源。
-免密插件下载及更新链接继续不附加 `source`。
+OI 的 Key 填写当前会话的 `_oi_salt`（32 位小写十六进制），不是 GUID、`_oi_three_random` 或普通卡密。本站不自动获取签名盐；缺失或格式错误时，订阅和插件下载接口均会拒绝。
 
 ---
 
@@ -134,16 +58,17 @@ QQ 未强行换成参考脚本中失败的接口：ygking 域名无法解析、�
 
 ```text
 https://music.cwo.cc.cd/api/subscription.json?source=ikun&key=YOUR_KEY.json
+https://music.cwo.cc.cd/api/subscription.json?source=oi&key=YOUR_OI_SALT.json
 ```
 
-**内置 Key**
+**无需 Key**
 
 ```text
 https://music.cwo.cc.cd/api/subscription.json?source=cihedai.json
 ```
 
 > BakaMusic 要求订阅链接以 `.json` 结尾。  
-> 需要 Key 时，加在 `key` 后；内置 Key 时，加在 `source` 后。
+> 需要 Key 时，加在 `key` 后；无需 Key 时，加在 `source` 后。服务端会移除该后缀。
 
 ### 2. 单插件导入
 
@@ -153,33 +78,28 @@ https://music.cwo.cc.cd/api/subscription.json?source=cihedai.json
 https://music.cwo.cc.cd/plugins/wy.js?source=ikun&key=YOUR_KEY
 ```
 
+**无需 Key 的音源**
+
+```text
+https://music.cwo.cc.cd/plugins/wy.js?source=cihedai
+```
+
 **免密插件**
 
 ```text
 https://music.cwo.cc.cd/plugins/bilibili.js
 ```
 
-### Bilibili 登录与媒体能力
+> 示例中的 `YOUR_KEY` / `YOUR_OI_SALT` 请替换为自己的值。含卡密的链接、插件文件及更新地址不要公开分享。
 
-`bilibili.js` 使用与桌面下载器一致的 WBI 签名和 `/x/player/wbi/playurl`，播放器
-会自动回退旧版播放接口。免登录可播放公开内容；在 BakaMusic 用户变量中填写
-`SESSDATA`、`BILI_COOKIE` 或兼容字段 `CK`（支持完整浏览器 Cookie）后，可访问
-会员流、杜比/Hi-Res 音频、HDR/4K/8K 视频、用户投稿和私有收藏夹。登录后会刷新已缓存条目的 DASH 能力，避免旧的 128/192/320K 快照遮挡 FLAC/Hi-Res（同一条 Bilibili Hi-Res 流只显示一个音质键）和 Dolby。
+### 3. 平台登录配置
 
-下载时 `getMediaSource` 返回实际命中的音质键；例如请求 Master 但资源最高只有 320K
-时会返回 `320k`，避免文件名继续显示虚假的 Master。
+在 BakaMusic 的插件用户变量中填写，和音源 Key 分开配置：
 
-封面会同时写入 `artwork` 与 `coverImg`，统一升级为 HTTPS，并剥离 Bilibili CDN
-缩略图处理后缀以请求原图；BakaMusic 对 Bilibili 图片使用无 Referer 加载，用于底栏
-封面、沉浸背景和动态取色。
+- **Bilibili**：`SESSDATA` 可填纯值或完整 Cookie；`BILI_COOKIE` 用于完整 Cookie，优先使用；`CK` 是兼容别名。会员内容仍需账号具有对应权限。
+- **汽水音乐**：`sessionid` 可填纯值或 `sessionid=...` 片段，过期后需更新。
 
-插件同时提供视频 `getMvSource`（360p～8K）、音频 `getMediaSource`（128K～杜比）、
-歌单/收藏夹导入、歌单搜索、每周必看/分区排行榜、歌词和评论接口。
-
-### 汽水音乐签名与登录
-
-`qishui.js` 的 Android `track_v2` 请求会在发送前刷新 `_rticket`、`X-SS-Req-Ticket` 与全部 X-Headers，并将最终 URL、Base64 请求体和登录 Cookie 提交到汽水签名接口实时签名。
-插件仅保留用户变量 `sessionid`，可填写纯值或包含 `sessionid=...` 的 Cookie 片段；过期后请及时更新。
+登录 Cookie 同样属于敏感信息，请勿公开分享。
 
 ---
 
@@ -191,6 +111,8 @@ https://music.cwo.cc.cd/plugins/bilibili.js
 GET /api/subscription.json?source=<source>&key=<key>.json
 GET /api/subscription.json?source=<source>.json
 ```
+
+未指定 `source` 时默认使用 `ikun`；需要 Key 的音源请传入自己的卡密。
 
 作用：
 
@@ -211,9 +133,9 @@ GET /plugins/{name}.js
 作用：
 
 - 读取插件原文件
-- 注入 `// {{REQUEST_HANDLER}}`
+- 替换 `// {{REQUEST_HANDLER}}` 占位符
 - 生成 `API_URL`、`API_KEY`、`UPDATE_URL`
-- 覆盖 `supportedQualities`
+- 按音源配置覆盖 `supportedQualities`（配置为 `null` 时保留插件默认值）
 - 返回最终插件脚本
 
 实现文件：[functions/plugin.js](./functions/plugin.js)
@@ -308,7 +230,10 @@ Bilibili MV 优先返回带音轨的单文件 MP4，并通过 `videoQuality` 回
 
 ## 🛠️ 本地运行
 
+需要 Node.js 18 或更高版本，无需构建。
+
 ```bash
+npm ci
 node server.js
 ```
 
@@ -318,21 +243,17 @@ node server.js
 http://localhost:3000
 ```
 
+`PORT` 可修改监听端口。调试生成的订阅及更新链接时，将 `BASE_URL` 设置为本地地址；部署到自有域名时设置为自己的服务地址，否则生成链接默认指向在线服务。
+
 快速测试：
 
 ```bash
-curl "http://localhost:3000/api/subscription.json?source=ikun&key=test123.json"
-curl "http://localhost:3000/plugins/wy.js?source=ikun&key=test123"
+curl "http://localhost:3000/api/subscription.json?source=cihedai.json"
+curl "http://localhost:3000/plugins/wy.js?source=cihedai"
 curl "http://localhost:3000/plugins/bilibili.js"
 ```
 
----
-
-## 万象音源
-
-首页展示万象音源简洁合作卡片，支持复制独立插件源，并提供官网入口及 12 款插件的折叠列表。
-合作站注册可免费使用，每日签到赠送积分；具体额度及插件版本以合作站为准。
-官网：`https://api.vsaa.cn/`；插件源：`https://api.vsaa.cn/api/music/index.json`。该广告不改变本站音源配置或订阅内容。
+Windows PowerShell 中可使用 `curl.exe`。
 
 ---
 

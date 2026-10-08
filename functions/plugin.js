@@ -104,9 +104,10 @@ async function requestMusicUrl(source, songId, quality) {
   var core = indices.map(function(index) { return digest[index]; }).join("");
   var input = "server=" + server + "&id=" + identifier + "&type=song&level=" + level + "&format=json&getEekey=1&onlyGetUrl=1";
   var plain = input + "&sign=" + core;
-  var randomWord = crypto.lib.WordArray.random(4).words[0] >>> 0;
-  var shift = Math.floor(randomWord / 4294967296 * 9);
-  var randomByte = crypto.lib.WordArray.random(1).words[0] >>> 24;
+  var randomHex = crypto.lib && crypto.lib.WordArray && typeof crypto.lib.WordArray.random === "function"
+    ? crypto.lib.WordArray.random(5).toString(crypto.enc.Hex) : "";
+  var shift = randomHex ? Math.floor(parseInt(randomHex.slice(0, 8), 16) / 4294967296 * 9) : Math.floor(Math.random() * 9);
+  var randomByte = randomHex ? parseInt(randomHex.slice(8, 10), 16) : Math.floor(Math.random() * 256);
   var encrypted = randomByte.toString(16).padStart(2, "0");
   for (var index = 0; index < plain.length; index++) {
     encrypted += (plain.charCodeAt(index) ^ core.charCodeAt(index % core.length) ^ randomByte).toString(16).padStart(2, "0");

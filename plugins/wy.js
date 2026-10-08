@@ -1445,7 +1445,7 @@ async function getArtistInfo(artistItem) {
 module.exports = {
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.1",
+  version: "1.1.2",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
