@@ -123,6 +123,14 @@ exports.handler = async (event, context) => {
       key = key.slice(0, -5);
     }
 
+    if (source === 'oi' && !/^[0-9a-f]{32}$/.test(key || '')) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'OI 卡密必须为 32 位小写十六进制签名盐' })
+      };
+    }
+
     const baseUrl = process.env.BASE_URL || process.env.URL || 'https://music.cwo.cc.cd';
 
     // ── 扫描并过滤插件 ──
@@ -160,7 +168,7 @@ exports.handler = async (event, context) => {
       ua: getClientUA(event.headers)
     };
 
-    console.log(`Subscription: source=${source}, plugins=${pluginsList.length}, key=${key ? key.substring(0, 8) + '...' : sourceConfig.requiresKey ? '(none)' : '(builtin)'}, ip=${clientInfo.ip}`);
+    console.log(`Subscription: source=${source}, plugins=${pluginsList.length}, key=${source === 'oi' ? '(user-provided)' : key ? key.substring(0, 8) + '...' : sourceConfig.requiresKey ? '(none)' : '(builtin)'}, ip=${clientInfo.ip}`);
 
     return {
       statusCode: 200,

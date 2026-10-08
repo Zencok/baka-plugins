@@ -468,7 +468,9 @@ async function getMediaSource(musicItem, quality) {
     const qualityParam = qualityLevels[quality] || quality;
     const res = await requestMusicUrl('tx', musicItem.songmid, qualityParam);
     if (res.code === 200 && res.url) {
-      return { url: res.url };
+      const result = { url: res.url };
+      if (res.ekey) result.ekey = res.ekey;
+      return result;
     } else {
       console.error(`[QQ音乐] 获取播放链接失败: ${res.msg || '未知错误'}`);
       return null;
@@ -1342,7 +1344,7 @@ function getMusicDetailPageUrl(musicItem) {
 module.exports = {
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.1.4",
+  version: "1.1.5",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

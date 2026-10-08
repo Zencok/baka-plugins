@@ -82,22 +82,49 @@ async function requestMusicUrl(source, songId, quality) {
 }`;
       break;
 
-    case 'em':
+    case 'oi':
       code += `
 async function requestMusicUrl(source, songId, quality) {
-  var response = await axios_1.default.get(API_URL + "/url", {
-    params: { source: source, songId: String(songId), quality: quality },
-    headers: {
-      "X-Request-Key": API_KEY,
-      "User-Agent": "lx-music-desktop/2.12.1",
-      "Content-Type": "application/json"
-    },
+  if (!/^[0-9a-f]{32}$/.test(API_KEY)) throw new Error("OI 卡密必须为 32 位小写十六进制签名盐");
+  var server = source === "tx" ? "qq" : source;
+  var patterns = { wy: /^[0-9]+$/, qq: /^[A-Za-z0-9]{14}$/, kg: /^[0-9a-f]{32}$/i, kw: /^[0-9]+$/ };
+  var levels = {
+    wy: { "128k": "standard", "320k": "exhigh", flac: "lossless", hires: "hires", atmos: "sky", atmos_plus: "jyeffect", master: "jymaster" },
+    qq: { "128k": "standard", "320k": "exhigh", flac: "lossless", flac24bit: "zpyz", hires: "hires", atmos: "zpqj", master: "jymaster" },
+    kg: { "128k": "standard", "320k": "exhigh", flac: "lossless", flac24bit: "zpyz", hires: "hires", atmos: "zpqj" },
+    kw: { "128k": "standard", "320k": "exhigh", flac: "lossless", flac24bit: "zpyz", hires: "hires", atmos: "zpqj", master: "jymaster" }
+  };
+  var identifier = String(songId);
+  if (!patterns[server] || !patterns[server].test(identifier)) throw new Error("OI 歌曲 ID 格式无效");
+  var level = levels[server][quality];
+  if (!level) throw new Error("OI 不支持该平台音质: " + quality);
+  var crypto = require("crypto-js");
+  var digest = crypto.SHA256(identifier + API_KEY).toString(crypto.enc.Hex);
+  var indices = [7, 15, 3, 21, 45, 36, 18, 27, 55, 14, 26, 39, 40, 8, 19, 48];
+  var core = indices.map(function(index) { return digest[index]; }).join("");
+  var input = "server=" + server + "&id=" + identifier + "&type=song&level=" + level + "&format=json&getEekey=1&onlyGetUrl=1";
+  var plain = input + "&sign=" + core;
+  var randomWord = crypto.lib.WordArray.random(4).words[0] >>> 0;
+  var shift = Math.floor(randomWord / 4294967296 * 9);
+  var randomByte = crypto.lib.WordArray.random(1).words[0] >>> 24;
+  var encrypted = randomByte.toString(16).padStart(2, "0");
+  for (var index = 0; index < plain.length; index++) {
+    encrypted += (plain.charCodeAt(index) ^ core.charCodeAt(index % core.length) ^ randomByte).toString(16).padStart(2, "0");
+  }
+  var timestamp = String(Date.now());
+  if (!/^[0-9]{13}$/.test(timestamp)) throw new Error("OI 时间戳格式无效");
+  var mappedTimestamp = timestamp.split("").map(function(digit) { return ((Number(digit) + shift) % 16).toString(16); }).join("");
+  var tail = crypto.MD5(encrypted + core + API_KEY).toString(crypto.enc.Hex);
+  var oimc = "v2" + shift.toString(16) + mappedTimestamp + encrypted + core + tail;
+  var response = await axios_1.default.get(API_URL, {
+    params: { Oimc: oimc },
     timeout: 10000
   });
   var body = response.data;
-  if (!body || Number(body.code) !== 200) throw new Error(body && body.message || "EM 音源获取失败");
-  if (typeof body.url !== "string" || !/^https?:\\/\\/\\S+$/i.test(body.url)) throw new Error("EM 音源未返回有效播放链接");
-  return { code: 200, url: body.url };
+  if (!body || Number(body.code) !== 200) throw new Error(body && body.msg || "OI 音源获取失败");
+  var data = body.data;
+  if (!data || typeof data.url !== "string" || !/^https?:\\/\\/\\S+$/i.test(data.url)) throw new Error("OI 音源未返回有效播放链接");
+  return { code: 200, url: data.url, quality: data.quality, ekey: data.ekey };
 }`;
       break;
 
@@ -335,6 +362,14 @@ exports.handler = async (event, context) => {
       effectiveKey = sourceConfig.builtinKey || '';
     }
 
+    if (source === 'oi' && !/^[0-9a-f]{32}$/.test(effectiveKey)) {
+      return {
+        statusCode: 400,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'OI 卡密必须为 32 位小写十六进制签名盐' })
+      };
+    }
+
     // ── 读取插件文件 ──
     let pluginContent;
     try {
@@ -364,7 +399,7 @@ exports.handler = async (event, context) => {
     const qualities = getQualityOverride(source, pluginName);
     modifiedContent = replaceQualities(modifiedContent, qualities);
 
-    console.log(`Serving plugin: ${pluginName}, source: ${source}, apiType: ${sourceConfig.apiType || 'query'}, key: ${sourceConfig.requiresKey ? (effectiveKey ? effectiveKey.substring(0, 8) + '...' : '(none)') : '(builtin)'}, qualities: ${qualities ? JSON.stringify(qualities) : 'default'}`);
+    console.log(`Serving plugin: ${pluginName}, source: ${source}, apiType: ${sourceConfig.apiType || 'query'}, key: ${source === 'oi' ? '(user-provided)' : sourceConfig.requiresKey ? (effectiveKey ? effectiveKey.substring(0, 8) + '...' : '(none)') : '(builtin)'}, qualities: ${qualities ? JSON.stringify(qualities) : 'default'}`);
 
     return {
       statusCode: 200,

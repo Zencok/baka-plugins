@@ -21,7 +21,7 @@
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
 | 网易云音乐 | `plugins/wy.js` | `1.1.1` | 音源相关、MV |
-| QQ音乐 | `plugins/qq.js` | `1.1.4` | 音源相关、MV |
+| QQ音乐 | `plugins/qq.js` | `1.1.5` | 音源相关、MV |
 | 酷狗音乐 | `plugins/kg.js` | `1.1.2` | 音源相关、MV |
 | 酷我音乐 | `plugins/kw.js` | `1.1.2` | 音源相关、MV |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、全 8 档音质、播放时自动降级、MV |
@@ -63,7 +63,7 @@ QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求�
 
 | 名称 | 标识 | Key | 支持插件 |
 |---|---|---:|---|
-| EM 音源（白姬赞助） | `em` | 内置 | wy / qq / kg / kw |
+| OI 音源 | `oi` | 用户提供签名盐 | wy / qq / kg / kw |
 | 全豆要（免费） | `quandouyao` | 内置 | wy / qq / kg / kw |
 | 次合代（免费） | `cihedai` | 内置 | wy / qq / kg / kw |
 | ikun 音源（付费） | `ikun` | 需要 | wy / qq / kg / kw |
@@ -71,10 +71,22 @@ QQ 专辑详情同样按接口返回的 `totalNum` 分页取全：单次请求�
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
 
-EM 音源接入 `EM音源 (永久).js` 的接口，本身为付费音源，内置 Key 由「白姬」赞助提供，网页展示为「白姬赞助 · 内置 Key」，无需用户填写 Key。EM 与免费音源在前，需用户提供 Key 的 ikun、聆澜在后。
-接口为 GET `https://api.guazi.fun/lx/url?source=&songId=&quality=`，发送 `X-Request-Key` 和 LX `User-Agent`；QQ 使用 `tx`，酷狗使用歌曲 hash。
-音质按原脚本声明：网易云 / 酷狗支持 128K、320K、FLAC、24bit、Hi-Res、Atmos、Master；QQ 另支持 Atmos+；酷我支持 128K、320K、FLAC、24bit、Hi-Res。
-免密订阅示例：`https://music.cwo.cc.cd/api/subscription.json?source=em.json`。
+OI 按本地 `com.oimusic.xg/OI音源/oimc.py` 的四平台 OIMC v2 协议接入（2026-10-08）。
+**不内置 `_oi_salt`、样本盐或自动获取盐的逻辑**；用户须将自己合法会话的当前 `SALT_MUSIC`（32 位小写十六进制）作为卡密填写，不是 `threeRandom` 或 `APP_V5_KEY`。网页、订阅接口、音源插件下载均拒绝缺失或格式错误的 OI 卡密。
+订阅示例：`https://music.cwo.cc.cd/api/subscription.json?source=oi&key=YOUR_OI_SALT.json`（将占位符替换为实际卡密）。
+接口为 GET `http://music-api.cenguigui.cn?Oimc=...`；下载插件用用户卡密计算 SHA-256 抽取核心签名、随机 XOR 载荷及 MD5 尾校验，每次请求使用当前毫秒时间戳。只发送 `Oimc`，不发送裸盐或明文歌曲参数。QQ 将 `tx` 转为 `qq` 并使用 songmid；酷狗使用歌曲 hash；网易云、酷我使用数字 ID。
+
+| 插件音质 | OI level |
+|---|---|
+| `128k` / `320k` / `flac` / `hires` | `standard` / `exhigh` / `lossless` / `hires`（四平台） |
+| `flac24bit` | `zpyz`（QQ、酷狗、酷我；复用客户端档位表示臻品/超清/至臻，不保证返回 24bit FLAC） |
+| `atmos` | 网易云 `sky`；QQ、酷狗、酷我 `zpqj` |
+| `atmos_plus` | 网易云 `jyeffect` |
+| `master` | `jymaster`（网易云、QQ、酷我；酷狗不支持） |
+
+按业务 `code` 和 `data.url` 校验结果，请求处理器保留 `data.quality` / `data.ekey`。QQ（1.1.5 起）与酷我插件的 `getMediaSource` 在返回播放 URL 时同时原样透传非空 `ekey`，供客户端解码；上游没有 `ekey` 时保持仅返回 `{ url }`。音质声明来自参考协议，并非实时可用性保证。
+服务使用 HTTP；签名不是 TLS 或服务端身份认证。卡密会写入订阅链接、插件内容和更新地址，请勿公开分享这些文件/链接；应用日志不输出 OI 卡密。
+部分 OI 媒体可能需要专用容器解码，返回 URL 不保证 BakaMusic 可直接播放；本接入不实现容器解码、设备绑定或会员授权逻辑。
 
 网页音质按 2026-10-03 实测结果展示，请求参数保持不变：
 
