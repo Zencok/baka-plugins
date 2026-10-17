@@ -25,8 +25,8 @@
 | 酷狗音乐 | `plugins/kg.js` | `1.1.5` | 音源相关、MV、热搜 |
 | 酷我音乐 | `plugins/kw.js` | `1.1.5` | 音源相关、MV、热搜 |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.3` | 免密、8 档音质、MV、热搜 |
-| Bilibili | `plugins/bilibili.js` | `2.0.10` | 免密、MV、收藏夹、排行榜与热搜 |
-| 汽水音乐 | `plugins/qishui.js` | `3.2.10` | 免密、MV、热搜，可配置登录态 |
+| Bilibili | `plugins/bilibili.js` | `2.1.0` | 免密、MV、收藏夹、排行榜与热搜 |
+| 汽水音乐 | `plugins/qishui.js` | `3.3.0` | 免密、MV、热搜，可配置登录态 |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 
@@ -41,11 +41,15 @@
 跨仓回归在 BakaMusicFlutter 目录运行：
 
 ```powershell
-node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey'
-node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey' --live
+node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey' '../汽水音乐/汽水3.2.9.js'
+node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey' '../汽水音乐/汽水3.2.9.js' --live
 ```
 
 2026-10-18：11 份实际插件通过模拟 HTTP 契约检查（含四份独立 Vkey 插件）；7 个订阅平台的在线匿名请求分别返回网易云 20、QQ 30、酷狗 30、酷我 20、咪咕 20、Bilibili 30、汽水 20 条词。在线结果仅代表此次 Windows 主机网络验证，不代表 Android/iOS 真机或未来接口可用性；未发布订阅服务。
+
+版本进位按项目约定：Bilibili 从 `2.0.9` 升至 `2.1.0`，汽水从 `3.2.9` 升至 `3.3.0`。另为独立文件 `汽水音乐/汽水3.2.9.js` 接入同一匿名热搜接口，保留原文件名，其导出版本为 `3.3.0`；回归脚本新增该文件及所有发布版本断言。
+
+追加验证：12 份插件契约与版本断言全部通过，12 份实际导出在线复测全部返回热搜（独立酷我首次连接重置，完整重跑通过）；新增汽水文件返回 20 条词。原有 7 份 MV 契约检查仍通过。
 
 ---
 

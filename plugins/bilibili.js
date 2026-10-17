@@ -1030,7 +1030,7 @@ module.exports = {
   getHotSearch,
   platform: "bilibili",
   author: "Toskysun",
-  version: "2.0.10",
+  version: "2.1.0",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
   cacheControl: "no-cache",
