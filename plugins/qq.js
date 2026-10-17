@@ -1341,10 +1341,30 @@ function getMusicDetailPageUrl(musicItem) {
   return songmid ? `https://y.qq.com/n/yqq/song/${songmid}.html` : "";
 }
 
+async function getHotSearch() {
+  const response = await axios_1.default.post("https://u.y.qq.com/cgi-bin/musicu.fcg", {
+    comm: { ct: "19", cv: "1803", uin: "0", guid: "0", patch: "118", tmeAppID: "qqmusic", tmeLoginType: 0 },
+    hotkey: {
+      module: "tencent_musicsoso_hotkey.HotkeyService",
+      method: "GetHotkeyForQQMusicPC",
+      param: { search_id: "", uin: 0 },
+    },
+  }, { headers: { Referer: "https://y.qq.com/portal/player.html" }, timeout: 10000 });
+  const body = response.data;
+  const list = body?.hotkey?.data?.vec_hotkey;
+  if (body?.code !== 0 || (body.hotkey?.code != null && body.hotkey.code !== 0) || !Array.isArray(list)) {
+    throw new Error("QQ音乐热搜加载失败，请稍后重试");
+  }
+  return [...new Set(list.map(item => item?.query)
+    .filter(word => typeof word === "string" && word.trim())
+    .map(word => word.trim()))].slice(0, 30);
+}
+
 module.exports = {
+  getHotSearch,
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.1.7",
+  version: "1.1.8",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

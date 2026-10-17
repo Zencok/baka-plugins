@@ -1,7 +1,7 @@
 /**
  * 咪咕音乐 BakaMusic 免密插件
  * 内置官方听歌线路，无需 source/key；支持咪咕全部 8 档音质
- * @version 1.3.1
+ * @version 1.3.3
  */
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -2595,10 +2595,23 @@ function getMusicDetailPageUrl(musicItem) {
   return copyrightId ? `http://music.migu.cn/v3/music/song/${copyrightId}` : "";
 }
 
+async function getHotSearch() {
+  const response = await axios_1.default.get("https://jadeite.migu.cn/music_search/v3/search/hotword", { timeout: 10000 });
+  const body = response.data;
+  const list = body?.data?.hotwords?.[0]?.hotwordList;
+  if (body?.code !== "000000" || !Array.isArray(list)) {
+    throw new Error("咪咕音乐热搜加载失败，请稍后重试");
+  }
+  return [...new Set(list.filter(item => item?.resourceType === "song").map(item => item.word)
+    .filter(word => typeof word === "string" && word.trim())
+    .map(word => word.trim()))].slice(0, 30);
+}
+
 module.exports = {
+  getHotSearch,
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.3.2",
+  version: "1.3.3",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",

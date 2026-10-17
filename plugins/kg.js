@@ -2218,9 +2218,30 @@ async function getArtistInfo(artistItem) {
   }
 }
 
+async function getHotSearch() {
+  const response = await axios_1.default.get("https://gateway.kugou.com/api/v3/search/hot_tab", {
+    params: { signature: "ee44edb9d7155821412d220bcaf509dd", appid: 1005, clientver: 10026, plat: 0 },
+    headers: {
+      dfid: "1ssiv93oVqMp27cirf2CvoF1", mid: "156798703528610303473757548878786007104",
+      clienttime: "1584257267", "x-router": "msearch.kugou.com", "kg-rc": "1",
+      "User-Agent": "Android9-AndroidPhone-10020-130-0-searchrecommendprotocol-wifi",
+    },
+    timeout: 10000,
+  });
+  const body = response.data;
+  if (body?.errcode !== 0 || !Array.isArray(body.data?.list)) {
+    throw new Error("酷狗音乐热搜加载失败，请稍后重试");
+  }
+  const list = body.data.list.flatMap(group => Array.isArray(group?.keywords) ? group.keywords : []);
+  return [...new Set(list.map(item => item?.keyword)
+    .filter(word => typeof word === "string" && word.trim())
+    .map(word => he.decode(word).trim()).filter(Boolean))].slice(0, 30);
+}
+
 module.exports = {
+  getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.4",
+  version: "1.1.5",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

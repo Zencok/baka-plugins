@@ -1012,10 +1012,25 @@ async function importMusicItem(urlLike) {
   return getMusicInfo({ bvid, aid, id: bvid || aid });
 }
 
+async function getHotSearch() {
+  const response = await axios.get(`${API_BASE}/x/web-interface/wbi/search/square`, {
+    params: { limit: 30 }, headers: HTTP_HEADERS, timeout: 10000,
+  });
+  const body = response.data;
+  const list = body?.data?.trending?.list;
+  if (body?.code !== 0 || !Array.isArray(list)) {
+    throw new Error("Bilibili热搜加载失败，请稍后重试");
+  }
+  return [...new Set(list.map(item => item?.keyword)
+    .filter(word => typeof word === "string" && word.trim())
+    .map(word => word.trim()))].slice(0, 30);
+}
+
 module.exports = {
+  getHotSearch,
   platform: "bilibili",
   author: "Toskysun",
-  version: "2.0.9",
+  version: "2.0.10",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
   cacheControl: "no-cache",

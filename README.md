@@ -20,15 +20,32 @@
 
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
-| 网易云音乐 | `plugins/wy.js` | `1.1.2` | 音源相关、MV |
-| QQ音乐 | `plugins/qq.js` | `1.1.7` | 音源相关、MV |
-| 酷狗音乐 | `plugins/kg.js` | `1.1.4` | 音源相关、MV |
-| 酷我音乐 | `plugins/kw.js` | `1.1.4` | 音源相关、MV |
-| 咪咕音乐 | `plugins/mg.js` | `1.3.2` | 免密、8 档音质、MV |
-| Bilibili | `plugins/bilibili.js` | `2.0.9` | 免密、MV、收藏夹与排行榜 |
-| 汽水音乐 | `plugins/qishui.js` | `3.2.9` | 免密、MV，可配置登录态 |
+| 网易云音乐 | `plugins/wy.js` | `1.1.3` | 音源相关、MV、热搜 |
+| QQ音乐 | `plugins/qq.js` | `1.1.8` | 音源相关、MV、热搜 |
+| 酷狗音乐 | `plugins/kg.js` | `1.1.5` | 音源相关、MV、热搜 |
+| 酷我音乐 | `plugins/kw.js` | `1.1.5` | 音源相关、MV、热搜 |
+| 咪咕音乐 | `plugins/mg.js` | `1.3.3` | 免密、8 档音质、MV、热搜 |
+| Bilibili | `plugins/bilibili.js` | `2.0.10` | 免密、MV、收藏夹、排行榜与热搜 |
+| 汽水音乐 | `plugins/qishui.js` | `3.2.10` | 免密、MV、热搜，可配置登录态 |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
+
+### 搜索页热搜（2026-10-18）
+
+7 个插件均导出 `getHotSearch(): Promise<string[]>`，复用 BakaMusic 现有搜索页的热搜、刷新与点击搜索流程；已安装的旧插件需要更新后才能声明此能力。返回值按平台顺序去空、去重，最多 30 条；接口失败抛错供搜索页重试，不用榜单歌曲或预置文本冒充热搜。
+
+网易云、QQ、酷狗、酷我、咪咕的接口与字段参考 `lx-lxwalnut-music-mobile/src/utils/musicSdk/{wy,tx,kg,kw,mg}/hotSearch.js`（参考提交 `595c913`）。请求使用 HTTPS；咪咕改用无端口的 `https://jadeite.migu.cn/music_search/v3/search/hotword`，不使用参考中的旧 HTTP 7090 端口。Bilibili 使用 `GET /x/web-interface/wbi/search/square` 的 `data.trending.list[].keyword`。
+
+汽水使用 `POST https://api5-lq.qishui.com/luna/search-block`，仅请求 `includes: ["search_chart"]`，读取 `search_chart_block.charts[].content[]` 中 `behavior === "search"` 的 `keyword`，不混入推荐词、输入提示或广告跳转。热搜独立于播放签名与登录：不携带 Cookie、设备唯一标识、抓包时间戳或短期 X-Headers 签名。
+
+跨仓回归在 BakaMusicFlutter 目录运行：
+
+```powershell
+node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey'
+node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey' --live
+```
+
+2026-10-18：11 份实际插件通过模拟 HTTP 契约检查（含四份独立 Vkey 插件）；7 个订阅平台的在线匿名请求分别返回网易云 20、QQ 30、酷狗 30、酷我 20、咪咕 20、Bilibili 30、汽水 20 条词。在线结果仅代表此次 Windows 主机网络验证，不代表 Android/iOS 真机或未来接口可用性；未发布订阅服务。
 
 ---
 

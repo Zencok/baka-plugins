@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.2.9
+ * @version 3.2.10
  * @description 汽水音乐插件：歌词和取流走 PC track_v2，签名经转发。专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -2376,10 +2376,36 @@ function getMusicDetailPageUrl(musicItem) {
     : "";
 }
 
+async function getHotSearch() {
+  const response = await axios.default.post("https://api5-lq.qishui.com/luna/search-block", {
+    ab_param: JSON.stringify({ search_chart: 2 }),
+    from_query: "",
+    includes: ["search_chart"],
+  }, {
+    params: {
+      device_platform: "android", os: "android", aid: 8478, app_name: "luna",
+      version_code: 100111050, version_name: "11.1.0", channel: "vivo_8478_64",
+      device_type: "PJF110", device_brand: "OnePlus", os_api: 34, os_version: "14",
+    },
+    headers: { "User-Agent": "okhttp/3.10.0", "Content-Type": "application/json" },
+    timeout: 10000,
+  });
+  const body = response.data;
+  const charts = body?.search_chart_block?.charts;
+  if ((body?.status_code != null && body.status_code !== 0) || !Array.isArray(charts)) {
+    throw new Error("汽水音乐热搜加载失败，请稍后重试");
+  }
+  const list = charts.flatMap(chart => Array.isArray(chart?.content) ? chart.content : []);
+  return [...new Set(list.filter(item => item?.behavior === "search").map(item => item.keyword)
+    .filter(word => typeof word === "string" && word.trim())
+    .map(word => word.trim()))].slice(0, 30);
+}
+
 module.exports = {
+  getHotSearch,
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.2.9",
+  "version": "3.2.10",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",

@@ -1442,10 +1442,27 @@ async function getArtistInfo(artistItem) {
   return null;
 }
 
+async function getHotSearch() {
+  const response = await axios_1.default.post("https://interface3.music.163.com/eapi/search/chart/detail",
+    qs.stringify(eapiEncrypt("/api/search/chart/detail", { id: "HOT_SEARCH_SONG#@#" })), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: "https://music.163.com/" },
+      timeout: 10000,
+    });
+  const body = response.data;
+  const list = body?.data?.itemList;
+  if (body?.code !== 200 || !Array.isArray(list)) {
+    throw new Error("网易云音乐热搜加载失败，请稍后重试");
+  }
+  return [...new Set(list.map(item => item?.searchWord)
+    .filter(word => typeof word === "string" && word.trim())
+    .map(word => word.trim()))].slice(0, 30);
+}
+
 module.exports = {
+  getHotSearch,
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.2",
+  version: "1.1.3",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",

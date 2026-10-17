@@ -1834,10 +1834,30 @@ function getMusicDetailPageUrl(musicItem) {
   return songId ? `http://www.kuwo.cn/play_detail/${songId}` : "";
 }
 
+async function getHotSearch() {
+  const response = await axios_1.default.get("https://hotword.kuwo.cn/hotword.s", {
+    params: {
+      prod: "kwplayer_ar_9.3.0.1", corp: "kuwo", newver: 2, vipver: "9.3.0.1",
+      source: "kwplayer_ar_9.3.0.1_40.apk", p2p: 1, notrace: 0, uid: 0,
+      plat: "kwplayer_ar", rformat: "json", encoding: "utf8", tabid: 1,
+    },
+    headers: { "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9;)" },
+    timeout: 10000,
+  });
+  const body = response.data;
+  if (body?.status !== "ok" || !Array.isArray(body.tagvalue)) {
+    throw new Error("酷我音乐热搜加载失败，请稍后重试");
+  }
+  return [...new Set(body.tagvalue.map(item => item?.key)
+    .filter(word => typeof word === "string" && word.trim())
+    .map(word => word.trim()))].slice(0, 30);
+}
+
 module.exports = {
+  getHotSearch,
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.1.4",
+  version: "1.1.5",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
