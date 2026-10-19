@@ -1045,8 +1045,10 @@ async function getSheetMusicById(id, withSheetInfo = false) {
   let result = [];
   let idx = 0;
   while (idx * 200 < trackIds.length) {
+    // 导入只取批量歌曲详情；逐首音质补全会为大歌单增加数千次请求。
+    // 保留详情/privilege 中的音质，播放或查看音质时再按需补全。
     const res = await getValidMusicItems(
-      trackIds.slice(idx * 200, (idx + 1) * 200), { strict: true }
+      trackIds.slice(idx * 200, (idx + 1) * 200), { strict: true, withQuality: false }
     );
     result = result.concat(res);
     ++idx;
@@ -1462,7 +1464,7 @@ module.exports = {
   getHotSearch,
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.3",
+  version: "1.1.4",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
