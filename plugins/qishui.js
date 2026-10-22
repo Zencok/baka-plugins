@@ -1199,7 +1199,10 @@ function parseWebPlaylistDetail(html) {
 }
 
 function hasValidPlaylistDetail(playlistDetail) {
-  return !!playlistDetail && Array.isArray(playlistDetail.media_resources) && playlistDetail.media_resources.length > 0;
+  if (!playlistDetail || !Array.isArray(playlistDetail.media_resources)) return false;
+  const playlist = normalizePlaylist(playlistDetail.playlistInfo);
+  const total = playlistSheetItem({}, playlist?.count_tracks, playlist?.resource_cnt?.track_cnt).worksNum;
+  return playlistDetail.media_resources.length > 0 || total === 0;
 }
 
 function createRecommendSheetFromTopList(topListItem) {
@@ -2218,6 +2221,23 @@ async function importMusicItem(urlLike) {
   });
 }
 
+// Playlist metadata is independent of the number of tracks loaded on this page.
+// Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+function playlistSheetItem(sheet, ...totals) {
+  const item = { ...sheet };
+  delete item.worksNum;
+  for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    if (String(value).trim() === "") continue;
+    const count = Number(value);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      item.worksNum = count;
+      break;
+    }
+  }
+  return item;
+}
+
 async function getMusicPlaylistInfo(playlist) {
   if (playlist?._bakaSourceType === "toplist" || QISHUI_TOP_LIST_IDS.has(String(playlist?.id))) {
     const baseTopList = QISHUI_TOP_LIST_ITEMS.find(item => String(item.id) === String(playlist.id)) || {
@@ -2230,17 +2250,24 @@ async function getMusicPlaylistInfo(playlist) {
 
     return {
       "isEnd": true,
+      "sheetItem": playlistSheetItem(playlist, (topListDetail.musicList || []).length),
       "musicList": topListDetail.musicList || []
     };
   }
   const playlistDetail = await fetchPlaylistDetail(playlist.id);
+  const playlistInfo = normalizePlaylist(playlistDetail.playlistInfo);
   const musicList = playlistDetail.media_resources
     .map(parsePlaylistMediaResource)
     .filter(Boolean);
 
   return {
     "isEnd": true,
-    "sheetItem": parsePlaylistItem(playlistDetail.playlistInfo) || playlist,
+    "sheetItem": playlistSheetItem(
+      { ...playlist, ...parsePlaylistItem(playlistDetail.playlistInfo) },
+      playlistInfo?.count_tracks,
+      playlistInfo?.resource_cnt?.track_cnt,
+      playlistDetail.playlistInfo ? playlistDetail.media_resources.length : undefined
+    ),
     "musicList": prepareMusicList(musicList)
   };
 }
@@ -2405,7 +2432,7 @@ module.exports = {
   getHotSearch,
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",

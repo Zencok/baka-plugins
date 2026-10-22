@@ -1461,6 +1461,23 @@ async function getUserListDetail2(global_collection_id) {
   }
 }
 
+// Playlist metadata is independent of the number of tracks loaded on this page.
+// Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+function playlistSheetItem(sheet, ...totals) {
+  const item = { ...sheet };
+  delete item.worksNum;
+  for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    if (String(value).trim() === "") continue;
+    const count = Number(value);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      item.worksNum = count;
+      break;
+    }
+  }
+  return item;
+}
+
 async function getMusicSheetInfo(sheet, page) {
   try {
     let sheetId = sheet.id || sheet;
@@ -1498,9 +1515,10 @@ async function getMusicSheetInfo(sheet, page) {
     
     return {
       isEnd: !musicList || musicList.length <= endIndex,
-      ...(!Array.isArray(importedSheet) && importedSheet
-        ? { sheetItem: importedSheet }
-        : {}),
+      sheetItem: playlistSheetItem(
+        { ...sheet, ...(!Array.isArray(importedSheet) ? importedSheet : {}) },
+        importedSheet?.worksNum, musicList.length
+      ),
       musicList: pagedList,
     };
   } catch (error) {
@@ -1596,6 +1614,7 @@ async function getSpecialMusicList(specialId, page) {
     
     return {
       isEnd: page * pageSize >= data.total,
+      sheetItem: playlistSheetItem({ id: specialId }, data.total),
       musicList: musicList,
     };
   } catch (error) {
@@ -2241,7 +2260,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.5",
+  version: "1.1.6",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

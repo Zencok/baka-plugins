@@ -1809,6 +1809,39 @@ async function getArtistWorks(artistItem, page, type) {
   }
 }
 
+// Playlist metadata is independent of the number of tracks loaded on this page.
+// Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+function playlistSheetItem(sheet, ...totals) {
+  const item = { ...sheet };
+  delete item.worksNum;
+  for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    if (String(value).trim() === "") continue;
+    const count = Number(value);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      item.worksNum = count;
+      break;
+    }
+  }
+  return item;
+}
+
+async function miguPlaylistSheetItem(sheet, sheetId, ...totals) {
+  const item = playlistSheetItem(sheet, ...totals);
+  if (item.worksNum != null) return item;
+  // The H5 songs response may only describe this page. Query the existing
+  // playlist metadata endpoint instead of treating page size as the total.
+  try {
+    const response = await axios_1.default.get(
+      `https://m.music.migu.cn/migu/remoting/query_playlist_by_id_tag?onLine=1&queryChannel=0&createUserId=migu&contentCountMin=5&playListId=${encodeURIComponent(sheetId)}`,
+      { headers: { Referer: "https://m.music.migu.cn/" }, timeout: 10000 }
+    );
+    return playlistSheetItem(item, response.data?.rsp?.playList?.[0]?.contentCount);
+  } catch (error) {
+    return item;
+  }
+}
+
 async function getMusicSheetInfo(sheet, page) {
   try {
     let sheetId = sheet.id || sheet;
@@ -1875,6 +1908,7 @@ async function getMusicSheetInfo(sheet, page) {
         
         return {
           isEnd: res.data.totalCount <= page * 30,
+          sheetItem: await miguPlaylistSheetItem(sheet, sheetId, res.data.totalCount),
           musicList: musicList,
         };
       }
@@ -1940,6 +1974,7 @@ async function getMusicSheetInfo(sheet, page) {
         
         return {
           isEnd: res.data.totalCount <= page * 30,
+          sheetItem: await miguPlaylistSheetItem(sheet, sheetId, res.data.totalCount),
           musicList: musicList,
         };
       }
@@ -1976,6 +2011,7 @@ async function getMusicSheetInfo(sheet, page) {
     const isEnd = res.total < 30;
     return {
       isEnd,
+      sheetItem: await miguPlaylistSheetItem(sheet, sheetId, res.totalCount, res.songCount),
       musicList: res.items
         .filter((item) => {
           var _a;
@@ -2611,7 +2647,7 @@ module.exports = {
   getHotSearch,
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.3.3",
+  version: "1.3.4",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",

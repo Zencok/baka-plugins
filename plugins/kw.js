@@ -1548,6 +1548,23 @@ async function importMusicSheet(urlLike) {
   };
 }
 
+// Playlist metadata is independent of the number of tracks loaded on this page.
+// Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+function playlistSheetItem(sheet, ...totals) {
+  const item = { ...sheet };
+  delete item.worksNum;
+  for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    if (String(value).trim() === "") continue;
+    const count = Number(value);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      item.worksNum = count;
+      break;
+    }
+  }
+  return item;
+}
+
 function getMusicSheetInfo(sheet, page) {
   return getMusicSheetResponseById(sheet.id, page, pageSize).then(res => {
     return Promise.all(
@@ -1586,6 +1603,7 @@ function getMusicSheetInfo(sheet, page) {
     ).then(musicList => {
       return {
         isEnd: page * pageSize >= res.total,
+        sheetItem: playlistSheetItem(sheet, res.total),
         musicList: musicList,
       };
     });
@@ -1857,7 +1875,7 @@ module.exports = {
   getHotSearch,
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.1.5",
+  version: "1.1.6",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",

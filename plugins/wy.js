@@ -428,16 +428,19 @@ async function getValidMusicItems(trackIds, options = {}) {
 
 /** 模块级缓存：宿主不会把顶层 _trackIds 回传给下一页，必须本地记住 trackIds */
 const sheetTrackIdsCache = new Map();
+const sheetTrackTotalsCache = new Map();
 const SHEET_TRACK_CACHE_MAX = 40;
 
-function rememberSheetTrackIds(sheetId, trackIds) {
+function rememberSheetTrackIds(sheetId, trackIds, total) {
   const key = String(sheetId);
   if (!key || !Array.isArray(trackIds) || !trackIds.length) return;
   if (sheetTrackIdsCache.size >= SHEET_TRACK_CACHE_MAX && !sheetTrackIdsCache.has(key)) {
     const oldest = sheetTrackIdsCache.keys().next().value;
     sheetTrackIdsCache.delete(oldest);
+    sheetTrackTotalsCache.delete(oldest);
   }
   sheetTrackIdsCache.set(key, trackIds);
+  sheetTrackTotalsCache.set(key, total);
 }
 
 async function searchBase(query, page, type) {
@@ -1087,6 +1090,23 @@ async function importMusicSheet(urlLike) {
   return getSheetMusicById(id, true);
 }
 
+// Playlist metadata is independent of the number of tracks loaded on this page.
+// Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+function playlistSheetItem(sheet, ...totals) {
+  const item = { ...sheet };
+  delete item.worksNum;
+  for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    if (String(value).trim() === "") continue;
+    const count = Number(value);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      item.worksNum = count;
+      break;
+    }
+  }
+  return item;
+}
+
 async function getMusicSheetInfo(sheet, page) {
   const id = sheet?.id != null && sheet.id !== "" ? String(sheet.id) : "";
   if (!id) {
@@ -1101,6 +1121,7 @@ async function getMusicSheetInfo(sheet, page) {
     sheetTrackIdsCache.get(id) ||
     null;
 
+  let total = sheetTrackTotalsCache.get(id) ?? sheet.worksNum;
   if (!trackIds) {
     try {
       const headers = {
@@ -1118,6 +1139,7 @@ async function getMusicSheetInfo(sheet, page) {
           }
         )
       ).data;
+      total = sheetDetail?.playlist?.trackCount;
       trackIds = (sheetDetail?.playlist?.trackIds || [])
         .map((_) => _.id)
         .filter((tid) => tid != null);
@@ -1127,14 +1149,17 @@ async function getMusicSheetInfo(sheet, page) {
     }
   }
 
+  const pageNum = Math.max(1, Number(page) || 1);
+  const sheetItem = playlistSheetItem(
+    { id, ...(pageNum <= 1 ? { _trackIds: trackIds } : {}) }, total, trackIds.length
+  );
   if (!trackIds.length) {
-    return { isEnd: true, musicList: [] };
+    return { isEnd: true, sheetItem, musicList: [] };
   }
 
-  rememberSheetTrackIds(id, trackIds);
+  rememberSheetTrackIds(id, trackIds, sheetItem.worksNum);
 
   const pageSize = 40;
-  const pageNum = Math.max(1, Number(page) || 1);
   const start = (pageNum - 1) * pageSize;
   const currentPageIds = trackIds.slice(start, start + pageSize);
   const isEnd = start + pageSize >= trackIds.length;
@@ -1143,7 +1168,7 @@ async function getMusicSheetInfo(sheet, page) {
     return {
       isEnd: true,
       musicList: [],
-      ...(pageNum <= 1 ? { sheetItem: { id, _trackIds: trackIds } } : {}),
+      sheetItem,
     };
   }
 
@@ -1154,7 +1179,7 @@ async function getMusicSheetInfo(sheet, page) {
     isEnd,
     musicList: res,
     // 必须放在 sheetItem 内，宿主才会合并并写回 ref 供下一页使用
-    ...(pageNum <= 1 ? { sheetItem: { id, _trackIds: trackIds } } : {}),
+    sheetItem,
   };
 }
 
@@ -1464,7 +1489,7 @@ module.exports = {
   getHotSearch,
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.4",
+  version: "1.1.5",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",

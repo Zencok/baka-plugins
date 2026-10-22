@@ -1111,16 +1111,38 @@ function buildQQImportedSheet(id, sheetData, musicList, total) {
   };
 }
 
+// Playlist metadata is independent of the number of tracks loaded on this page.
+// Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+function playlistSheetItem(sheet, ...totals) {
+  const item = { ...sheet };
+  delete item.worksNum;
+  for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    if (String(value).trim() === "") continue;
+    const count = Number(value);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      item.worksNum = count;
+      break;
+    }
+  }
+  return item;
+}
+
 async function getMusicSheetInfo(sheet, page = 1) {
   const size = 100;
   const begin = (Math.max(1, Number(page) || 1) - 1) * size;
   const result = await getQQPlaylistPage(sheet.id, begin, size);
   const musicList = result.songlist.map(song => formatMusicItem(song));
-  const total = Number(result.dirinfo.songnum ?? result.dirinfo.song_num);
-  const knownTotal = Number.isFinite(total) && total > 0;
+  const total = playlistSheetItem({}, result.dirinfo.songnum, result.dirinfo.song_num).worksNum;
+  const knownTotal = total != null;
   return {
     isEnd: knownTotal ? begin + size >= total : musicList.length < size,
-    sheetItem: buildQQImportedSheet(sheet.id, result.dirinfo, [], knownTotal ? total : null),
+    sheetItem: playlistSheetItem({
+      ...sheet,
+      ...buildQQImportedSheet(sheet.id, result.dirinfo, [], knownTotal ? total : null),
+      // An omitted upstream total must not become zero from an empty metadata list.
+      worksNum: knownTotal ? total : sheet.worksNum,
+    }, knownTotal ? total : undefined),
     musicList,
   };
 }
@@ -1364,7 +1386,7 @@ module.exports = {
   getHotSearch,
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.1.8",
+  version: "1.1.9",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

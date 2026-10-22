@@ -820,27 +820,43 @@ async function importMusicSheet(urlLike) {
   };
 }
 
+// Playlist metadata is independent of the number of tracks loaded on this page.
+// Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+function playlistSheetItem(sheet, ...totals) {
+  const item = { ...sheet };
+  delete item.worksNum;
+  for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    if (String(value).trim() === "") continue;
+    const count = Number(value);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      item.worksNum = count;
+      break;
+    }
+  }
+  return item;
+}
+
 async function getMusicSheetInfo(sheet = {}, page = 1) {
   if (sheet._bilibiliType === "video" || /^BV/i.test(String(sheet.id || ""))) {
     if (!sheet.bvid && sheet.aid) {
       const item = await getMusicInfo({ id: sheet.aid, aid: sheet.aid, cid: sheet.cid });
-      return { isEnd: true, sheetItem: sheet, musicList: item ? [item] : [] };
+      return { isEnd: true, sheetItem: playlistSheetItem(sheet, item ? 1 : 0), musicList: item ? [item] : [] };
     }
     const detail = await importMusicSheet(String(sheet.bvid || sheet.id));
-    return { isEnd: true, sheetItem: detail, musicList: detail ? detail.musicList : [] };
+    return { isEnd: true, sheetItem: playlistSheetItem(detail || sheet, detail?.worksNum, detail?.musicList?.length), musicList: detail ? detail.musicList : [] };
   }
   const id = sheet.id || sheet.fid || sheet.media_id;
   if (!id) return { isEnd: true, musicList: [] };
   const favorite = await getFavoriteList(id, page, false);
   const musicList = favorite.medias.map(favoriteMediaToItem);
-  const total = Number(favorite.info?.media_count || favorite.info?.cnt || 0);
+  const total = favorite.info?.media_count ?? favorite.info?.cnt;
   return {
     isEnd: !favorite.hasMore,
-    sheetItem: favorite.info ? {
+    sheetItem: playlistSheetItem(favorite.info ? {
       ...sheet, id: String(favorite.info.id || id), title: favorite.info.title || sheet.title || "",
       artwork: normalizeImage(favorite.info.cover || sheet.artwork), description: favorite.info.intro || sheet.description || "",
-      worksNum: total || sheet.worksNum || musicList.length,
-    } : sheet,
+    } : sheet, total),
     musicList,
   };
 }
@@ -1030,7 +1046,7 @@ module.exports = {
   getHotSearch,
   platform: "bilibili",
   author: "Toskysun",
-  version: "2.1.0",
+  version: "2.1.1",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
   cacheControl: "no-cache",
