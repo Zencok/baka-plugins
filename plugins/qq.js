@@ -246,6 +246,7 @@ function formatArtistItem(_) {
     singerMID: _.singerMID,
     avatar: _.singerPic,
     worksNum: _.songNum,
+    songCount: _.songNum,
   };
 }
 
@@ -909,6 +910,23 @@ async function getAlbumInfo(albumItem) {
   };
 }
 
+// Song and album totals have separate meanings; never reuse a generic worksNum.
+function artistWorksItem(artist, type, ...totals) {
+  const item = { ...artist };
+  delete item.songCount;
+  delete item.albumCount;
+  const songs = playlistSheetItem({}, artist?.songCount, artist?.musicSize,
+    artist?.trackCount, artist?.musicCount, artist?.song_count, artist?.worksNums).worksNum;
+  const albums = playlistSheetItem({}, artist?.albumCount, artist?.albumSize,
+    artist?.albumNum, artist?.album_count).worksNum;
+  if (songs != null) item.songCount = songs;
+  if (albums != null) item.albumCount = albums;
+  const key = type === "album" ? "albumCount" : "songCount";
+  const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+  if (total != null) item[key] = total;
+  return item;
+}
+
 async function getArtistSongs(artistItem, page) {
   // 改用 musichall.song_list_server/GetSingerSongList：
   // 旧接口 music.web_singer_info_svr/get_singer_detail_info 即使 ct:19 也不下发
@@ -946,6 +964,7 @@ async function getArtistSongs(artistItem, page) {
 
   return {
     isEnd: res.singerSongList.data.totalNum <= page * pageSize,
+    artistItem: artistWorksItem(artistItem, "music", res.singerSongList.data.totalNum),
     data: songList.map((song) => formatMusicItem(song)),
   };
 }
@@ -984,6 +1003,7 @@ async function getArtistAlbums(artistItem, page) {
   ).data;
   return {
     isEnd: res.singerAlbum.data.total <= page * pageSize,
+    artistItem: artistWorksItem(artistItem, "album", res.singerAlbum.data.total),
     data: res.singerAlbum.data.list.map(formatAlbumItem),
   };
 }
@@ -1386,7 +1406,7 @@ module.exports = {
   getHotSearch,
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.1.9",
+  version: "1.2.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

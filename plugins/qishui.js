@@ -1340,8 +1340,9 @@ function parseArtistItem(artistItem) {
     "description": artist.description || "",
     "fans": artist.stats?.count_collected || 0,
     "platform": QISHUI_PLATFORM_NAME,
-    "albumCount": artist.count_albums || 0,
-    "trackCount": artist.count_tracks || 0
+    "albumCount": artist.count_albums,
+    "songCount": artist.count_tracks,
+    "trackCount": artist.count_tracks
   };
 }
 
@@ -1980,7 +1981,8 @@ async function getAlbumInfo(album) {
   };
 }
 
-async function fetchArtistAlbumsPage(artistId, page) {
+async function fetchArtistAlbumsPage(artistId, page, artist = {}) {
+  let artistItem = artistWorksItem(artist, "album");
   const targetCount = page * PAGE_SIZE;
   const albums = [];
   const seenAlbumIds = new Set();
@@ -1993,6 +1995,7 @@ async function fetchArtistAlbumsPage(artistId, page) {
       "count": String(PAGE_SIZE)
     });
 
+    artistItem = artistWorksItem(artistItem, "album", apiData.total_count, apiData.total);
     let addedCount = 0;
     (apiData.albums || []).forEach(album => {
       const albumId = String(album?.id || "");
@@ -2017,13 +2020,42 @@ async function fetchArtistAlbumsPage(artistId, page) {
 
   return {
     "isEnd": pageAlbums.length < PAGE_SIZE || (!hasMore && albums.length <= targetCount),
+    "artistItem": artistItem,
     "data": pageAlbums.map(parseAlbumItem).filter(Boolean)
   };
 }
 
+// Song and album totals have separate meanings; never reuse a generic worksNum.
+function artistWorksItem(artist, type, ...totals) {
+  const item = { ...artist };
+  delete item.songCount;
+  delete item.albumCount;
+  const songs = playlistSheetItem({}, artist?.songCount, artist?.musicSize,
+    artist?.trackCount, artist?.musicCount, artist?.song_count, artist?.worksNums).worksNum;
+  const albums = playlistSheetItem({}, artist?.albumCount, artist?.albumSize,
+    artist?.albumNum, artist?.album_count).worksNum;
+  if (songs != null) item.songCount = songs;
+  if (albums != null) item.albumCount = albums;
+  const key = type === "album" ? "albumCount" : "songCount";
+  const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+  if (total != null) item[key] = total;
+  return item;
+}
+
 async function getArtistWorks(artist, page, type) {
+  let artistInfo = artistWorksItem(artist, type);
+  if (page <= 1 && (artistInfo.songCount == null || artistInfo.albumCount == null)) {
+    try {
+      const response = await qishuiPcGet(`/artists/${artist.id}`);
+      const detail = normalizeArtist(response.artist_info || response.artist || response);
+      artistInfo = artistWorksItem({ ...artistInfo,
+        songCount: detail?.count_tracks ?? artistInfo.songCount,
+        albumCount: detail?.count_albums ?? artistInfo.albumCount,
+      }, type);
+    } catch (error) { /* Keep browsing when optional metadata is unavailable. */ }
+  }
   if (type === "album") {
-    return fetchArtistAlbumsPage(artist.id, page);
+    return fetchArtistAlbumsPage(artist.id, page, artistInfo);
   }
 
   if (type && type !== "music") {
@@ -2040,6 +2072,7 @@ async function getArtistWorks(artist, page, type) {
 
   return {
     "isEnd": !apiData.has_more,
+    "artistItem": artistWorksItem(artistInfo, "music", apiData.total_count, apiData.total),
     "data": (apiData.tracks || []).map(parseTrackItem).filter(Boolean)
   };
 }
@@ -2432,7 +2465,7 @@ module.exports = {
   getHotSearch,
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.3.1",
+  "version": "3.3.2",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",

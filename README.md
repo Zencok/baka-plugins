@@ -20,13 +20,13 @@
 
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
-| 网易云音乐 | `plugins/wy.js` | `1.1.5` | 音源相关、MV、热搜 |
-| QQ音乐 | `plugins/qq.js` | `1.1.9` | 音源相关、MV、热搜 |
-| 酷狗音乐 | `plugins/kg.js` | `1.1.6` | 音源相关、MV、热搜 |
-| 酷我音乐 | `plugins/kw.js` | `1.1.6` | 音源相关、MV、热搜 |
-| 咪咕音乐 | `plugins/mg.js` | `1.3.4` | 免密、8 档音质、MV、热搜 |
-| Bilibili | `plugins/bilibili.js` | `2.1.1` | 免密、MV、收藏夹、排行榜与热搜 |
-| 汽水音乐 | `plugins/qishui.js` | `3.3.1` | 免密、MV、热搜，可配置登录态 |
+| 网易云音乐 | `plugins/wy.js` | `1.1.6` | 音源相关、MV、热搜 |
+| QQ音乐 | `plugins/qq.js` | `1.2.0` | 音源相关、MV、热搜 |
+| 酷狗音乐 | `plugins/kg.js` | `1.1.7` | 音源相关、MV、热搜 |
+| 酷我音乐 | `plugins/kw.js` | `1.1.7` | 音源相关、MV、热搜 |
+| 咪咕音乐 | `plugins/mg.js` | `1.3.5` | 免密、8 档音质、MV、热搜 |
+| Bilibili | `plugins/bilibili.js` | `2.1.2` | 免密、MV、收藏夹、排行榜与热搜 |
+| 汽水音乐 | `plugins/qishui.js` | `3.3.2` | 免密、MV、热搜，可配置登录态 |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 
@@ -311,3 +311,7 @@ Windows PowerShell 中可使用 `curl.exe`。
 ## 歌单总数（2026-10-22）
 
 歌单详情通过 `sheetItem.worksNum` 返回总数，与当前已加载歌曲数分开。空歌单保留 0，未知总数不使用当前页长度冒充。版本、外部插件清单及实测限制见 [修复与验证记录](docs/PLAYLIST_TOTALS_20261022.md)。
+
+## 作者单曲与专辑总数（2026-10-22）
+
+通过 `artistItem.songCount` / `artistItem.albumCount` 分开返回作者统计。App 同步接入，缺失统计显示“已加载”；预览列表不冒充全量。见 [作者统计修复、版本和验证记录](docs/ARTIST_TOTALS_20261022.md)。

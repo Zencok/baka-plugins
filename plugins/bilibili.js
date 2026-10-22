@@ -667,7 +667,7 @@ async function searchArtists(keyword, page) {
     isEnd: pageEnd(resultData, page) || list.length < PAGE_SIZE,
     data: list.map((result) => ({
       id: result.mid, name: decodeHtml(result.uname || result.name), fans: Number(result.fans) || undefined,
-      description: result.usign || result.sign, avatar: normalizeImage(result.upic || result.face), worksNum: Number(result.videos) || undefined,
+      description: result.usign || result.sign, avatar: normalizeImage(result.upic || result.face), worksNum: Number(result.videos) || undefined, songCount: result.videos,
     })),
   };
 }
@@ -713,9 +713,27 @@ function randomDmString() {
   return Buffer.from(Array.from({ length: 36 }, () => Math.floor(32 + Math.random() * 96))).toString("base64").replace(/=+$/, "");
 }
 
+// Song and album totals have separate meanings; never reuse a generic worksNum.
+function artistWorksItem(artist, type, ...totals) {
+  const item = { ...artist };
+  delete item.songCount;
+  delete item.albumCount;
+  const songs = playlistSheetItem({}, artist?.songCount, artist?.musicSize,
+    artist?.trackCount, artist?.musicCount, artist?.song_count, artist?.worksNums).worksNum;
+  const albums = playlistSheetItem({}, artist?.albumCount, artist?.albumSize,
+    artist?.albumNum, artist?.album_count).worksNum;
+  if (songs != null) item.songCount = songs;
+  if (albums != null) item.albumCount = albums;
+  const key = type === "album" ? "albumCount" : "songCount";
+  const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+  if (total != null) item[key] = total;
+  return item;
+}
+
 async function getArtistWorks(artistItem = {}, page = 1, type = "music") {
   const mid = String(artistItem.id || artistItem.mid || "");
   if (!mid || (type && type !== "music" && type !== "album")) return { isEnd: true, data: [] };
+  if (type === "album") return { isEnd: true, artistItem: artistWorksItem(artistItem, "album"), data: [] };
   const params = {
     mid, pn: String(page || 1), ps: "30", index: "1", order: "pubdate", order_avoided: "true",
     platform: "web", web_location: "333.1387", dm_img_list: "[]", dm_img_str: randomDmString(),
@@ -727,6 +745,8 @@ async function getArtistWorks(artistItem = {}, page = 1, type = "music") {
     const pageInfo = body.data?.page || {};
     return {
       isEnd: list.length < Number(pageInfo.ps || 30) || Number(pageInfo.pn || page) * Number(pageInfo.ps || 30) >= Number(pageInfo.count || 0),
+      // This endpoint counts uploaded videos, not artist albums.
+      artistItem: artistWorksItem(artistItem, type, ...(type === "album" ? [] : [pageInfo.count])),
       data: list.map(formatMedia),
     };
   } catch (error) {
@@ -1046,7 +1066,7 @@ module.exports = {
   getHotSearch,
   platform: "bilibili",
   author: "Toskysun",
-  version: "2.1.1",
+  version: "2.1.2",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
   cacheControl: "no-cache",

@@ -884,6 +884,8 @@ async function searchArtist(query, page) {
           timeout: 5000,
         })
         .then((infoRes) => ({
+          songCount: infoRes.data?.data?.songcount,
+          albumCount: infoRes.data?.data?.albumcount,
           name: _.singername,
           id: _.singerid,
           avatar:
@@ -1247,6 +1249,23 @@ async function getAlbumInfo(albumItem, page = 1) {
   };
 }
 
+// Song and album totals have separate meanings; never reuse a generic worksNum.
+function artistWorksItem(artist, type, ...totals) {
+  const item = { ...artist };
+  delete item.songCount;
+  delete item.albumCount;
+  const songs = playlistSheetItem({}, artist?.songCount, artist?.musicSize,
+    artist?.trackCount, artist?.musicCount, artist?.song_count, artist?.worksNums).worksNum;
+  const albums = playlistSheetItem({}, artist?.albumCount, artist?.albumSize,
+    artist?.albumNum, artist?.album_count).worksNum;
+  if (songs != null) item.songCount = songs;
+  if (albums != null) item.albumCount = albums;
+  const key = type === "album" ? "albumCount" : "songCount";
+  const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+  if (total != null) item[key] = total;
+  return item;
+}
+
 async function getArtistWorks(artistItem, page, type) {
   if (type === "music") {
     const res = (
@@ -1281,6 +1300,7 @@ async function getArtistWorks(artistItem, page, type) {
 
     return {
       isEnd: page * 100 >= res.data.total,
+      artistItem: artistWorksItem(artistItem, "music", res.data.total),
       data: songList.map((song) => {
         const formattedItem = formatArtistSongItem(song);
         if (qualityInfoMap[song.hash]) {
@@ -1313,6 +1333,7 @@ async function getArtistWorks(artistItem, page, type) {
     ).data;
     return {
       isEnd: page * 20 >= res.data.total,
+      artistItem: artistWorksItem(artistItem, "album", res.data.total),
       data: res.data.info.map((_) => ({
         id: _.albumid,
         title: _.albumname,
@@ -2228,7 +2249,9 @@ async function getArtistInfo(artistItem) {
       name: d.singername || artistItem.name || "",
       avatar: avatar || "",
       description: d.profile || d.intro || "",
-      worksNum: d.songcount || d.song_count || 0,
+      worksNum: d.songcount ?? d.song_count,
+      songCount: d.songcount ?? d.song_count,
+      albumCount: d.albumcount ?? d.album_count,
       platform: "酷狗音乐",
     };
   } catch (e) {
@@ -2260,7 +2283,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.6",
+  version: "1.1.7",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

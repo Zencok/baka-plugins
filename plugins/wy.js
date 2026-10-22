@@ -513,7 +513,8 @@ async function searchArtist(query, page) {
       name: _.name,
       id: _.id,
       avatar: _.img1v1Url,
-      worksNum: _.albumSize,
+      songCount: _.musicSize,
+      albumCount: _.albumSize,
     })),
   };
 }
@@ -975,8 +976,25 @@ async function getAlbumInfo(albumItem) {
   };
 }
 
+// Song and album totals have separate meanings; never reuse a generic worksNum.
+function artistWorksItem(artist, type, ...totals) {
+  const item = { ...artist };
+  delete item.songCount;
+  delete item.albumCount;
+  const songs = playlistSheetItem({}, artist?.songCount, artist?.musicSize,
+    artist?.trackCount, artist?.musicCount, artist?.song_count, artist?.worksNums).worksNum;
+  const albums = playlistSheetItem({}, artist?.albumCount, artist?.albumSize,
+    artist?.albumNum, artist?.album_count).worksNum;
+  if (songs != null) item.songCount = songs;
+  if (albums != null) item.albumCount = albums;
+  const key = type === "album" ? "albumCount" : "songCount";
+  const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+  if (total != null) item[key] = total;
+  return item;
+}
+
 async function getArtistWorks(artistItem, page, type) {
-  const data = { csrf_token: "" };
+  const data = { csrf_token: "", ...(type === "album" ? { limit: 50, offset: (page - 1) * 50 } : {}) };
   const pae = getParamsAndEnc(JSON.stringify(data));
   const paeData = qs.stringify(pae);
   const headers = {
@@ -1006,6 +1024,7 @@ async function getArtistWorks(artistItem, page, type) {
     const dataList = await withBatchQualities(hotSongs);
     return {
       isEnd: true,
+      artistItem: artistWorksItem({ ...artistItem, songCount: res.artist?.musicSize ?? artistItem.songCount, albumCount: res.artist?.albumSize ?? artistItem.albumCount }, "music"),
       data: dataList,
     };
   } else if (type === "album") {
@@ -1018,7 +1037,8 @@ async function getArtistWorks(artistItem, page, type) {
       })
     ).data;
     return {
-      isEnd: true,
+      isEnd: typeof res.more === "boolean" ? !res.more : res.hotAlbums.length < 50,
+      artistItem: artistWorksItem({ ...artistItem, songCount: res.artist?.musicSize ?? artistItem.songCount, albumCount: res.artist?.albumSize ?? artistItem.albumCount }, "album"),
       data: res.hotAlbums.map(formatAlbumItem),
     };
   }
@@ -1412,7 +1432,9 @@ function formatWyArtistInfo(artist, artistItem) {
     name: artist.name || artistItem.name || "",
     avatar: pickWyArtistAvatar(artist),
     description: artist.briefDesc || artist.description || artist.desc || "",
-    worksNum: artist.musicSize ?? artist.albumSize,
+    worksNum: artist.musicSize,
+    songCount: artist.musicSize,
+    albumCount: artist.albumSize,
     platform: "网易云音乐",
   };
 }
@@ -1489,7 +1511,7 @@ module.exports = {
   getHotSearch,
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.5",
+  version: "1.1.6",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",

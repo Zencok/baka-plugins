@@ -346,6 +346,7 @@ function formatArtistItem(_) {
     artistId: _.ARTISTID,
     description: he.decode(_.desc || ""),
     worksNum: _.SONGNUM,
+    songCount: _.SONGNUM,
   };
 }
 
@@ -1233,6 +1234,23 @@ async function getAlbumInfo(albumItem) {
   };
 }
 
+// Song and album totals have separate meanings; never reuse a generic worksNum.
+function artistWorksItem(artist, type, ...totals) {
+  const item = { ...artist };
+  delete item.songCount;
+  delete item.albumCount;
+  const songs = playlistSheetItem({}, artist?.songCount, artist?.musicSize,
+    artist?.trackCount, artist?.musicCount, artist?.song_count, artist?.worksNums).worksNum;
+  const albums = playlistSheetItem({}, artist?.albumCount, artist?.albumSize,
+    artist?.albumNum, artist?.album_count).worksNum;
+  if (songs != null) item.songCount = songs;
+  if (albums != null) item.albumCount = albums;
+  const key = type === "album" ? "albumCount" : "songCount";
+  const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+  if (total != null) item[key] = total;
+  return item;
+}
+
 async function getArtistMusicWorks(artistItem, page) {
   const res = (
     await axios_1.default({
@@ -1281,6 +1299,7 @@ async function getArtistMusicWorks(artistItem, page) {
   });
   return {
     isEnd: (+res.pn + 1) * pageSize >= +res.total,
+    artistItem: artistWorksItem(artistItem, "music", res.total),
     data: songs,
   };
 }
@@ -1312,6 +1331,7 @@ async function getArtistAlbumWorks(artistItem, page) {
   const albums = res.albumlist.map(formatAlbumItem);
   return {
     isEnd: (+res.pn + 1) * pageSize >= +res.total,
+    artistItem: artistWorksItem(artistItem, "album", res.total),
     data: albums,
   };
 }
@@ -1875,7 +1895,7 @@ module.exports = {
   getHotSearch,
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.1.6",
+  version: "1.1.7",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",

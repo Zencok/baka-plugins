@@ -1075,7 +1075,9 @@ async function searchArtist(query, page) {
         name: item.name || item.title,
         avatar: formatImgUrl(avatar),
         description: item.intro || item.artistIntro,
-        worksNum: item.songCount || item.songNum || item.musicNum,
+        worksNum: item.songCount ?? item.songNum ?? item.musicNum,
+        songCount: item.songCount ?? item.songNum ?? item.musicNum,
+        albumCount: item.albumCount ?? item.albumNum,
         albumNum: item.albumCount || item.albumNum,
         fans: item.followNum || item.fansNum,
       });
@@ -1097,6 +1099,7 @@ async function searchArtist(query, page) {
     id: result.id,
     avatar: formatImgUrl(result.artistPicL || result.artistPicM || result.artistPicS),
     worksNum: result.songNum,
+    songCount: result.songNum,
   }));
   return {
     isEnd: +data.pageNo * searchRows >= data.pgt,
@@ -1712,6 +1715,8 @@ async function getArtistAlbumWorks(artistItem, page) {
 
       return {
         isEnd: result.isEnd,
+        // Search results filtered by artist do not provide an exact artist total.
+        artistItem: artistWorksItem(artistItem, "album"),
         data: albums,
       };
     }
@@ -1723,6 +1728,23 @@ async function getArtistAlbumWorks(artistItem, page) {
     isEnd: true,
     data: [],
   };
+}
+
+// Song and album totals have separate meanings; never reuse a generic worksNum.
+function artistWorksItem(artist, type, ...totals) {
+  const item = { ...artist };
+  delete item.songCount;
+  delete item.albumCount;
+  const songs = playlistSheetItem({}, artist?.songCount, artist?.musicSize,
+    artist?.trackCount, artist?.musicCount, artist?.song_count, artist?.worksNums).worksNum;
+  const albums = playlistSheetItem({}, artist?.albumCount, artist?.albumSize,
+    artist?.albumNum, artist?.album_count).worksNum;
+  if (songs != null) item.songCount = songs;
+  if (albums != null) item.albumCount = albums;
+  const key = type === "album" ? "albumCount" : "songCount";
+  const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+  if (total != null) item[key] = total;
+  return item;
 }
 
 async function getArtistWorks(artistItem, page, type) {
@@ -1757,6 +1779,7 @@ async function getArtistWorks(artistItem, page, type) {
         const items = itemsArray.map(item => item.song || item).filter(Boolean);
 
         return {
+          artistItem: artistWorksItem(artistItem, "music", res.data.data.totalCount, res.data.totalCount),
           data: items.map((item) => {
             const qualities = {};
 
@@ -2647,7 +2670,7 @@ module.exports = {
   getHotSearch,
   platform: "咪咕音乐",
   author: "Toskysun",
-  version: "1.3.4",
+  version: "1.3.5",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",
   cacheControl: "no-cache",
