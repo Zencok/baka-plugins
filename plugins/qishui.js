@@ -1,7 +1,7 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.3.3
+ * @version 3.3.4
  * @description 汽水音乐插件：歌词和取流走 PC track_v2，签名经转发。专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
@@ -15,16 +15,6 @@ Object.defineProperty(exports, "__esModule", {
 });
 
 const axios = require("axios");
-
-// Only the configured signing relay uses this agent; upstream API TLS stays verified.
-let qishuiSignHttpsAgent;
-try {
-  const https = require("https");
-  qishuiSignHttpsAgent = new https.Agent({ rejectUnauthorized: false });
-} catch (_) {
-  // Native plugin HTTP adapters may not expose Node's https module.
-}
-
 
 const PAGE_SIZE = 20;
 
@@ -97,7 +87,7 @@ const QISHUI_ANDROID_API_PARAMS = {
   "device_id": "2204957404565290"
 };
 
-const QISHUI_XHEADERS_SIGN_URL = "https://211.161.236.45/api/music/soda/sign-pc.php";
+const QISHUI_XHEADERS_SIGN_URL = "https://api.vsaa.cn/api/music/soda/sign-pc.php";
 const QISHUI_XHEADERS_INSTANCE = "soda-386088-pc";
 const QISHUI_XHEADERS_KEY = "xh_9K5EgmaNu-hTx48CwL48wkcLVPtR50U0";
 
@@ -459,7 +449,6 @@ async function signQishuiPcRequest(url, bodyBytes, khronos) {
         "Accept": "application/json",
         "Authorization": `Bearer ${QISHUI_XHEADERS_KEY}`
       },
-      "httpsAgent": qishuiSignHttpsAgent,
       "timeout": 15000,
       "maxRedirects": 5
     }
@@ -2476,7 +2465,7 @@ module.exports = {
   getHotSearch,
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.3.3",
+  "version": "3.3.4",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
