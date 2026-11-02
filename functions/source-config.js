@@ -51,7 +51,7 @@ const SOURCE_CONFIG = {
     apiType: 'xinghai',
     plugins: {
       'wy.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
-      'qq.js': ['128k', '320k', 'flac', 'atmos', 'atmos_plus', 'master'],
+      'qq.js': ['128k', '320k', 'flac', 'atmos', 'master'],
       'kg.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
       'kw.js': ['flac'],
     }
@@ -64,7 +64,7 @@ const SOURCE_CONFIG = {
     // 平台顺序 wy→qq→kg→kw；null = 使用插件默认 supportedQualities
     plugins: {
       'wy.js':  null,
-      'qq.js':  null,
+      'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
       'kg.js':  null,
       // ikun 酷我额外开放环绕/母带（插件默认仅到 flac）
       'kw.js':  ['128k', '320k', 'flac', 'atmos', 'atmos_plus', 'master'],
@@ -89,7 +89,7 @@ const SOURCE_CONFIG = {
     apiType: 'query',
     plugins: {
       'wy.js':  null,
-      'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
+      'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
       'kg.js':  null,
       'kw.js':  null,
     }

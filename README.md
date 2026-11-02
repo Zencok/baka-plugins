@@ -87,11 +87,11 @@ node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../Q
 | 星海平台 | 开放音质 |
 |---|---|
 | 网易云 | 128k / 320k / flac / hires / atmos / master |
-| QQ | 128k / 320k / flac / atmos / atmos_plus / master |
+| QQ | 128k / 320k / flac / atmos / master |
 | 酷狗 | 128k / 320k / flac / hires / atmos / master |
 | 酷我 | flac |
 
-QQ Hi-Res 在本次样本中返回失效链接，暂不开放；FLAC 仍受歌曲资源影响。酷我后端当前对低音质请求也返回 FLAC，因此只展示 FLAC。音质名称不代表已验证空间音效，实际编码与资源以接口返回为准。
+QQ Hi-Res 在本次样本中返回失效链接，暂不开放；FLAC 仍受歌曲资源影响。星海 QQ 的 `atmos_plus` 实测会返回与 `atmos` 相同的链接并报告为 `atmos`，因此不对星海 QQ 暴露该档。酷我后端当前对低音质请求也返回 FLAC，因此只展示 FLAC。音质名称不代表已验证空间音效，实际编码与资源以接口返回为准。
 
 万象音源作为独立的聚合订阅列在网页音源选择中，必须先在[万象官网](https://api.vsaa.cn/user/login)注册并获取卡密，再填写卡密生成订阅链接：
 

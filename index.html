@@ -1784,11 +1784,11 @@
 
         // 音源 → 各插件音质 (null = 使用插件默认音质；键顺序 wy→qq→kg→kw 与 SOURCE_PLUGINS 一致)
         const SOURCE_QUALITIES = {
-            'xinghai':    { 'wy.js': ['128k','320k','flac','hires','atmos','master'], 'qq.js': ['128k','320k','flac','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac','hires','atmos','master'], 'kw.js': ['flac'] },
+            'xinghai':    { 'wy.js': ['128k','320k','flac','hires','atmos','master'], 'qq.js': ['128k','320k','flac','atmos','master'], 'kg.js': ['128k','320k','flac','hires','atmos','master'], 'kw.js': ['flac'] },
             // 与 source-config ikun 一致：wy/qq/kg 用插件默认，kw 覆盖高阶环绕
-            'ikun':       { 'wy.js': null, 'qq.js': null, 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
+            'ikun':       { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
             'oi':         { 'wy.js': ['128k','320k','flac','hires','atmos','atmos_plus','master'], 'qq.js': ['128k','320k','flac','hires','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac','hires','atmos','master'], 'kw.js': ['128k','320k','flac','hires','atmos','atmos_plus','master'] },
-            'linglan':    { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','atmos_plus','master'], 'kg.js': null, 'kw.js': null },
+            'linglan':    { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kg.js': null, 'kw.js': null },
             'cihedai':    { 'wy.js': ['128k','320k','flac','hires'], 'qq.js': ['96k','192k','flac'], 'kg.js': ['320k','flac','hires'], 'kw.js': ['flac'] },
             'quandouyao': { 'wy.js': ['128k','320k','flac','hires','master'], 'qq.js': ['96k','192k','flac'], 'kg.js': ['320k','flac','hires'], 'kw.js': ['128k','320k','flac'] },
         };
