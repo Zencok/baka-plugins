@@ -1152,7 +1152,15 @@ async function getMusicSheetInfo(sheet, page = 1) {
   if (sheet._dailyRecommendation === true) {
     if (page > 1) return { isEnd: true, musicList: [] };
     const daily = await getDailyRecommendations();
-    if (daily.state !== "ready") throw new Error(daily.message || "每日推荐暂时不可用，请重新连接 QQ 音乐");
+    if (daily.state !== "ready") {
+      const messages = {
+        unconfigured: "请在 QQ 音乐插件中填写用户 ID，开启每日推荐",
+        login_required: "请重新连接 QQ 音乐，继续收听每日推荐",
+        blocked: "此账号暂时无法使用每日推荐",
+        updating: "今日推荐正在更新，请稍后重试",
+      };
+      throw new Error(messages[daily.state] || "今日推荐暂时无法加载，请稍后重试");
+    }
     return { isEnd: true, sheetItem: daily.sheetItem, musicList: daily.musicList };
   }
   const size = 100;
@@ -1408,7 +1416,8 @@ async function getHotSearch() {
     .map(word => word.trim()))].slice(0, 30);
 }
 
-const DAILY_CONNECT_URL = "https://mc.vsaa.cn/";
+const DAILY_CONNECT_URL = "https://qm.xww.ccwu.cc/connect";
+const DAILY_API_URL = "https://qm.xww.ccwu.cc/api/qq/recommendations/daily";
 
 // User credentials are independent of the subscription's playback API key.
 async function loadDailyRecommendations() {
@@ -1416,10 +1425,10 @@ async function loadDailyRecommendations() {
     ? env.getUserVariables() || {} : {};
   const key = String(variables.qq_user_id || variables.qq_recommend_key || "").trim();
   if (!key) return { state: "unconfigured", connectUrl: DAILY_CONNECT_URL };
-  if (!/^[A-Za-z0-9_-]{16,128}$/.test(key)) return { state: "login_required", connectUrl: DAILY_CONNECT_URL };
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(key)) return { state: "login_required", connectUrl: DAILY_CONNECT_URL };
   let body;
   try {
-    const response = await axios_1.default.get(DAILY_CONNECT_URL + "api/qq/recommendations/daily", {
+    const response = await axios_1.default.get(DAILY_API_URL, {
       headers: { "X-User-Id": key }, timeout: 40000,
     });
     body = response.data;
@@ -1471,7 +1480,7 @@ module.exports = {
   primaryKey: ["id", "songmid"],
   userVariables: [{
     key: "qq_user_id", name: "用户 ID",
-    hint: "前往 https://mc.vsaa.cn 扫码连接 QQ 音乐，复制用户 ID 后填入。此 ID 由本站生成，不是 QQ 号。每日推荐无需审核。",
+    hint: "前往 https://qm.xww.ccwu.cc/connect 扫码连接 QQ 音乐，复制用户 ID 后填入。此 ID 由本站生成，不是 QQ 号。每日推荐无需审核。",
   }],
   supportedQualities: ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master"],
   supportedVideoQualities: ["360p", "480p", "720p", "1080p", "4k"],

@@ -8,7 +8,7 @@
 
 ### QQ 每日三十首（1.3.0）
 
-打开 <https://mc.vsaa.cn/>（LyraMesh 原域名的 `/connect` 同样可用），扫码连接后复制用户 ID，填入 QQ 插件用户变量「用户 ID」（`qq_user_id`）并保存。推荐无需审核，收藏仍独立审核；此变量与播放音源订阅 Key 无关。
+打开 <https://qm.xww.ccwu.cc/connect>（LyraMesh 原域名的 `/connect` 同样可用），扫码连接后复制用户 ID，填入 QQ 插件用户变量「用户 ID」（`qq_user_id`）并保存。推荐无需审核，收藏仍独立审核；此变量与播放音源订阅 Key 无关。
 
 通用方法 `getDailyRecommendations()` 返回 `state`、`title`、`accountName`、`connectUrl`；就绪时增加 `date`、`refreshAt`（毫秒）、`sheetItem`、`musicList`、`isEnd:true`。其他平台实现同一方法即可接入；推荐条数、时区、登录入口、变量和 HTTP 请求均由插件决定，详情继续使用 `getMusicSheetInfo`。
 

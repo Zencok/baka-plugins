@@ -38,7 +38,7 @@ test('connection configuration is plugin-owned and missing/invalid keys never ma
   const result = await f.plugin.getDailyRecommendations();
   assert.equal(result.state, 'unconfigured');
   assert.equal(result.title, '每日三十首');
-  assert.equal(result.connectUrl, 'https://mc.vsaa.cn/');
+  assert.equal(result.connectUrl, 'https://qm.xww.ccwu.cc/connect');
   f.variables({ qq_user_id: 'bad\r\nkey' });
   assert.equal((await f.plugin.getDailyRecommendations()).state, 'login_required');
   assert.equal(f.requests.length, 0);
@@ -54,7 +54,7 @@ test('key travels only in headers; plugin converts tracks and supports normal co
   assert.equal(result.sheetItem.worksNum, 1);
   assert.equal(JSON.stringify(result).includes('synthetic-connection-key'), false);
   const req = f.requests[0];
-  assert.equal(req.url, 'https://mc.vsaa.cn/api/qq/recommendations/daily');
+  assert.equal(req.url, 'https://qm.xww.ccwu.cc/api/qq/recommendations/daily');
   assert.equal(req.config.headers['X-User-Id'], 'synthetic-connection-key');
   const detail = await f.plugin.getMusicSheetInfo(result.sheetItem, 1);
   assert.equal(detail.isEnd, true); assert.equal(detail.musicList.length, 1);
@@ -69,6 +69,12 @@ test('cross-day or expired content is never returned as ready', async () => {
   assert.equal((await f.plugin.getDailyRecommendations()).state, 'updating');
   const expired = validBody(); expired.data.refresh_at = Date.now() - 1; f.body(expired);
   assert.notEqual((await f.plugin.getDailyRecommendations()).state, 'ready');
+});
+
+test('existing short collection user IDs remain usable', async () => {
+  const f = fixture(); f.variables({ qq_user_id: 'abc123' }); f.body(validBody());
+  assert.equal((await f.plugin.getDailyRecommendations()).state, 'ready');
+  assert.equal(f.requests[0].config.headers['X-User-Id'], 'abc123');
 });
 
 test('HTTP business errors remain useful states without forwarding server diagnostics', async () => {
