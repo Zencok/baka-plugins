@@ -1149,20 +1149,6 @@ function playlistSheetItem(sheet, ...totals) {
 }
 
 async function getMusicSheetInfo(sheet, page = 1) {
-  if (sheet._dailyRecommendation === true) {
-    if (page > 1) return { isEnd: true, musicList: [] };
-    const daily = await getDailyRecommendations();
-    if (daily.state !== "ready") {
-      const messages = {
-        unconfigured: "请在 QQ 音乐插件中填写用户 ID，开启每日推荐",
-        login_required: "请重新连接 QQ 音乐，继续收听每日推荐",
-        blocked: "此账号暂时无法使用每日推荐",
-        updating: "今日推荐正在更新，请稍后重试",
-      };
-      throw new Error(messages[daily.state] || "今日推荐暂时无法加载，请稍后重试");
-    }
-    return { isEnd: true, sheetItem: daily.sheetItem, musicList: daily.musicList };
-  }
   const size = 100;
   const begin = (Math.max(1, Number(page) || 1) - 1) * size;
   const result = await getQQPlaylistPage(sheet.id, begin, size);
@@ -1416,14 +1402,14 @@ async function getHotSearch() {
     .map(word => word.trim()))].slice(0, 30);
 }
 
-const DAILY_CONNECT_URL = "https://qm.xww.ccwu.cc/connect";
-const DAILY_API_URL = "https://qm.xww.ccwu.cc/api/qq/recommendations/daily";
+const DAILY_CONNECT_URL = "https://mc.vsaa.cn/connect";
+const DAILY_API_URL = "https://mc.vsaa.cn/api/qq/recommendations/daily";
 
 // User credentials are independent of the subscription's playback API key.
 async function loadDailyRecommendations() {
   const variables = typeof env !== "undefined" && typeof env.getUserVariables === "function"
     ? env.getUserVariables() || {} : {};
-  const key = String(variables.qq_user_id || variables.qq_recommend_key || "").trim();
+  const key = String(variables.qq_user_id || "").trim();
   if (!key) return { state: "unconfigured", connectUrl: DAILY_CONNECT_URL };
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(key)) return { state: "login_required", connectUrl: DAILY_CONNECT_URL };
   let body;
@@ -1444,21 +1430,14 @@ async function loadDailyRecommendations() {
   const data = body.data;
   const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
   if (data?.date !== today) return { state: "updating", connectUrl: DAILY_CONNECT_URL };
-  if (!Array.isArray(data?.songs) || !data.songs.length || !data.playlist?.id ||
-      !Number.isFinite(data.refresh_at) || data.refresh_at <= Date.now() ||
-      data.songs.some(song => !song || typeof song.mid !== "string" || !Array.isArray(song.singer))) {
+  if (!/^\d{1,20}$/.test(String(data?.tid || "")) ||
+      !Number.isFinite(data.refresh_at) || data.refresh_at <= Date.now()) {
     return { state: "error", connectUrl: DAILY_CONNECT_URL };
   }
-  const musicList = data.songs.map(song => formatMusicItem({
-    ...song, title: song.title || song.name,
-    album: { ...song.album, title: song.album?.title || song.album?.name },
-  }));
-  const sheetItem = {
-    id: String(data.playlist.id), title: "每日三十首", artist: "QQ 音乐",
-    artwork: musicList[0]?.artwork, worksNum: musicList.length,
-    description: data.date + " · 为你推荐", _dailyRecommendation: true,
-  };
-  return { state: "ready", date: data.date, refreshAt: data.refresh_at, sheetItem, musicList, isEnd: true };
+  const sheetItem = buildQQImportedSheet(String(data.tid), {}, [], 30);
+  sheetItem.title = "每日三十首";
+  sheetItem.description = data.date + " · 为你推荐";
+  return { state: "ready", date: data.date, refreshAt: data.refresh_at, sheetItem };
 }
 
 // Shared discovery contract: platform rules, destinations and refresh times are plugin-owned.
@@ -1474,13 +1453,13 @@ module.exports = {
   getHotSearch,
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.3.0",
+  version: "1.3.1",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
   userVariables: [{
     key: "qq_user_id", name: "用户 ID",
-    hint: "前往 https://qm.xww.ccwu.cc/connect 扫码连接 QQ 音乐，复制用户 ID 后填入。此 ID 由本站生成，不是 QQ 号。每日推荐无需审核。",
+    hint: "前往 https://mc.vsaa.cn/connect 扫码连接 QQ 音乐，复制用户 ID 后填入。此 ID 由本站生成，不是 QQ 号。每日推荐无需审核。",
   }],
   supportedQualities: ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master"],
   supportedVideoQualities: ["360p", "480p", "720p", "1080p", "4k"],

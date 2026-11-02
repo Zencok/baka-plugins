@@ -7,11 +7,15 @@ const vm = require('node:vm');
 function fixture() {
   let variables = {}, body, failure;
   const requests = [];
-  const axios = { get: async (url, config) => {
+  const axios = async config => {
+    requests.push({ config });
+    return { data: body };
+  };
+  axios.get = async (url, config) => {
     requests.push({ url, config });
     if (failure) throw failure;
     return { data: body };
-  } };
+  };
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../plugins/qq.js'), 'utf8'), {
     module, exports: module.exports, UPDATE_URL: 'https://plugins.test/qq.js',
@@ -27,9 +31,7 @@ function fixture() {
 
 const validBody = () => ({ code: 0, data: {
   date: new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10),
-  refresh_at: Date.now() + 60000, playlist: { id: '900' },
-  songs: [{ id: 123, mid: 'fixtureMid', name: 'Song', singer: [{ name: 'Artist' }],
-    album: { name: 'Album', mid: 'fixtureAlbum' }, interval: 180, file: { size_128mp3: 100 } }],
+  refresh_at: Date.now() + 60000, tid: '900',
 } });
 
 test('connection configuration is plugin-owned and missing/invalid keys never make requests', async () => {
@@ -38,29 +40,44 @@ test('connection configuration is plugin-owned and missing/invalid keys never ma
   const result = await f.plugin.getDailyRecommendations();
   assert.equal(result.state, 'unconfigured');
   assert.equal(result.title, '每日三十首');
-  assert.equal(result.connectUrl, 'https://qm.xww.ccwu.cc/connect');
+  assert.equal(result.connectUrl, 'https://mc.vsaa.cn/connect');
   f.variables({ qq_user_id: 'bad\r\nkey' });
   assert.equal((await f.plugin.getDailyRecommendations()).state, 'login_required');
   assert.equal(f.requests.length, 0);
 });
 
-test('key travels only in headers; plugin converts tracks and supports normal collection detail', async () => {
+test('user ID stays in headers; tid opens through the normal paginated playlist API', async () => {
   const f = fixture(); f.variables({ qq_user_id: 'synthetic-connection-key' }); f.body(validBody());
   const result = await f.plugin.getDailyRecommendations();
   assert.equal(result.state, 'ready');
-  assert.equal(result.musicList[0].title, 'Song');
-  assert.equal(result.musicList[0].album, 'Album');
-  assert.equal(result.musicList[0].songmid, 'fixtureMid');
-  assert.equal(result.sheetItem.worksNum, 1);
+  assert.equal(result.sheetItem.id, '900');
+  assert.equal(result.sheetItem.worksNum, 30);
+  assert.equal(result.musicList, undefined);
+  assert.equal(result.sheetItem._dailyRecommendation, undefined);
   assert.equal(JSON.stringify(result).includes('synthetic-connection-key'), false);
   const req = f.requests[0];
-  assert.equal(req.url, 'https://qm.xww.ccwu.cc/api/qq/recommendations/daily');
+  assert.equal(req.url, 'https://mc.vsaa.cn/api/qq/recommendations/daily');
   assert.equal(req.config.headers['X-User-Id'], 'synthetic-connection-key');
+  const song = { id: 123, mid: 'fixtureMid', title: 'Song', singer: [{ name: 'Artist' }],
+    album: { title: 'Album', mid: 'fixtureAlbum' }, interval: 180, file: { size_128mp3: 100 } };
+  f.body({ code: 0, req: { code: 0, data: { code: 0,
+    dirinfo: { disstid: 900, dissname: 'Daily playlist', desc: 'Full description', songnum: 130 },
+    songlist: [song] } } });
   const detail = await f.plugin.getMusicSheetInfo(result.sheetItem, 1);
-  assert.equal(detail.isEnd, true); assert.equal(detail.musicList.length, 1);
-  const count = f.requests.length;
-  assert.equal((await f.plugin.getMusicSheetInfo(result.sheetItem, 2)).musicList.length, 0);
-  assert.equal(f.requests.length, count);
+  assert.equal(detail.isEnd, false);
+  assert.equal(detail.musicList[0].title, 'Song');
+  assert.equal(detail.sheetItem.description, 'Full description');
+  assert.equal(detail.sheetItem.worksNum, 130);
+  const next = await f.plugin.getMusicSheetInfo(result.sheetItem, 2);
+  assert.equal(next.isEnd, true);
+  assert.equal(f.requests.length, 3);
+  for (const [index, begin] of [[1, 0], [2, 100]]) {
+    const config = f.requests[index].config;
+    assert.equal(config.url, 'https://u.y.qq.com/cgi-bin/musicu.fcg');
+    assert.equal(config.data.req.param.disstid, 900);
+    assert.equal(config.data.req.param.song_begin, begin);
+    assert.equal(config.headers['X-User-Id'], undefined);
+  }
 });
 
 test('cross-day or expired content is never returned as ready', async () => {
