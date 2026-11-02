@@ -26,7 +26,7 @@
 | 酷我音乐 | `plugins/kw.js` | `1.1.7` | 音源相关、MV、热搜 |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.5` | 免密、8 档音质、MV、热搜 |
 | Bilibili | `plugins/bilibili.js` | `2.1.2` | 免密、MV、收藏夹、排行榜与热搜 |
-| 汽水音乐 | `plugins/qishui.js` | `3.3.4` | 免密、MV、热搜，可配置登录态 |
+| 汽水音乐 | `plugins/qishui.js` | `3.3.5` | 免密、MV、热搜，可配置签名 Key 与登录态 |
 
 > `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
 
@@ -158,7 +158,7 @@ https://music.cwo.cc.cd/plugins/bilibili.js
 在 BakaMusic 的插件用户变量中填写，和音源 Key 分开配置：
 
 - **Bilibili**：`SESSDATA` 可填纯值或完整 Cookie；`BILI_COOKIE` 用于完整 Cookie，优先使用；`CK` 是兼容别名。会员内容仍需账号具有对应权限。
-- **汽水音乐**：`sessionid` 可填纯值或 `sessionid=...` 片段，过期后需更新。
+- **汽水音乐**：`X-Hearder Key` 可填签名服务 Key 或 `Bearer Key`；`sessionid` 可填纯值或 `sessionid=...` 片段，过期后需更新。留空使用内置值。
 
 登录 Cookie 同样属于敏感信息，请勿公开分享。
 

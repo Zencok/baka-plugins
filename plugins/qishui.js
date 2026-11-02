@@ -1,8 +1,8 @@
 /**
  * 汽水音乐 BakaMusic 插件
  * @author JanYun & Toskysun
- * @version 3.3.4
- * @description 汽水音乐插件：歌词和取流走 PC track_v2，签名经转发。专辑、歌手、歌单、榜单、评论走 PC API。sessionid 支持用户变量自定义
+ * @version 3.3.5
+ * @description 汽水音乐插件：歌词和取流走 PC track_v2，签名经转发。专辑、歌手、歌单、榜单、评论走 PC API。X-Hearder Key 和 sessionid 支持用户变量自定义
  * @officialGroup BakaMusic官方群：1064805856
  * @janyunGroup 简云官方群：288305439
  * @srcLink https://music.cwo.cc.cd/plugins/qishui.js
@@ -377,6 +377,15 @@ function getQishuiUserVariables() {
   }
 }
 
+function getQishuiXHeadersKey() {
+  const raw = getQishuiUserVariables()["X-Hearder Key"];
+  if (typeof raw === "string") {
+    const key = raw.trim().replace(/^Bearer\s+/i, "").trim();
+    if (key) return key;
+  }
+  return QISHUI_XHEADERS_KEY;
+}
+
 /**
  * 读取用户变量 sessionid（支持纯值或含 sessionid= 的 Cookie 片段）
  * BakaMusic: env.getUserVariables()
@@ -447,7 +456,7 @@ async function signQishuiPcRequest(url, bodyBytes, khronos) {
       "headers": {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Authorization": `Bearer ${QISHUI_XHEADERS_KEY}`
+        "Authorization": `Bearer ${getQishuiXHeadersKey()}`
       },
       "timeout": 15000,
       "maxRedirects": 5
@@ -2465,13 +2474,18 @@ module.exports = {
   getHotSearch,
   "platform": "汽水音乐",
   "author": "JanYun & Toskysun",
-  "version": "3.3.4",
+  "version": "3.3.5",
   "appVersion": ">0.1.0-alpha.0",
   "srcUrl": "https://music.cwo.cc.cd/plugins/qishui.js",
   "cacheControl": "no-cache",
   "supportedQualities": ["128k", "192k", "320k", "flac", "hires", "atmos", "atmos_plus"],
   "supportedVideoQualities": ["360p", "480p", "720p", "1080p"],
   "userVariables": [
+    {
+      "key": "X-Hearder Key",
+      "name": "X-Hearder Key",
+      "hint": "X-Headers 签名服务 Key，可填纯 Key 或 Bearer Key；留空使用内置 Key，仅发送给签名服务"
+    },
     {
       "key": "sessionid",
       "name": "sessionid",
