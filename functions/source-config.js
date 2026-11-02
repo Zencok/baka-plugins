@@ -7,7 +7,7 @@
  * - url:          API 基础地址
  * - requiresKey:  用户是否需要提供 API Key
  * - builtinKey:   内置 Key (仅 requiresKey=false 时使用)
- * - apiType:      请求类型 (ikun|oi|query|cihedai|quandouyao)
+ * - apiType:      请求类型 (ikun|oi|query|cihedai|quandouyao|xinghai)
  * - authHeader:   自定义认证头名称 (默认 X-API-Key)
  * - platformProviders: 按插件文件排序的聚合端点 (cihedai/quandouyao)
  * - plugins:      支持的插件映射 { 文件名 → 音质数组 | null }
@@ -21,6 +21,7 @@
  *   lxmusic    - GET  ${url}/url/${source}/${songId}/${quality}           header: authHeader (或无)
  *   cihedai    - 次合代: 星海优先、念心备用；QQ=s01s
  *   quandouyao - 全豆要: 念心优先、星海备用；酷狗星海优先；QQ=s01s
+ *   xinghai    - 星海: 四平台仅请求 yy.zddyr.top/lx/api/，无需用户 Key
  */
 
 const KH_LEVELS = { '128k': 'standard', '320k': 'exhigh', flac: 'lossless', hires: 'hires', master: 'jymaster' };
@@ -43,6 +44,18 @@ const KH_PROVIDERS = {
 };
 
 const SOURCE_CONFIG = {
+  'xinghai': {
+    name: '星海音源',
+    url: 'https://yy.zddyr.top/lx/api/',
+    requiresKey: false,
+    apiType: 'xinghai',
+    plugins: {
+      'wy.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
+      'qq.js': ['128k', '320k', 'flac', 'atmos', 'atmos_plus', 'master'],
+      'kg.js': ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
+      'kw.js': ['flac'],
+    }
+  },
   'ikun': {
     name: 'ikun 音源',
     url: 'https://c.wwwweb.top',
@@ -76,8 +89,7 @@ const SOURCE_CONFIG = {
     apiType: 'query',
     plugins: {
       'wy.js':  null,
-      // tx 已不支持 master（API 返回 400）
-      'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus'],
+      'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
       'kg.js':  null,
       'kw.js':  null,
     }

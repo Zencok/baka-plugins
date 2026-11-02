@@ -169,6 +169,51 @@ ${sourceMapCode}async function requestMusicUrl(source, songId, quality) {
       break;
     }
 
+    // 星海独立源：一个解析后端，不接入其他解析服务或官方备用线路。
+    case 'xinghai': {
+      const platform = pluginName === 'qq.js' ? 'tx' : pluginName.replace('.js', '');
+      code += `
+var _XH_PLATFORM = ${JSON.stringify(platform)};
+var _XH_QUALITIES = ${JSON.stringify(sourceConfig.plugins[pluginName])};
+var _XH_DEVICE = "lx-online-" + Math.random().toString(36).slice(2, 10);
+var _XH_TOKEN = "";
+var _XH_TOKEN_TIME = 0;
+async function requestMusicUrl(source, songId, quality) {
+  if (source !== _XH_PLATFORM) throw new Error("星海: 不支持的平台 " + source);
+  if (!_XH_QUALITIES.includes(quality)) throw new Error("星海: 不支持的音质 " + quality);
+  if (songId === undefined || songId === null || String(songId).trim() === "") throw new Error("星海: 缺少歌曲 ID");
+  if (!_XH_TOKEN || Date.now() - _XH_TOKEN_TIME > 300000) {
+    _XH_TOKEN_TIME = Date.now();
+    _XH_TOKEN = require("buffer").Buffer.from(JSON.stringify({
+      device_id: _XH_DEVICE, ip: "0.0.0.0", timestamp: Math.floor(_XH_TOKEN_TIME / 1000),
+      random: Math.random().toString(36).slice(2, 12)
+    }), "utf8").toString("base64");
+  }
+  var response = await axios_1.default.get(API_URL, {
+    params: { source: source === "tx" ? "qq" : source, songmid: String(songId), quality: quality },
+    headers: { "X-Token": _XH_TOKEN, "X-Client": "XingHaiMusicSource/v3.2.15 (unknown)", "User-Agent": "lx-music" },
+    timeout: 10000
+  });
+  var body = response.data;
+  if (!body || Number(body.code) !== 200) throw new Error("星海: " + (body && (body.msg || body.message) || "解析失败"));
+  var url = typeof body.url === "string" ? body.url.trim() : "";
+  if (!/^https?:\\/\\/\\S+$/i.test(url)) throw new Error("星海: 未返回有效播放链接");
+  // kwplay.php 是音频转发入口，按实际音频内容校验，不按扩展名拒绝。
+  var audioResponse = await axios_1.default.get(url, {
+    headers: { Range: "bytes=0-1023", "User-Agent": "Mozilla/5.0" },
+    responseType: "arraybuffer", timeout: 5000, maxContentLength: 65536
+  });
+  var bytes = new Uint8Array(audioResponse.data);
+  var signature = String.fromCharCode.apply(null, bytes.subarray(0, 4));
+  var audio = signature === "fLaC" || signature.slice(0, 3) === "ID3" || signature === "OggS"
+    || (bytes[0] === 255 && (bytes[1] & 224) === 224)
+    || String.fromCharCode.apply(null, bytes.subarray(4, 8)) === "ftyp";
+  if (!audio) throw new Error("星海: 播放链接未返回音频数据");
+  return { code: 200, url: url, quality: body.quality };
+}`;
+      break;
+    }
+
     // ── cihedai/quandouyao: K×H 念心/星海聚合，QQ 保留 s01s ──
     case 'cihedai':
     case 'quandouyao': {

@@ -73,11 +73,35 @@ node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../Q
 |---|---|---:|---|
 | 全豆要（免费） | `quandouyao` | 无需填写 | wy / qq / kg / kw |
 | 次合代（免费） | `cihedai` | 无需填写 | wy / qq / kg / kw |
+| 星海音源（免费） | `xinghai` | 无需填写 | wy / qq / kg / kw |
 | ikun 音源（付费） | `ikun` | 需要 | wy / qq / kg / kw |
 | 聆澜音源（付费） | `linglan` | 需要 | wy / qq / kg / kw |
 | OI 音源 | `oi` | 用户提供签名盐 | wy / qq / kg / kw |
 
 > 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
+
+聆澜音源的 QQ 插件支持 `master` 音质。
+
+星海音源只使用 `https://yy.zddyr.top/lx/api/` 一个解析后端，无用户卡密、无其他解析服务回退。采用 GET，参数为 `source`（wy / qq / kg / kw）、`songmid`、`quality`；按原脚本生成临时 `X-Token` 和 `X-Client` 请求头，不另行请求 IP 或鉴权接口。取得链接后检查音频文件头，允许酷我 `kwplay.php` 音频转发地址，并拒绝错误页面和失效链接。
+
+| 星海平台 | 开放音质 |
+|---|---|
+| 网易云 | 128k / 320k / flac / hires / atmos / master |
+| QQ | 128k / 320k / flac / atmos / atmos_plus / master |
+| 酷狗 | 128k / 320k / flac / hires / atmos / master |
+| 酷我 | flac |
+
+QQ Hi-Res 在本次样本中返回失效链接，暂不开放；FLAC 仍受歌曲资源影响。酷我后端当前对低音质请求也返回 FLAC，因此只展示 FLAC。音质名称不代表已验证空间音效，实际编码与资源以接口返回为准。
+
+万象音源作为独立的聚合订阅列在网页音源选择中，必须先在[万象官网](https://api.vsaa.cn/user/login)注册并获取卡密，再填写卡密生成订阅链接：
+
+```text
+https://api.vsaa.cn/api/music/plugin-YOUR_CARD_KEY.json
+```
+
+万象订阅直接由万象提供，不经过本站 `/api/subscription.json`。插件及其版本以万象最新订阅返回为准；旧的 `/api/music/index.json` 不再作为网页订阅入口。
+
+选择万象后会直接展示支持平台，无需先填写卡密：汽水音乐、酷狗音乐、酷我音乐、QQ 音乐、网易云音乐、咪咕音乐、Bilibili、JOOX、番茄听书、七猫听书、喜马拉雅、懒人听书。实际可用平台以万象最新订阅为准。
 
 OI 的音质对应：网易云 `atmos` / `atmos_plus` → `sky` / `jyeffect`；QQ、酷我 `atmos` / `atmos_plus` → `zpyz` / `zpqj`；酷狗 `atmos` / `master` → `zpqj` / `zpyz`，无 `atmos_plus`。OI 不使用 `flac24bit` 档位。
 
@@ -100,6 +124,7 @@ https://music.cwo.cc.cd/api/subscription.json?source=oi&key=YOUR_OI_SALT.json
 
 ```text
 https://music.cwo.cc.cd/api/subscription.json?source=cihedai.json
+https://music.cwo.cc.cd/api/subscription.json?source=xinghai.json
 ```
 
 > BakaMusic 要求订阅链接以 `.json` 结尾。  
@@ -117,6 +142,7 @@ https://music.cwo.cc.cd/plugins/wy.js?source=ikun&key=YOUR_KEY
 
 ```text
 https://music.cwo.cc.cd/plugins/wy.js?source=cihedai
+https://music.cwo.cc.cd/plugins/wy.js?source=xinghai
 ```
 
 **免密插件**
