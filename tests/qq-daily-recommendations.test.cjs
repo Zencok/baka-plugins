@@ -6,10 +6,13 @@ const vm = require('node:vm');
 
 function fixture() {
   let variables = {}, body, failure;
+  let playlist = { code: 0, req: { code: 0, data: { code: 0,
+    dirinfo: { disstid: 900, dissname: 'Personal daily mix', desc: 'Selected for you today',
+      logo: 'https://fixture.example/daily.jpg', songnum: 30 }, songlist: [] } } };
   const requests = [];
   const axios = async config => {
     requests.push({ config });
-    return { data: body };
+    return { data: playlist };
   };
   axios.get = async (url, config) => {
     requests.push({ url, config });
@@ -26,6 +29,7 @@ function fixture() {
     },
   });
   return { plugin: module.exports, requests,
+    playlist: value => { playlist = value; },
     variables: value => { variables = value; }, body: value => { body = value; }, failure: value => { failure = value; } };
 }
 
@@ -52,6 +56,9 @@ test('user ID stays in headers; tid opens through the normal paginated playlist 
   assert.equal(result.state, 'ready');
   assert.equal(result.sheetItem.id, '900');
   assert.equal(result.sheetItem.worksNum, 30);
+  assert.equal(result.sheetItem.title, 'Personal daily mix');
+  assert.equal(result.sheetItem.description, 'Selected for you today');
+  assert.equal(result.sheetItem.artwork, 'https://fixture.example/daily.jpg');
   assert.equal(result.musicList, undefined);
   assert.equal(result.sheetItem._dailyRecommendation, undefined);
   assert.equal(JSON.stringify(result).includes('synthetic-connection-key'), false);
@@ -60,7 +67,7 @@ test('user ID stays in headers; tid opens through the normal paginated playlist 
   assert.equal(req.config.headers['X-User-Id'], 'synthetic-connection-key');
   const song = { id: 123, mid: 'fixtureMid', title: 'Song', singer: [{ name: 'Artist' }],
     album: { title: 'Album', mid: 'fixtureAlbum' }, interval: 180, file: { size_128mp3: 100 } };
-  f.body({ code: 0, req: { code: 0, data: { code: 0,
+  f.playlist({ code: 0, req: { code: 0, data: { code: 0,
     dirinfo: { disstid: 900, dissname: 'Daily playlist', desc: 'Full description', songnum: 130 },
     songlist: [song] } } });
   const detail = await f.plugin.getMusicSheetInfo(result.sheetItem, 1);
@@ -70,8 +77,8 @@ test('user ID stays in headers; tid opens through the normal paginated playlist 
   assert.equal(detail.sheetItem.worksNum, 130);
   const next = await f.plugin.getMusicSheetInfo(result.sheetItem, 2);
   assert.equal(next.isEnd, true);
-  assert.equal(f.requests.length, 3);
-  for (const [index, begin] of [[1, 0], [2, 100]]) {
+  assert.equal(f.requests.length, 4);
+  for (const [index, begin] of [[1, 0], [2, 0], [3, 100]]) {
     const config = f.requests[index].config;
     assert.equal(config.url, 'https://u.y.qq.com/cgi-bin/musicu.fcg');
     assert.equal(config.data.req.param.disstid, 900);

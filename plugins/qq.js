@@ -1434,9 +1434,7 @@ async function loadDailyRecommendations() {
       !Number.isFinite(data.refresh_at) || data.refresh_at <= Date.now()) {
     return { state: "error", connectUrl: DAILY_CONNECT_URL };
   }
-  const sheetItem = buildQQImportedSheet(String(data.tid), {}, [], 30);
-  sheetItem.title = "每日三十首";
-  sheetItem.description = data.date + " · 为你推荐";
+  const { sheetItem } = await getMusicSheetInfo({ id: String(data.tid) }, 1);
   return { state: "ready", date: data.date, refreshAt: data.refresh_at, sheetItem };
 }
 
@@ -1453,7 +1451,7 @@ module.exports = {
   getHotSearch,
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.3.1",
+  version: "1.3.2",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
