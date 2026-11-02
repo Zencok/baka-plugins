@@ -388,6 +388,43 @@
             animation: pulse 2s ease-in-out infinite;
         }
 
+        .daily-entry {
+            display: flex;
+            align-items: center;
+            gap: var(--space-5);
+            width: fit-content;
+            max-width: 100%;
+            margin: var(--space-6) auto 0;
+            padding: 10px 4px;
+            color: var(--color-text-primary);
+            text-align: left;
+            text-decoration: none;
+            border-radius: 6px;
+        }
+
+        .daily-entry strong {
+            display: block;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .daily-entry small {
+            display: block;
+            margin-top: 4px;
+            font-size: 13px;
+            color: var(--color-text-secondary);
+        }
+
+        .daily-entry > svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            color: var(--color-accent);
+        }
+
+        .daily-entry:hover strong { color: var(--color-accent); }
+        .daily-entry:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.4; }
@@ -1432,9 +1469,14 @@
                 <span class="status-dot" aria-hidden="true"></span>
                 <span>Service Online</span>
             </div>
+            <a class="daily-entry" href="https://mc.vsaa.cn/connect" target="_blank" rel="noopener noreferrer">
+                <span>
+                    <strong>连接 QQ，发现每日三十首</strong>
+                    <small>扫码登录，复制用户 ID 到 QQ 插件</small>
+                </span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+            </a>
         </section>
-
-        <p class="partner-description">QQ 每日三十首已支持：<a href="https://qm.xww.ccwu.cc/connect" target="_blank" rel="noopener noreferrer">扫码连接</a>，将用户 ID 填入 QQ 插件用户变量即可。</p>
 
         <section class="section fade-in" aria-labelledby="partnerTitle">
             <div class="card partner-card">
