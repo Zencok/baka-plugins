@@ -1149,6 +1149,12 @@ function playlistSheetItem(sheet, ...totals) {
 }
 
 async function getMusicSheetInfo(sheet, page = 1) {
+  if (sheet._dailyRecommendation === true) {
+    if (page > 1) return { isEnd: true, musicList: [] };
+    const daily = await getDailyRecommendations();
+    if (daily.state !== "ready") throw new Error(daily.message || "每日推荐暂时不可用，请重新连接 QQ 音乐");
+    return { isEnd: true, sheetItem: daily.sheetItem, musicList: daily.musicList };
+  }
   const size = 100;
   const begin = (Math.max(1, Number(page) || 1) - 1) * size;
   const result = await getQQPlaylistPage(sheet.id, begin, size);
@@ -1402,14 +1408,71 @@ async function getHotSearch() {
     .map(word => word.trim()))].slice(0, 30);
 }
 
+const DAILY_CONNECT_URL = "https://mc.vsaa.cn/";
+
+// User credentials are independent of the subscription's playback API key.
+async function loadDailyRecommendations() {
+  const variables = typeof env !== "undefined" && typeof env.getUserVariables === "function"
+    ? env.getUserVariables() || {} : {};
+  const key = String(variables.qq_user_id || variables.qq_recommend_key || "").trim();
+  if (!key) return { state: "unconfigured", connectUrl: DAILY_CONNECT_URL };
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(key)) return { state: "login_required", connectUrl: DAILY_CONNECT_URL };
+  let body;
+  try {
+    const response = await axios_1.default.get(DAILY_CONNECT_URL + "api/qq/recommendations/daily", {
+      headers: { "X-User-Id": key }, timeout: 40000,
+    });
+    body = response.data;
+  } catch (error) {
+    body = error && error.response && error.response.data;
+    if (!body || typeof body !== "object") return { state: "error", connectUrl: DAILY_CONNECT_URL };
+  }
+  if (body?.code !== 0) {
+    const state = [1001, 1005].includes(body?.code) ? "login_required"
+      : body?.code === 1003 ? "blocked" : body?.code === 2002 ? "updating" : "error";
+    return { state, connectUrl: DAILY_CONNECT_URL };
+  }
+  const data = body.data;
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  if (data?.date !== today) return { state: "updating", connectUrl: DAILY_CONNECT_URL };
+  if (!Array.isArray(data?.songs) || !data.songs.length || !data.playlist?.id ||
+      !Number.isFinite(data.refresh_at) || data.refresh_at <= Date.now() ||
+      data.songs.some(song => !song || typeof song.mid !== "string" || !Array.isArray(song.singer))) {
+    return { state: "error", connectUrl: DAILY_CONNECT_URL };
+  }
+  const musicList = data.songs.map(song => formatMusicItem({
+    ...song, title: song.title || song.name,
+    album: { ...song.album, title: song.album?.title || song.album?.name },
+  }));
+  const sheetItem = {
+    id: String(data.playlist.id), title: "每日三十首", artist: "QQ 音乐",
+    artwork: musicList[0]?.artwork, worksNum: musicList.length,
+    description: data.date + " · 为你推荐", _dailyRecommendation: true,
+  };
+  return { state: "ready", date: data.date, refreshAt: data.refresh_at, sheetItem, musicList, isEnd: true };
+}
+
+// Shared discovery contract: platform rules, destinations and refresh times are plugin-owned.
+async function getDailyRecommendations() {
+  return {
+    title: "每日三十首", accountName: "QQ 音乐", connectUrl: DAILY_CONNECT_URL,
+    ...await loadDailyRecommendations(),
+  };
+}
+
 module.exports = {
+  getDailyRecommendations,
   getHotSearch,
   platform: "QQ音乐",
   author: "Toskysun",
-  version: "1.2.0",
+  version: "1.3.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],
+  userVariables: [{
+    key: "qq_user_id", name: "用户 ID",
+    hint: "前往 https://mc.vsaa.cn 扫码连接 QQ 音乐，复制用户 ID 后填入。此 ID 由本站生成，不是 QQ 号。每日推荐无需审核。",
+  }],
   supportedQualities: ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master"],
   supportedVideoQualities: ["360p", "480p", "720p", "1080p", "4k"],
   hints: {

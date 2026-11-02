@@ -6,6 +6,14 @@
 
 ---
 
+### QQ 每日三十首（1.3.0）
+
+打开 <https://mc.vsaa.cn/>（LyraMesh 原域名的 `/connect` 同样可用），扫码连接后复制用户 ID，填入 QQ 插件用户变量「用户 ID」（`qq_user_id`）并保存。推荐无需审核，收藏仍独立审核；此变量与播放音源订阅 Key 无关。
+
+通用方法 `getDailyRecommendations()` 返回 `state`、`title`、`accountName`、`connectUrl`；就绪时增加 `date`、`refreshAt`（毫秒）、`sheetItem`、`musicList`、`isEnd:true`。其他平台实现同一方法即可接入；推荐条数、时区、登录入口、变量和 HTTP 请求均由插件决定，详情继续使用 `getMusicSheetInfo`。
+
+QQ 通过服务端解析当天动态 TID 并缓存，按北京时间 00:00 换日。插件不保存账号推荐缓存，修改变量后不会复用旧账号结果。用户 ID 仅在认证 Header 中传递，不出现在 URL 或歌曲元数据中。回归：`npm test`。
+
 ## ✨ 特性
 
 - 📦 统一分发 7 个平台插件
@@ -21,7 +29,7 @@
 | 平台 | 文件 | 版本 | 类型 |
 |---|---|---:|---|
 | 网易云音乐 | `plugins/wy.js` | `1.1.6` | 音源相关、MV、热搜 |
-| QQ音乐 | `plugins/qq.js` | `1.2.0` | 音源相关、MV、热搜 |
+| QQ音乐 | `plugins/qq.js` | `1.3.0` | 音源相关、MV、热搜 |
 | 酷狗音乐 | `plugins/kg.js` | `1.1.7` | 音源相关、MV、热搜 |
 | 酷我音乐 | `plugins/kw.js` | `1.1.7` | 音源相关、MV、热搜 |
 | 咪咕音乐 | `plugins/mg.js` | `1.3.5` | 免密、8 档音质、MV、热搜 |
