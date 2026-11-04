@@ -1345,7 +1345,7 @@ async function getArtistWorks(artistItem, page, type) {
   }
 }
 
-async function getUserListDetail2(global_collection_id) {
+async function getUserListDetail2(global_collection_id, sheetInfo) {
   const id = global_collection_id;
   if (id.length > 1000) throw new Error('[酷狗] global_collection_id无效');
   
@@ -1382,6 +1382,9 @@ async function getUserListDetail2(global_collection_id) {
       const songs = pageData?.songs || [];
 
       if (!Array.isArray(pageData?.songs)) throw new Error('[酷狗] 歌单分页数据异常');
+      if (sheetInfo && page === 1) {
+        Object.assign(sheetInfo, pageData.list_info, { count: pageData.count });
+      }
       if (!songs.length) {
         if (totalCount !== null && beginIdx < totalCount) throw new Error('[酷狗] 歌单分页提前结束');
         break;
@@ -1702,10 +1705,45 @@ async function getKugouImportDetails(postData) {
   return { status: 200, data: { status: 1, data } };
 }
 
+// Protocol reference: lyswhut/lx-music-desktop, musicSdk/kg/songList.js (decodeGcid).
+async function decodeKugouGcid(gcid) {
+  const params = 'dfid=-&appid=1005&mid=0&clientver=20109&clienttime=640612895&uuid=-';
+  const body = { ret_info: 1, data: [{ id: gcid, id_type: 2 }] };
+  const response = await axios_1.default.post(
+    `https://t.kugou.com/v1/songlist/batch_decode?${params}&signature=${signatureParams(params, 'android', JSON.stringify(body))}`,
+    body,
+    { headers: { ...headers, Referer: 'https://m.kugou.com/' }, timeout: 15000 }
+  );
+  const entry = response.data?.data?.list?.[0];
+  const globalId = entry?.global_collection_id;
+  if (response.status !== 200 || response.data?.status !== 1 ||
+      typeof globalId !== 'string' || !/^(?:collection_\d+_\d+_\d+_\d+|\d+)$/.test(globalId)) {
+    throw new Error('[酷狗] 新版歌单链接解析失败，请检查链接或稍后重试');
+  }
+  return globalId;
+}
+
 async function importMusicSheet(urlLike) {
+  const input = String(urlLike ?? '').trim();
+  const gcid = input.match(/\bgcid_[a-z0-9]+\b/i)?.[0];
+  if (gcid) {
+    const globalId = await decodeKugouGcid(gcid);
+    const info = {};
+    const musicList = await getUserListDetail2(globalId, info);
+    return {
+      ...buildImportedKugouSheet(gcid, info, musicList),
+      id: gcid,
+      artwork: info.pic?.replace('{size}', '400'),
+      artist: info.list_create_username || '',
+    };
+  }
+  // Never interpret digits in an unsupported share URL as a numeric command code.
+  if (/https?:\/\//i.test(input) || /\bgcid_/i.test(input)) {
+    throw new Error('[酷狗] 不支持的歌单链接，请使用 gcid 分享链接或纯数字酷狗码');
+  }
   var _a;
   let id =
-    (_a = urlLike.match(/^(?:.*?)(\d+)(?:.*?)$/)) === null || _a === void 0
+    (_a = input.match(/^(?:.*?)(\d+)(?:.*?)$/)) === null || _a === void 0
       ? void 0
       : _a[1];
   let musicList = [];
@@ -2283,7 +2321,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.7",
+  version: "1.1.8",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
@@ -2293,7 +2331,7 @@ module.exports = {
   primaryKey: ["id", "album_id", "album_audio_id"],
   hints: {
     importMusicSheet: [
-      "仅支持酷狗APP通过酷狗码导入，输入纯数字酷狗码即可。",
+      "支持酷狗新版 gcid 歌单分享链接，也可输入纯数字酷狗码。",
       "导入时间和歌单大小有关，请耐心等待",
     ],
   },
