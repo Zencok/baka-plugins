@@ -51,6 +51,52 @@ function replaceQualities(content, qualities) {
   );
 }
 
+// v3.2.17: 令牌由服务端签发；独立源与聚合线路共用刷新和重试规则。
+function generateXinghaiClient() {
+  return `
+var _XH_DEVICE = "lx-online-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+var _XH_CLIENT = "XingHaiMusicSource/v3.2.17 (unknown)";
+var _XH_TOKEN = "";
+var _XH_TOKEN_TIME = 0;
+var _XH_TOKEN_PROMISE = null;
+async function _xhEnsureToken(apiUrl) {
+  if (_XH_TOKEN && Date.now() - _XH_TOKEN_TIME <= 240000) return;
+  if (!_XH_TOKEN_PROMISE) {
+    _XH_TOKEN = "";
+    _XH_TOKEN_PROMISE = (async function() {
+      var response = await axios_1.default.get(apiUrl + (apiUrl.endsWith("/") ? "" : "/") + "token.php", {
+        params: { device_id: _XH_DEVICE },
+        headers: { "X-Client": _XH_CLIENT, "User-Agent": "lx-music" }, timeout: 6000
+      });
+      var token = response.data && response.data.data && response.data.data.token;
+      if (typeof token !== "string" || !token.trim()) throw new Error("星海: 获取服务端令牌失败");
+      _XH_TOKEN = token.trim();
+      _XH_TOKEN_TIME = Date.now();
+    })().finally(function() { _XH_TOKEN_PROMISE = null; });
+  }
+  await _XH_TOKEN_PROMISE;
+}
+async function _xhGet(apiUrl, params, timeout) {
+  for (var attempt = 0; attempt < 2; attempt++) {
+    await _xhEnsureToken(apiUrl);
+    var token = _XH_TOKEN;
+    var response = await axios_1.default.get(apiUrl, {
+      params: params, headers: { "X-Token": token, "X-Client": _XH_CLIENT, "User-Agent": "lx-music" },
+      timeout: timeout,
+      validateStatus: function(status) { return (status >= 200 && status < 300) || status === 401 || status === 403; }
+    });
+    var auth = response.data && response.data.auth;
+    if (auth && (auth.tk_mismatch === true || auth.device_id === "untrusted-token" || auth.tk_error)) {
+      if (_XH_TOKEN === token) { _XH_TOKEN = ""; _XH_TOKEN_TIME = 0; }
+      if (attempt === 0) continue;
+      throw new Error("星海: 服务端令牌鉴权失败");
+    }
+    return response;
+  }
+}
+`;
+}
+
 /**
  * 根据音源类型生成请求处理器代码 (constants + requestMusicUrl 函数)
  * 所有类型统一返回 {code: 200, url: "..."} 格式，确保插件 getMediaSource 的
@@ -172,28 +218,17 @@ ${sourceMapCode}async function requestMusicUrl(source, songId, quality) {
     // 星海独立源：一个解析后端，不接入其他解析服务或官方备用线路。
     case 'xinghai': {
       const platform = pluginName === 'qq.js' ? 'tx' : pluginName.replace('.js', '');
+      code += generateXinghaiClient();
       code += `
 var _XH_PLATFORM = ${JSON.stringify(platform)};
 var _XH_QUALITIES = ${JSON.stringify(sourceConfig.plugins[pluginName])};
-var _XH_DEVICE = "lx-online-" + Math.random().toString(36).slice(2, 10);
-var _XH_TOKEN = "";
-var _XH_TOKEN_TIME = 0;
 async function requestMusicUrl(source, songId, quality) {
   if (source !== _XH_PLATFORM) throw new Error("星海: 不支持的平台 " + source);
   if (!_XH_QUALITIES.includes(quality)) throw new Error("星海: 不支持的音质 " + quality);
   if (songId === undefined || songId === null || String(songId).trim() === "") throw new Error("星海: 缺少歌曲 ID");
-  if (!_XH_TOKEN || Date.now() - _XH_TOKEN_TIME > 300000) {
-    _XH_TOKEN_TIME = Date.now();
-    _XH_TOKEN = require("buffer").Buffer.from(JSON.stringify({
-      device_id: _XH_DEVICE, ip: "0.0.0.0", timestamp: Math.floor(_XH_TOKEN_TIME / 1000),
-      random: Math.random().toString(36).slice(2, 12)
-    }), "utf8").toString("base64");
-  }
-  var response = await axios_1.default.get(API_URL, {
-    params: { source: source === "tx" ? "qq" : source, songmid: String(songId), quality: quality },
-    headers: { "X-Token": _XH_TOKEN, "X-Client": "XingHaiMusicSource/v3.2.15 (unknown)", "User-Agent": "lx-music" },
-    timeout: 10000
-  });
+  var response = await _xhGet(API_URL, {
+    source: source === "tx" ? "qq" : source, songmid: String(songId), quality: quality
+  }, 10000);
   var body = response.data;
   if (!body || Number(body.code) !== 200) throw new Error("星海: " + (body && (body.msg || body.message) || "解析失败"));
   var url = typeof body.url === "string" ? body.url.trim() : "";
@@ -253,6 +288,7 @@ async function requestMusicUrl(source, songId, quality) {
       } else {
         const providers = sourceConfig.platformProviders && sourceConfig.platformProviders[pluginName];
         if (!providers || !providers.length) throw new Error('聚合音源未配置平台: ' + pluginName);
+        code += generateXinghaiClient();
         code += `
 var _KH_PROVIDERS = ${JSON.stringify(providers)};
 var _KH_PLATFORM = ${JSON.stringify(pluginName.replace('.js', ''))};
@@ -268,7 +304,9 @@ async function requestMusicUrl(source, songId, quality) {
       var params = provider.type === "xinghai"
         ? { source: provider.source, name: "", songmid: String(songId), quality: level }
         : { id: String(songId), level: level };
-      var response = await axios_1.default.get(provider.url, { params: params, timeout: 8000 });
+      var response = provider.type === "xinghai"
+        ? await _xhGet(provider.url, params, 8000)
+        : await axios_1.default.get(provider.url, { params: params, timeout: 8000 });
       var body = response.data;
       if (!body || body.code !== 200) throw new Error("接口未成功返回");
       var url = body.url || (body.data && body.data.url);
