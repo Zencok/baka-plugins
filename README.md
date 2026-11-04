@@ -1,346 +1,263 @@
-# 🎵 BakaMusic 插件订阅服务
+# 🎵 BakaMusic 插件订阅
 
-> 为 **BakaMusic** 提供统一的插件订阅、单插件分发、音源注入与音质覆盖。
+为 BakaMusic 添加网易云、QQ、酷狗、酷我、咪咕、Bilibili 和汽水音乐插件，在播放器中搜索歌曲、导入歌单、查看热搜与播放 MV。
 
-🌐 在线地址：`https://music.cwo.cc.cd/`
+**[打开订阅页面 →](https://music.cwo.cc.cd/)**
 
----
-
-## ✨ 特性
-
-- 📦 统一分发 7 个平台插件
-- 🔗 同时支持订阅导入与单插件导入
-- 🧩 按音源动态注入请求处理器
-- 🎚️ 按音源覆盖插件音质能力
-- ☁️ 适配 Vercel / Netlify / 本地 Node.js
+> 本项目使用的播放接口及其他 API 主要收集自公开网络，仅进行整理与适配，不提供或运营自有音源。使用前请阅读[法律声明与免责条款](#法律声明与免责条款)，尊重版权、支持正版。
 
 ---
 
-## 🎼 插件
+## 🚀 开始使用
 
-| 平台 | 文件 | 版本 | 类型 |
-|---|---|---:|---|
-| 网易云音乐 | `plugins/wy.js` | `1.1.6` | 音源相关、MV、热搜 |
-| QQ音乐 | `plugins/qq.js` | `1.3.2` | 音源相关、MV、热搜 |
-| 酷狗音乐 | `plugins/kg.js` | `1.1.7` | 音源相关、MV、热搜 |
-| 酷我音乐 | `plugins/kw.js` | `1.1.7` | 音源相关、MV、热搜 |
-| 咪咕音乐 | `plugins/mg.js` | `1.3.5` | 免密、8 档音质、MV、热搜 |
-| Bilibili | `plugins/bilibili.js` | `2.1.2` | 免密、MV、收藏夹、排行榜与热搜 |
-| 汽水音乐 | `plugins/qishui.js` | `3.3.5` | 免密、MV、热搜，可配置签名 Key 与登录态 |
+1. 打开[订阅页面](https://music.cwo.cc.cd/)，选择音源。
+2. 按页面提示填写 Key；选择免费音源时无需填写。
+3. 生成并复制订阅链接，在 BakaMusic 的插件管理中通过订阅导入。
+4. 导入完成后，选择对应平台搜索和播放音乐。
 
-> `bilibili.js`、`qishui.js`、`mg.js` 下载时不需要 `source` 或 `key`。
+只想使用某一个平台，也可以复制页面上的单插件链接导入。
 
-### 网易云大歌单导入（2026-10-19）
-
-`wy.js` 1.1.4 的整单导入保留每批 200 首歌曲详情，关闭导入期间的逐首音质补全，
-避免数千首歌产生数千次额外请求而触发宿主超时。歌曲详情及 privilege 已返回的音质、
-歌单元数据、歌曲顺序和批次失败抛错行为保留；音质详情仍可按需查询。
-无需修改客户端，已安装插件需要更新。回归：`npm test`，包含 10,001 首跨批次导入、
-分享文本解析、元数据/音质保留、小歌单及中途失败不返回半份歌单。
-
-Windows 主机使用 BakaMusicFlutter 现有 Rust FFI、未改客户端，实际调用该插件导入
-分享歌单 `5021087445`：来源总数 6,577，完整返回 6,577 首，耗时 20.651 秒。
-这是主机在线验证；Android 真机更新后导入待用户验证。
-
-### 搜索页热搜（2026-10-18）
-
-7 个插件均导出 `getHotSearch(): Promise<string[]>`，复用 BakaMusic 现有搜索页的热搜、刷新与点击搜索流程；已安装的旧插件需要更新后才能声明此能力。返回值按平台顺序去空、去重，最多 30 条；接口失败抛错供搜索页重试，不用榜单歌曲或预置文本冒充热搜。
-
-网易云、QQ、酷狗、酷我、咪咕的接口与字段参考 `lx-lxwalnut-music-mobile/src/utils/musicSdk/{wy,tx,kg,kw,mg}/hotSearch.js`（参考提交 `595c913`）。请求使用 HTTPS；咪咕改用无端口的 `https://jadeite.migu.cn/music_search/v3/search/hotword`，不使用参考中的旧 HTTP 7090 端口。Bilibili 使用 `GET /x/web-interface/wbi/search/square` 的 `data.trending.list[].keyword`。
-
-汽水使用 `POST https://api5-lq.qishui.com/luna/search-block`，仅请求 `includes: ["search_chart"]`，读取 `search_chart_block.charts[].content[]` 中 `behavior === "search"` 的 `keyword`，不混入推荐词、输入提示或广告跳转。热搜独立于播放签名与登录：不携带 Cookie、设备唯一标识、抓包时间戳或短期 X-Headers 签名。
-
-跨仓回归在 BakaMusicFlutter 目录运行：
-
-```powershell
-node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey' '../汽水音乐/汽水3.2.9.js'
-node scripts/check_hot_search_plugin_contracts.cjs ../baka-plugins/plugins '../QQ音乐/Vkey' '../汽水音乐/汽水3.2.9.js' --live
-```
-
-2026-10-18：11 份实际插件通过模拟 HTTP 契约检查（含四份独立 Vkey 插件）；7 个订阅平台的在线匿名请求分别返回网易云 20、QQ 30、酷狗 30、酷我 20、咪咕 20、Bilibili 30、汽水 20 条词。在线结果仅代表此次 Windows 主机网络验证，不代表 Android/iOS 真机或未来接口可用性；未发布订阅服务。
-
-版本进位按项目约定：Bilibili 从 `2.0.9` 升至 `2.1.0`，汽水从 `3.2.9` 升至 `3.3.0`。另为独立文件 `汽水音乐/汽水3.2.9.js` 接入同一匿名热搜接口，保留原文件名，其导出版本为 `3.3.0`；回归脚本新增该文件及所有发布版本断言。
-
-追加验证：12 份插件契约与版本断言全部通过，12 份实际导出在线复测全部返回热搜（独立酷我首次连接重置，完整重跑通过）；新增汽水文件返回 20 条词。原有 7 份 MV 契约检查仍通过。
+> 音源决定网易云、QQ、酷狗、酷我的播放解析与可选音质。咪咕、Bilibili、汽水为免密插件，可单独导入，无需填写音源 Key。
 
 ---
 
-## 🌊 音源
+## 🎼 支持的平台
 
-音源配置见：[functions/source-config.js](./functions/source-config.js)
+| 平台 | 插件版本 | 使用说明 |
+|---|---|---|
+| 网易云音乐 | `1.1.6` | 需选择音源，支持大歌单分批导入 |
+| QQ 音乐 | `1.3.2` | 需选择音源，可配置每日推荐 |
+| 酷狗音乐 | `1.1.7` | 需选择音源 |
+| 酷我音乐 | `1.1.7` | 需选择音源 |
+| 咪咕音乐 | `1.3.5` | 免密，内置官方线路 |
+| Bilibili | `2.1.2` | 免密，支持视频与收藏夹，部分内容需登录 |
+| 汽水音乐 | `3.3.5` | 免密，可配置签名服务 Key 和登录态 |
 
-| 名称 | 标识 | Key | 支持插件 |
-|---|---|---:|---|
-| 全豆要（免费） | `quandouyao` | 无需填写 | wy / qq / kg / kw |
-| 次合代（免费） | `cihedai` | 无需填写 | wy / qq / kg / kw |
-| 星海音源（免费） | `xinghai` | 无需填写 | wy / qq / kg / kw |
-| ikun 音源（付费） | `ikun` | 需要 | wy / qq / kg / kw |
-| 聆澜音源（付费） | `linglan` | 需要 | wy / qq / kg / kw |
-| OI 音源 | `oi` | 用户提供签名盐 | wy / qq / kg / kw |
+7 个平台插件均提供热搜与 MV 解析能力。具体功能展示以所用 BakaMusic 客户端为准，歌曲、音质和视频画质以平台实际返回为准。
 
-> 免密插件始终包含在订阅结果中；音源相关插件会按配置过滤。
+---
 
-聆澜音源的 QQ 插件支持 `master` 音质。
+## 🌊 选择音源
 
-星海音源只使用 `https://yy.zddyr.top/lx/api/` 一个解析后端，无用户卡密、无其他解析服务回退。采用 GET，参数为 `source`（wy / qq / kg / kw）、`songmid`、`quality`；按原脚本生成临时 `X-Token` 和 `X-Client` 请求头，不另行请求 IP 或鉴权接口。取得链接后检查音频文件头，允许酷我 `kwplay.php` 音频转发地址，并拒绝错误页面和失效链接。
+| 音源 | 是否需要 Key | 适用平台 |
+|---|---|---|
+| 全豆要 | 无需填写 | 网易云 / QQ / 酷狗 / 酷我 |
+| 次合代 | 无需填写 | 网易云 / QQ / 酷狗 / 酷我 |
+| 星海 | 无需填写 | 网易云 / QQ / 酷狗 / 酷我 |
+| ikun | 需要对应音源的 Key | 网易云 / QQ / 酷狗 / 酷我 |
+| 聆澜 | 需要对应音源的 Key | 网易云 / QQ / 酷狗 / 酷我 |
+| OI | 需要当前会话的签名盐 | 网易云 / QQ / 酷狗 / 酷我 |
+| 万象 | 需要万象卡密 | 由万象提供的独立聚合订阅 |
 
-| 星海平台 | 开放音质 |
-|---|---|
-| 网易云 | 128k / 320k / flac / hires / atmos / master |
-| QQ | 128k / 320k / flac / atmos / master |
-| 酷狗 | 128k / 320k / flac / hires / atmos / master |
-| 酷我 | flac |
+本站生成的音源订阅还会包含咪咕、Bilibili 和汽水三个免密插件。万象订阅的内容以万象返回为准。
 
-QQ Hi-Res 在本次样本中返回失效链接，暂不开放；FLAC 仍受歌曲资源影响。星海 QQ 的 `atmos_plus` 实测会返回与 `atmos` 相同的链接并报告为 `atmos`，因此不对星海 QQ 暴露该档。酷我后端当前对低音质请求也返回 FLAC，因此只展示 FLAC。音质名称不代表已验证空间音效，实际编码与资源以接口返回为准。
+### 音质怎么选
 
-万象音源作为独立的聚合订阅列在网页音源选择中，必须先在[万象官网](https://api.vsaa.cn/user/login)注册并获取卡密，再填写卡密生成订阅链接：
+导入后，以播放器中显示的可选音质为准。同一平台在不同音源下可能提供不同档位；高音质无法播放时，可以尝试较低音质或切换音源。
+
+- 全豆要、次合代的 QQ 提供 `128k`、`320k`、`flac`。
+- 星海的酷我仅提供 `flac`，QQ 暂不开放 Hi-Res 和 `atmos_plus`。
+- 聆澜的 QQ 支持 `master`。
+- OI 的酷狗支持 `master`，不提供 `atmos_plus`；OI 各平台不使用 `flac24bit` 档位。
+
+音质名称表示可请求的档位，实际编码、资源和空间音效以接口返回为准。
+
+### OI 的 Key 填什么
+
+填写当前会话中的 `_oi_salt`，格式为 **32 位小写十六进制字符**。GUID、`_oi_three_random` 和普通卡密不能替代签名盐。本站不会自动获取该值，缺失或格式错误时无法导入。
+
+### 万象订阅怎么用
+
+先到[万象官网](https://api.vsaa.cn/user/login)注册并获取卡密，再回到订阅页面选择「万象音源」，填写卡密生成链接。
+
+万象提供独立订阅，平台与插件版本由万象维护。支持平台可在订阅页面查看，实际可用内容以其最新订阅为准。
+
+---
+
+## 🔗 直接使用链接
+
+也可以复制以下链接导入 BakaMusic。需要 Key 的示例请先替换占位内容。
+
+### 免费音源订阅
+
+**全豆要**
 
 ```text
-https://api.vsaa.cn/api/music/plugin-YOUR_CARD_KEY.json
+https://music.cwo.cc.cd/api/subscription.json?source=quandouyao.json
 ```
 
-万象订阅直接由万象提供，不经过本站 `/api/subscription.json`。插件及其版本以万象最新订阅返回为准；旧的 `/api/music/index.json` 不再作为网页订阅入口。
-
-选择万象后会直接展示支持平台，无需先填写卡密：汽水音乐、酷狗音乐、酷我音乐、QQ 音乐、网易云音乐、咪咕音乐、Bilibili、JOOX、番茄听书、七猫听书、喜马拉雅、懒人听书。实际可用平台以万象最新订阅为准。
-
-OI 的音质对应：网易云 `atmos` / `atmos_plus` → `sky` / `jyeffect`；QQ、酷我 `atmos` / `atmos_plus` → `zpyz` / `zpqj`；酷狗 `atmos` / `master` → `zpqj` / `zpyz`，无 `atmos_plus`。OI 不使用 `flac24bit` 档位。
-
-OI 的 Key 填写当前会话的 `_oi_salt`（32 位小写十六进制），不是 GUID、`_oi_three_random` 或普通卡密。本站不自动获取签名盐；缺失或格式错误时，订阅和插件下载接口均会拒绝。
-
----
-
-## 🚀 导入方式
-
-### 1. 订阅导入
-
-**需要 Key**
-
-```text
-https://music.cwo.cc.cd/api/subscription.json?source=ikun&key=YOUR_KEY.json
-https://music.cwo.cc.cd/api/subscription.json?source=oi&key=YOUR_OI_SALT.json
-```
-
-**无需 Key**
+**次合代**
 
 ```text
 https://music.cwo.cc.cd/api/subscription.json?source=cihedai.json
+```
+
+**星海**
+
+```text
 https://music.cwo.cc.cd/api/subscription.json?source=xinghai.json
 ```
 
-> BakaMusic 要求订阅链接以 `.json` 结尾。  
-> 需要 Key 时，加在 `key` 后；无需 Key 时，加在 `source` 后。服务端会移除该后缀。
-
-### 2. 单插件导入
-
-**需要 Key**
+### 需要 Key 的订阅
 
 ```text
-https://music.cwo.cc.cd/plugins/wy.js?source=ikun&key=YOUR_KEY
+https://music.cwo.cc.cd/api/subscription.json?source=ikun&key=YOUR_KEY.json
+https://music.cwo.cc.cd/api/subscription.json?source=linglan&key=YOUR_KEY.json
+https://music.cwo.cc.cd/api/subscription.json?source=oi&key=YOUR_OI_SALT.json
 ```
 
-**无需 Key 的音源**
+`YOUR_KEY` 替换为对应音源的 Key；`YOUR_OI_SALT` 替换为 OI 签名盐。包含特殊字符时，请使用订阅页面生成链接。
+
+> 订阅链接需要以 `.json` 结尾。建议直接复制页面生成的完整链接，保留参数和后缀。
+
+### 单插件导入
+
+免密插件可直接使用：
+
+| 平台 | 导入链接 |
+|---|---|
+| 咪咕音乐 | https://music.cwo.cc.cd/plugins/mg.js |
+| Bilibili | https://music.cwo.cc.cd/plugins/bilibili.js |
+| 汽水音乐 | https://music.cwo.cc.cd/plugins/qishui.js |
+
+其他平台需在链接中指定音源，例如网易云：
 
 ```text
 https://music.cwo.cc.cd/plugins/wy.js?source=cihedai
-https://music.cwo.cc.cd/plugins/wy.js?source=xinghai
+https://music.cwo.cc.cd/plugins/wy.js?source=ikun&key=YOUR_KEY
 ```
 
-**免密插件**
-
-```text
-https://music.cwo.cc.cd/plugins/bilibili.js
-```
-
-> 示例中的 `YOUR_KEY` / `YOUR_OI_SALT` 请替换为自己的值。含卡密的链接、插件文件及更新地址不要公开分享。
-
-### 3. 平台登录配置
-
-在 BakaMusic 的插件用户变量中填写，和音源 Key 分开配置：
-
-- **Bilibili**：`SESSDATA` 可填纯值或完整 Cookie；`BILI_COOKIE` 用于完整 Cookie，优先使用；`CK` 是兼容别名。会员内容仍需账号具有对应权限。
-- **汽水音乐**：`X-Hearder Key` 可填签名服务 Key 或 `Bearer Key`；`sessionid` 可填纯值或 `sessionid=...` 片段，过期后需更新。留空使用内置值。
-
-登录 Cookie 同样属于敏感信息，请勿公开分享。
+将 `wy.js` 换成 `qq.js`、`kg.js` 或 `kw.js`，即可导入对应平台。单插件链接无需追加 `.json`。
 
 ---
 
-## 🔌 API
+## 👤 登录与个人推荐
 
-### 订阅接口
+以下配置在 BakaMusic 对应插件的「用户变量」中填写，与生成订阅时使用的音源 Key 分开。
 
-```text
-GET /api/subscription.json?source=<source>&key=<key>.json
-GET /api/subscription.json?source=<source>.json
-```
+### QQ 音乐每日推荐
 
-未指定 `source` 时默认使用 `ikun`；需要 Key 的音源请传入自己的卡密。
+1. 打开[QQ 音乐连接页面](https://mc.vsaa.cn/connect)，扫码连接账号。
+2. 复制页面生成的用户 ID。
+3. 在 QQ 插件的「用户 ID」（`qq_user_id`）中填入该值。
 
-作用：
+此 ID 由连接服务生成，不是 QQ 号。每日推荐无需审核；需要客户端支持对应的推荐入口。若提示重新登录，请回到连接页面重新连接。
 
-- 扫描 `plugins/`
-- 提取插件元数据
-- 按音源能力过滤插件
-- 返回 BakaMusic 可直接导入的订阅 JSON
+### Bilibili 登录
 
-实现文件：[functions/subscription.js](./functions/subscription.js)
+| 用户变量 | 填写内容 |
+|---|---|
+| `BILI_COOKIE` | 完整浏览器 Cookie，优先使用 |
+| `SESSDATA` | 纯 SESSDATA 值或完整 Cookie |
+| `CK` | 完整 Cookie，兼容旧版配置 |
 
-### 插件下载接口
+公开收藏夹可直接导入；私有收藏夹需填写完整登录 Cookie。会员内容及部分高音质、高清画质仍需账号具有对应权限。
 
-```text
-GET /plugins/{name}.js?source=<source>&key=<key>
-GET /plugins/{name}.js
-```
+收藏夹导入支持收藏夹链接、`fid` / `media_id`，也可粘贴 BV 视频链接，将多分 P 视频展开为歌单。
 
-作用：
+### 汽水音乐登录
 
-- 读取插件原文件
-- 替换 `// {{REQUEST_HANDLER}}` 占位符
-- 生成 `API_URL`、`API_KEY`、`UPDATE_URL`
-- 按音源配置覆盖 `supportedQualities`（配置为 `null` 时保留插件默认值）
-- 返回最终插件脚本
+| 用户变量 | 填写内容 |
+|---|---|
+| `X-Hearder Key` | 签名服务 Key，支持纯 Key 或 `Bearer Key`；留空使用内置值 |
+| `sessionid` | 登录 Cookie 中的 sessionid，支持纯值或 `sessionid=...` 片段；留空使用内置值 |
 
-实现文件：[functions/plugin.js](./functions/plugin.js)
+登录态过期后需更新 `sessionid`。汽水热搜无需配置登录态或播放签名 Key。
+
+> 请妥善保管卡密、用户 ID 和 Cookie。含 Key 的订阅链接、插件文件及更新地址也可能包含凭据，请勿公开分享。
 
 ---
 
-## 🗂️ 结构
+## ❓ 常见问题
 
-```text
-baka-plugins/
-├── functions/
-│   ├── plugin.js
-│   ├── source-config.js
-│   └── subscription.js
-├── plugins/
-│   ├── bilibili.js
-│   ├── kg.js
-│   ├── kw.js
-│   ├── mg.js
-│   ├── qishui.js
-│   ├── qq.js
-│   └── wy.js
-├── index.html
-├── server.js
-├── netlify.toml
-├── vercel.json
-└── README.md
-```
+### 导入提示 Key 错误
 
----
+确认 Key 与所选音源一致，复制时没有多余空格。OI 需填写符合格式的 `_oi_salt`；万象需先在其官网获取卡密。建议回到订阅页面重新生成链接。
 
-## 🧱 插件组织
+### 能搜索，但歌曲无法播放
 
-顶层结构统一为：
+搜索和播放依赖的接口可能不同。先切换音质、换一首歌重试，再检查音源 Key 或平台登录态是否有效；仍不可用时可更换音源并重新导入对应插件。
 
-1. 依赖与基础常量
-2. 工具与格式化函数
-3. 搜索相关
-4. 播放 / 歌曲信息 / 歌词
-5. 专辑 / 歌手
-6. 歌单 / 推荐
-7. 榜单
-8. 评论
-9. `module.exports`
+### 切换音源后，播放器里还是原来的音质
 
-导出对象通常采用：
+网页上的音源选择会影响新生成的插件。切换后需要使用新链接重新导入，播放器才会使用对应音源及音质配置。
 
-```js
-module.exports = {
-  platform,
-  author,
-  version,
-  appVersion,
-  srcUrl,
-  cacheControl,
-  primaryKey,
-  supportedQualities,
-  supportedVideoQualities,
-  userVariables,
-  hints,
-  supportedSearchType,
-  async search() {},
-  getMediaSource,
-  // 可选：歌曲包含 mv 字段时解析 MV 视频源
-  getMvSource,
-  getMusicInfo,
-  getLyric,
-  getAlbumInfo,
-  getArtistWorks,
-  // 返回 { id, title, artwork, artist, description, worksNum, musicList }
-  importMusicSheet,
-  getMusicSheetInfo,
-  getRecommendSheetTags,
-  getRecommendSheetsByTag,
-  getTopLists,
-  getTopListDetail,
-  getMusicComments,
-};
-```
+### 更新后没有热搜、MV 或每日推荐
 
-### MV / 视频源约定
+先在播放器中更新插件，再确认客户端支持对应功能。刷新订阅后，也请检查本地安装的插件版本是否与上方列表一致。
 
-歌曲条目可用 `mv` 暴露平台 MV ID；`supportedVideoQualities` 声明可请求的
-分辨率档位。网易云、QQ、酷狗、酷我、咪咕、汽水和 Bilibili 已接入该方法。插件实现
-`getMvSource(musicItem, videoQuality?)` 后返回 `{ url, headers?, userAgent?,
-videoQuality?, mimeType?, duration?, width?, height?, expiresAt? }`。推荐分辨率写成
-`720p`、`1080p`、`4k`；播放器会在实际播放前重新校验 URL 和请求头。
-Bilibili MV 优先返回带音轨的单文件 MP4，并通过 `videoQuality` 回报平台实际下发画质，
-从而让播放音量、拖动和宿主下载保持一致。
+### 大歌单导入较慢
+
+歌单会分批读取，歌曲较多时需要等待。网易云整单导入会减少额外的逐首音质查询；发生错误时请重试。歌单总数与当前已加载数量可能不同，列表仍可继续翻页加载。
+
+### Bilibili 或汽水登录失效
+
+重新获取并填写登录信息。Bilibili 私有收藏夹应使用完整 Cookie；汽水更新 `sessionid`。登录不代表账号拥有所有会员内容权限。
 
 ---
 
-## 🛠️ 本地运行
+## 🛠️ 自行部署
 
-需要 Node.js 18 或更高版本，无需构建。
+仅使用插件时，直接访问[在线订阅页面](https://music.cwo.cc.cd/)即可。
+
+如需运行自己的订阅服务，准备 Node.js 18 或更高版本，在项目目录执行：
 
 ```bash
 npm ci
-node server.js
+npm start
 ```
 
-默认地址：
+然后打开 `http://localhost:3000`，无需构建。可通过 `PORT` 修改端口；调试本地订阅与更新链接时，将 `BASE_URL` 设置为本地地址，部署到自有域名时设置为自己的服务地址。
 
-```text
-http://localhost:3000
-```
-
-`PORT` 可修改监听端口。调试生成的订阅及更新链接时，将 `BASE_URL` 设置为本地地址；部署到自有域名时设置为自己的服务地址，否则生成链接默认指向在线服务。
-
-快速测试：
-
-```bash
-curl "http://localhost:3000/api/subscription.json?source=cihedai.json"
-curl "http://localhost:3000/plugins/wy.js?source=cihedai"
-curl "http://localhost:3000/plugins/bilibili.js"
-```
-
-Windows PowerShell 中可使用 `curl.exe`。
+项目包含 Vercel 和 Netlify 配置。音源配置见 [functions/source-config.js](./functions/source-config.js)。
 
 ---
 
-## 📌 维护约定
+## 法律声明与免责条款
 
-- 插件版本、音源协议、展示文案变更时，同步更新 `README.md` 和 `index.html`
-- 免密插件下载链接不能拼接 `source`
-- 音源能力以 [functions/source-config.js](./functions/source-config.js) 为准
-- 新增或重排插件能力时，保持现有顶层结构顺序
+请在访问订阅页面、生成链接、下载、安装、使用或再分发本项目插件前阅读以下说明。本节说明项目的服务边界、内容使用要求与风险，不构成任何第三方内容或接口的授权证明。
 
----
+### 一、项目定位与内容来源
 
-## 📎 相关文件
+1. **本项目不提供或运营自有音源。** 插件使用的播放解析接口，以及搜索、歌单、榜单、歌词、封面、MV 等其他 API 的地址与协议资料，主要收集自公开网络、公开项目或第三方公开分享。本项目对这些接口进行整理、配置和适配，提供可供 BakaMusic 使用的插件及订阅分发服务。
+2. **音乐内容与播放资源由所连接的第三方平台或音源服务提供。** 本项目不建立自有音乐曲库；插件获取的歌曲、MV、歌词、封面、歌单、搜索结果、推荐数据及播放地址等，其相关权利归各自权利人所有。本项目提供的是接口适配与插件分发，不构成对相关内容的版权或传播授权。
+3. 接口公开可访问、资料可从网络获取，或插件中包含接口地址、默认配置及服务凭据，不代表相关接口或内容已获授权，也不代表本项目有权向使用者转授相应权限。使用者仍应核实来源平台及接口服务的授权条件。
+4. 万象等独立订阅、播放解析、账号连接与签名服务由相应服务方提供。本项目收集接口、提供入口或编写适配，不代表与相关平台、音源或服务方存在合作、代理、认证或授权关系。文档中的平台名称、商标与内容示例仅用于说明兼容性和使用方式。
 
-- [functions/source-config.js](./functions/source-config.js)
-- [functions/subscription.js](./functions/subscription.js)
-- [functions/plugin.js](./functions/plugin.js)
-- [index.html](./index.html)
+### 二、版权与合法使用
 
-## 歌单总数（2026-10-22）
+1. 使用者应遵守使用地适用的法律法规，包括适用时的[《中华人民共和国著作权法》](https://www.ncac.gov.cn/xxfb/flfg/flfg_532/202103/t20210309_50530.html)，以及内容来源平台、音源和接口服务的服务条款与授权条件。
+2. 播放、下载、缓存、复制、转码、导出或分享内容前，应确认具有相应权限。内容公开可见、接口能够访问、音源标注免费、持有卡密或平台会员，均不当然赋予下载、传播或商业使用权；个人学习用途也不当然免除相应义务。
+3. 不得利用本项目侵犯著作权、隐私或其他合法权益，不得违法绕过付费、身份认证、访问控制或版权保护措施，不得传播未经授权的内容、账号凭据或侵权插件。请通过权利人或获得授权的平台获取正版服务。
+4. 维护者、贡献者、插件提供者、部署者及使用者均应就自身的代码提供、接口接入、服务运营和内容使用行为依法承担相应责任。声明内容来自第三方，不免除任何一方因自身行为应承担的义务。
 
-歌单详情通过 `sheetItem.worksNum` 返回总数，与当前已加载歌曲数分开。空歌单保留 0，未知总数不使用当前页长度冒充。版本、外部插件清单及实测限制见 [修复与验证记录](docs/PLAYLIST_TOTALS_20261022.md)。
+### 三、第三方服务与费用
 
-## 作者单曲与专辑总数（2026-10-22）
+1. 各音源的平台覆盖、音质标识、接口结果与可用状态取决于相应服务。页面列出某个音源、支持某档音质或兼容某种接口，不构成对其合法性、安全性、准确性、内容授权或持续可用性的担保。
+2. 第三方可能调整接口、收费、授权、访问频率或地域限制，也可能中断或终止服务，导致插件、签名、登录或推荐功能失效。本项目不承诺第三方服务持续免费，也不代替服务方承诺卡密有效期、退款、售后或账号权益。
+3. 购买卡密、连接账号或使用独立订阅前，请自行核实服务提供者、收费规则、授权范围及隐私说明。费用、账号与服务争议应联系对应提供者处理；本项目对自身依法应承担的责任仍依法负责。
 
-通过 `artistItem.songCount` / `artistItem.albumCount` 分开返回作者统计。App 同步接入，缺失统计显示“已加载”；预览列表不冒充全量。见 [作者统计修复、版本和验证记录](docs/ARTIST_TOTALS_20261022.md)。
+### 四、凭据、隐私与数据安全
 
+1. 生成订阅与下载插件时，音源 Key 或 OI 签名盐会作为请求参数提交给所访问的订阅服务；生成的插件及更新链接也可能包含这些凭据。此类信息可能出现在浏览器历史、服务器或代理日志、备份、截图及分享文件中，请勿公开传播。
+2. 插件运行时会按功能向所连接的平台、音源、签名或账号连接服务发起请求。根据配置，相关请求可能包含歌曲标识、搜索内容、音源凭据、用户 ID 或登录 Cookie。填写凭据前，请确认接收方及其数据处理规则；本声明不构成“所有数据仅保存在本地”或“不记录日志”的承诺。
+3. 仅使用本人或已获得授权的账号及凭据。平台 Cookie、`sessionid` 和账号连接服务生成的用户 ID 等信息均应妥善保管，不要在公开 Issue、日志或截图中提交。发现泄露时，请及时通过对应服务撤销登录、更新凭据或解除连接。
+4. 导入、更新或替换插件前，建议备份重要歌单及配置。自行部署时，部署者应负责其服务的访问控制、传输安全、日志管理、数据处理告知及其他适用义务。
 
-汽水插件：签名转发地址为 https://api.vsaa.cn/api/music/soda/sign-pc.php，使用默认 TLS 证书校验。
+### 五、无担保与责任限制
+
+1. 在适用法律允许的范围内，本项目代码、插件、文档及订阅服务按“现状”和“可用状态”提供，不作明示或默示担保，包括适销性、特定用途适用性、不侵权、无错误、不中断或兼容所有客户端及网络环境的担保。
+2. 在适用法律允许的范围内，作者、贡献者与分发者不对使用或无法使用本项目造成的数据丢失、凭据泄露、账号受限、设备或系统故障、业务中断、利润损失及其他损害承担赔偿责任，但适用法律另有要求或另有书面约定的除外。
+3. 第三方服务或使用者行为引起的争议，由相关主体根据各自行为和适用法律承担责任。本声明不排除或限制依法不得排除或限制的责任，不免除本项目维护者及其他主体因自身行为依法应承担的义务。
+
+### 六、代码许可与再分发
+
+1. 播放器 BakaMusic 与本插件仓库是不同项目，播放器的许可不自动适用于本仓库。代码公开可见不等于可以任意复制、修改、商业使用或再分发；本声明本身也不授予软件许可。
+2. 本仓库尚未提供统一的 LICENSE 文件。使用、修改或再分发前，请核实相关文件、上游插件及第三方依赖的许可或取得权利人授权；没有明确许可的部分，不应自行推定已获授权。
+3. 获得授权后的修改和分发仍应遵守适用许可，保留相应版权、作者与许可声明，清晰标明修改及来源，避免使用户误认为修改版由原维护者发布或背书。代码许可与音乐、MV、歌词、封面、商标等第三方内容的授权相互独立。
+
+### 七、权利反馈与条款适用
+
+1. 如认为本仓库代码、分发插件、订阅页面或文档侵犯您的合法权益，请通过 [GitHub Issues](https://github.com/Zencok/baka-plugins/issues) 联系维护者，提供涉及文件或链接、问题描述、权利依据及可联系的方式。请勿公开提交身份证件、账号凭据或其他敏感资料；必要时可先请求另行沟通。
+2. 维护者将根据所提供的信息核查，并对本项目可控制范围内的问题采取更正、移除、停用相关入口或其他适当措施。涉及独立音源、平台内容、账号或收费服务的问题，也请同时联系对应提供者或权利人。
+3. 本声明不替代各文件或组件适用的许可，也不扩大已有授权范围。与适用法律的强制性规定冲突的，以该规定为准；部分条款无效不影响其他条款依法适用。
