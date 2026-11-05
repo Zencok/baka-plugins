@@ -853,16 +853,58 @@ async function requestKgLyric(path, params, successStatus) {
   throw lastError;
 }
 
+function normalizeKgLyricKeyword(query) {
+  const text = String(query || '').trim().replace(/\s+/g, ' ');
+  if (/\s-\s/.test(text)) return text;
+  const split = text.lastIndexOf(' ');
+  return split > 0 ? `${text.slice(split + 1)} - ${text.slice(0, split)}` : text;
+}
+
 async function searchLyric(query, page = 1) {
   if (page > 1 || !String(query || "").trim()) return { isEnd: true, data: [] };
-  const result = await requestKgLyric("v1/search", {
+  const params = {
     album_audio_id: "0", appid: "1005", clientver: "20744", duration: "0",
-    keyword: query, lrctxt: "1", man: "yes", query_copyright: "1", vocab: "0",
-  }, 200);
+    keyword: normalizeKgLyricKeyword(query), lrctxt: "1", man: "yes", query_copyright: "1", vocab: "0",
+  };
+  const result = await requestKgLyric("v1/search", params, 200);
   if (!Array.isArray(result.candidates)) throw new Error("Invalid KuGou lyric candidates");
-  return {
-    isEnd: true,
-    data: result.candidates.filter(item => item && item.accesskey && (item.id || item.download_id))
+  const valid = item => item && item.accesskey && (item.id || item.download_id);
+  let candidates = result.candidates.filter(valid);
+  let knownSongs = [];
+  if (!candidates.length) {
+    try {
+      const response = await axios_1.default.get("https://songsearch.kugou.com/song_search_v2", {
+        params: { keyword: params.keyword, page: 1, pagesize: 5, userid: 0,
+          clientver: "", platform: "WebFilter", filter: 2, iscorrection: 0,
+          privilege_filter: 0, area_code: 1 },
+        timeout: 10000,
+      });
+      knownSongs = Array.isArray(response.data?.data?.lists) ? response.data.data.lists : [];
+      const singers = [...new Set(knownSongs.map(song =>
+        String(song.SingerName || '').replace(/<[^>]*>/g, '').trim()).filter(Boolean))].slice(0, 3);
+      const alternatives = await Promise.all(singers.map(async singer => {
+        try {
+          const alternate = await requestKgLyric("v1/search", {
+            ...params, keyword: `${singer} - ${params.keyword}`,
+          }, 200);
+          return Array.isArray(alternate.candidates) ? alternate.candidates.filter(valid) : [];
+        } catch (error) {
+          console.error('[KG] Alternate lyric search failed:', error.message);
+          return [];
+        }
+      }));
+      const seen = new Set();
+      candidates = alternatives.flat().filter(item => {
+        const key = `${item.id || item.download_id}:${item.contenttype || 0}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    } catch (error) {
+      console.error('[KG] Lyric search hint lookup failed:', error.message);
+    }
+  }
+  const items = candidates
       .map(item => ({
         id: String(item.id || item.download_id),
         title: item.song || "", artist: item.singer || "", platform: "酷狗音乐",
@@ -870,8 +912,8 @@ async function searchLyric(query, page = 1) {
         lyricDownloadId: String(item.id || item.download_id),
         lyricAccessKey: item.accesskey,
         lyricContentType: Number(item.contenttype) || 0,
-      })),
-  };
+      }));
+  return { isEnd: true, data: items };
 }
 
 async function searchArtist(query, page) {
@@ -2361,7 +2403,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.9",
+  version: "1.1.10",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

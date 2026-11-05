@@ -9,6 +9,7 @@ function fixture(handler) {
   const calls = [];
   const axios = { get: async (url, options) => {
     calls.push({ url, ...options });
+    if (url.includes('song_search_v2')) return {data: await handler(url, options.params, calls.length)};
     const { signature, ...params } = options.params;
     const secret = 'OIlwieks28dk2k092lksi2UIkp';
     const raw = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('');
@@ -32,7 +33,7 @@ test('lyric search uses signed candidate API and preserves download identity', a
       assert.equal(params.contenttype, '2');
       return { status: 1, data: { content: '[00:01]chosen lyric' } };
     }
-    assert.equal(params.keyword, 'title & artist');
+    assert.equal(params.keyword, 'artist - title &');
     assert.equal(params.duration, '0');
     assert.equal(params.hash, undefined);
     return { status: 200, candidates: [null, {id: 'bad'}, {
@@ -64,7 +65,7 @@ test('lyric hosts fall back on transport or business failure', async () => {
     return {status: 200, candidates: []};
   });
   await context.searchLyric('song');
-  assert.equal(calls.length, 3);
+  assert.equal(calls.filter(call => call.url.endsWith('/v1/search')).length, 3);
   assert.match(calls[2].url, /krcsretry/);
 });
 test('invalid or unavailable candidates reject instead of using song search', async () => {
@@ -88,4 +89,30 @@ test('actual KRC parser extracts timed romanization and translation from languag
   assert.equal(result.romaji, '[00:01.0]kimi\n[00:04.0]sora');
   assert.equal(result.translation, '[00:01.0]you\n[00:04.0]sky');
   assert.match(result.lyric, /A\(1000,1000\)/);
+});
+
+
+test('empty title-only lyrics retry with singer hints and return deduplicated lyric candidates', async () => {
+  const {context, calls} = fixture((url, params) => {
+    if (url.includes('song_search_v2')) return {data:{lists:[
+      {SingerName:'Singer'}, {SingerName:'Singer'}, {SingerName:'Other'},
+    ]}};
+    if (params.keyword === 'title') return {status:200,candidates:[]};
+    assert.match(params.keyword, / - title$/);
+    return {status:200,candidates:[{id:'123',accesskey:'key',song:'title',singer:'Singer'}]};
+  });
+  const result = await context.searchLyric('title');
+  assert.equal(result.data.length, 1);
+  assert.equal(result.data[0].lyricDownloadId, '123');
+  assert.equal(result.data[0].lyricAccessKey, 'key');
+  assert.equal(calls.length, 4);
+});
+
+
+test('app title artist keywords normalize to KG artist - title format', () => {
+  const {context} = fixture(() => ({}));
+  assert.equal(context.normalizeKgLyricKeyword('  title   artist  '), 'artist - title');
+  assert.equal(context.normalizeKgLyricKeyword('title with spaces artist'), 'artist - title with spaces');
+  assert.equal(context.normalizeKgLyricKeyword('artist - title'), 'artist - title');
+  assert.equal(context.normalizeKgLyricKeyword('title'), 'title');
 });
