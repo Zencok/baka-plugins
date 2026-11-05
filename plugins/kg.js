@@ -831,18 +831,46 @@ async function searchMusicSheet(query, page) {
   };
 }
 
-async function searchLyric(query, page) {
-  const res = await searchMusic(query, page);
+async function requestKgLyric(path, params, successStatus) {
+  const secret = "OIlwieks28dk2k092lksi2UIkp";
+  const raw = Object.keys(params).sort().map(key => `${key}=${params[key]}`).join("");
+  const signature = CryptoJs.MD5(secret + raw + secret).toString();
+  let lastError;
+  for (const host of ["lyrics2.kugou.com", "lyrics.kugou.com", "krcsretry.kugou.com"]) {
+    try {
+      const response = await axios_1.default.get(`https://${host}/${path}`, {
+        params: { ...params, signature },
+        headers: { clienttime: String(Math.floor(Date.now() / 1000)), mid: "-", dfid: "-" },
+        timeout: 10000,
+      });
+      if (String(response.data?.status) === String(successStatus) &&
+          String(response.data?.error_code) !== "20006") return response.data;
+      lastError = new Error("Invalid KuGou lyric response");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+async function searchLyric(query, page = 1) {
+  if (page > 1 || !String(query || "").trim()) return { isEnd: true, data: [] };
+  const result = await requestKgLyric("v1/search", {
+    album_audio_id: "0", appid: "1005", clientver: "20744", duration: "0",
+    keyword: query, lrctxt: "1", man: "yes", query_copyright: "1", vocab: "0",
+  }, 200);
+  if (!Array.isArray(result.candidates)) throw new Error("Invalid KuGou lyric candidates");
   return {
-    isEnd: res.isEnd,
-    data: res.data.map((item) => ({
-      title: item.title,
-      artist: item.artist,
-      id: item.id,
-      artwork: item.artwork,
-      album: item.album,
-      platform: "酷狗音乐",
-    })),
+    isEnd: true,
+    data: result.candidates.filter(item => item && item.accesskey && (item.id || item.download_id))
+      .map(item => ({
+        id: String(item.id || item.download_id),
+        title: item.song || "", artist: item.singer || "", platform: "酷狗音乐",
+        duration: (Number(item.duration) || 0) / 1000,
+        lyricDownloadId: String(item.id || item.download_id),
+        lyricAccessKey: item.accesskey,
+        lyricContentType: Number(item.contenttype) || 0,
+      })),
   };
 }
 
@@ -1171,6 +1199,18 @@ async function getLyricDownload(lyrdata) {
 }
 
 async function getLyric(musicItem) {
+  if (musicItem.lyricDownloadId && musicItem.lyricAccessKey) {
+    const result = await requestKgLyric("v2/download", {
+      accesskey: musicItem.lyricAccessKey, appid: "1005", clientver: "20669",
+      contenttype: String(musicItem.lyricContentType || 0),
+      download_id: String(musicItem.lyricDownloadId),
+    }, 1);
+    const decrypted = result.data?.content && decryptKrc(result.data.content);
+    const parsed = decrypted && parseKrc(decrypted);
+    if (!parsed) throw new Error("Invalid KuGou lyric content");
+    return { rawLrc: parsed.lyric, translation: parsed.translation || undefined,
+      romanization: parsed.romaji || undefined };
+  }
   const result = (
     await (0, axios_1.default)({
       url: `http://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=${musicItem.title}&hash=${musicItem.id}&timelength=${musicItem.duration}`,
@@ -2321,7 +2361,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.8",
+  version: "1.1.9",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

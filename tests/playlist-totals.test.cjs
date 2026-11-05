@@ -51,6 +51,7 @@ for (const file of kwFiles) optional(file, 'first and later pages retain source 
     const song = { id: 1, name: 'song', artist: 'artist', albumpic: 'cover' };
     const f = load(file, ['getMusicSheetInfo'], {
       pageSize: 20,
+      enrichKuwoMusicItems: async items => items, formatKuwoPlaylistItem: x => x,
       getMusicSheetResponseById: async () => ({ total, musiclist: total === 0 ? [] : [song] }),
       getPicByRid: async () => 'cover', getQualityByMusicId: async () => ({}),
       ensureQualities: x => x, parseKuWoQualityInfo: () => ({}),

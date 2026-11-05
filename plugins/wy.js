@@ -314,22 +314,55 @@ async function getMusicQualityInfo(id) {
   }
 }
 
-async function getBatchMusicQualityInfo(idList) {
-  if (!idList || idList.length === 0) return {};
-
-  const qualityInfoMap = {};
-  // Limit concurrency — artist hotSongs can be 50+, full parallel is flaky/slow
-  const chunkSize = 8;
-  for (let i = 0; i < idList.length; i += chunkSize) {
-    const slice = idList.slice(i, i + chunkSize);
-    const qualityResults = await Promise.all(
-      slice.map((id) => getMusicQualityInfo(id).catch(() => ({})))
-    );
-    slice.forEach((id, index) => {
-      qualityInfoMap[id] = qualityResults[index] || {};
-    });
+function extractWyQualityInfo(song) {
+  const qualities = {};
+  for (const [key, field, bitrate] of [
+    ['128k', song.l?.size ? 'l' : 'm', 128000], ['320k', 'h', 320000],
+    ['flac', 'sq', 1411000], ['hires', 'hr', 2304000], ['master', 'jm', 4608000],
+    ['atmos', song.je?.size ? 'je' : 'sk', 1411000], ['dolby', 'db', 1411000],
+  ]) {
+    if (Number(song[field]?.size) > 0) qualities[key] = {
+      size: sizeFormate(song[field].size), bitrate: song[field].br || bitrate,
+    };
   }
+  return qualities;
+}
 
+async function getBatchMusicQualityInfo(idList, songs = []) {
+  const ids = [...new Set((idList || []).filter(Boolean).map(String))].filter(id => /^\d+$/.test(id));
+  const qualityInfoMap = {};
+  for (const song of songs) qualityInfoMap[song.id] = extractWyQualityInfo(song);
+  const batches = [];
+  for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
+  for (let offset = 0; offset < batches.length; offset += 2) {
+    await Promise.all(batches.slice(offset, offset + 2).map(async batch => {
+      const base = '/api/song/music/detail/get';
+      const keys = batch.map((id, index) => base + '/'.repeat(index));
+      const body = Object.fromEntries(keys.map((key, index) => [key, JSON.stringify({ songId: batch[index] })]));
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await axios_1.default({
+            method: 'post', url: 'https://interface3.music.163.com/eapi/batch',
+            headers: { Referer: 'https://music.163.com/', 'Content-Type': 'application/x-www-form-urlencoded' },
+            data: qs.stringify(eapiEncrypt('/api/batch', body)), timeout: 10000,
+          });
+          if (response.data?.code !== 200) throw new Error('Invalid batch quality response');
+          let incomplete = false;
+          keys.forEach((key, index) => {
+            const detail = response.data[key];
+            if (detail?.code !== 200 || !detail.data ||
+                (detail.data.songId != null && String(detail.data.songId) !== batch[index])) { incomplete = true; return; }
+            const id = batch[index];
+            qualityInfoMap[id] = { ...qualityInfoMap[id], ...extractWyQualityInfo(detail.data) };
+          });
+          if (incomplete) throw new Error('Incomplete batch quality response');
+          break;
+        } catch (error) {
+          if (attempt === 1) console.error('[WY] Batch quality lookup failed:', error.message);
+        }
+      }
+    }));
+  }
   return qualityInfoMap;
 }
 
@@ -340,7 +373,7 @@ async function withBatchQualities(songs) {
   const idList = list.map((s) => s && s.id).filter(Boolean);
   let qualityInfoMap = {};
   try {
-    qualityInfoMap = await getBatchMusicQualityInfo(idList);
+    qualityInfoMap = await getBatchMusicQualityInfo(idList, list);
   } catch (e) {
     console.error("[网易云] 批量音质失败:", e && e.message);
   }
@@ -355,12 +388,7 @@ async function withBatchQualities(songs) {
   });
 }
 
-/**
- * @param {Array<string|number>} trackIds
- * @param {{ withQuality?: boolean }} [options]
- *   withQuality=false 时跳过逐首 music/detail 音质补全（歌单分页用）。
- *   40 首 × 音质接口极易超过宿主 30s RPC 超时，导致 load-more 失败后无限重试页面抽搐。
- */
+/** Fetch song metadata and optionally enrich all quality tiers through EAPI batch. */
 async function getValidMusicItems(trackIds, options = {}) {
   const withQuality = options.withQuality !== false;
   if (!trackIds || !trackIds.length) return [];
@@ -408,13 +436,12 @@ async function getValidMusicItems(trackIds, options = {}) {
 
     const validMusicItems = songsWithPrivilege.map(formatMusicItem);
 
-    // privilege 已覆盖常见音质档；列表分页不必再打 music/detail
     if (withQuality) {
       const idList = validMusicItems.map(item => item.id);
-      const qualityInfoMap = await getBatchMusicQualityInfo(idList);
+      const qualityInfoMap = await getBatchMusicQualityInfo(idList, songsWithPrivilege);
       validMusicItems.forEach(item => {
         const qualityInfo = qualityInfoMap[item.id];
-        if (qualityInfo) item.qualities = qualityInfo;
+        if (qualityInfo) item.qualities = { ...item.qualities, ...qualityInfo };
       });
     }
 
@@ -1068,10 +1095,8 @@ async function getSheetMusicById(id, withSheetInfo = false) {
   let result = [];
   let idx = 0;
   while (idx * 200 < trackIds.length) {
-    // 导入只取批量歌曲详情；逐首音质补全会为大歌单增加数千次请求。
-    // 保留详情/privilege 中的音质，播放或查看音质时再按需补全。
     const res = await getValidMusicItems(
-      trackIds.slice(idx * 200, (idx + 1) * 200), { strict: true, withQuality: false }
+      trackIds.slice(idx * 200, (idx + 1) * 200), { strict: true, withQuality: true }
     );
     result = result.concat(res);
     ++idx;
@@ -1192,8 +1217,7 @@ async function getMusicSheetInfo(sheet, page) {
     };
   }
 
-  // 歌单分页不做逐首音质补全：privilege 足够展示，避免 RPC 超时 → 无限 load-more
-  const res = await getValidMusicItems(currentPageIds, { withQuality: false });
+  const res = await getValidMusicItems(currentPageIds, { withQuality: true });
 
   return {
     isEnd,
@@ -1511,7 +1535,7 @@ module.exports = {
   getHotSearch,
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.6",
+  version: "1.1.7",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
