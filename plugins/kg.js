@@ -2403,7 +2403,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.10",
+  version: "1.2.0",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
