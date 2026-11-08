@@ -50,14 +50,26 @@ async function getDailyRecommendations() {
     const data=body.data;
     const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
     if (data?.date !== today || !Array.isArray(data?.songs)) return {...result,state:"updating"};
-    const musicList = data.songs.map(formatDailyMusicItem);
-    const hashes = [...new Set(musicList.map(item => item.id).filter(hash => /^[a-f0-9]{32}$/i.test(hash)))];
-    const details = await getBatchMusicQualityInfo(hashes);
-    const byHash = new Map(Object.entries(details).map(([hash, qualities]) => [hash.toUpperCase(), qualities]));
-    for (const item of musicList)
-        item.qualities = { ...item.qualities, ...byHash.get(item.id.toUpperCase()) };
+    const ids = data.songs.map(item => String(item.hash || item.hash_128 || item.FileHash || item.song_id || ''));
+    const details = await getBatchMusicDetails(ids);
+    const musicList = data.songs.map((song, index) => {
+      const detail = details[ids[index]];
+      const native = song.song_id != null;
+      const hash = detail?.hash || (native ? '' : ids[index]);
+      if (!/^[a-f0-9]{32}$/i.test(hash))
+        throw new Error('每日推荐歌曲信息暂不可用，请稍后重试');
+      const item = formatDailyMusicItem(native ? {
+        ...song, hash, songname:song.song_name, author_name:song.singer_name,
+        album_audio_id:song.song_id, sizable_cover:song.album_img_large || song.album_img_medium || song.album_img,
+      } : song);
+      item.qualities = {...item.qualities, ...detail?.qualities};
+      item.sqhash = item.qualities.flac?.hash || item.sqhash;
+      item['320hash'] = item.qualities['320k']?.hash || item['320hash'];
+      return item;
+    });
     const artwork = dailyCover(data.cover_img_url) || musicList.find(item => item.artwork)?.artwork || '';
-    const description = typeof data.sub_title === 'string' ? data.sub_title : '';
+    const description = (typeof data.sub_title === 'string' && data.sub_title)
+      || (typeof data.long_cpw?.content === 'string' ? data.long_cpw.content : '');
     return { ...result, state: 'ready', date: data.date, refreshAt: data.refresh_at,
         sheetItem: { id: 'kg-daily-' + data.date, title: result.title, artist: result.accountName,
             artwork, coverImg: artwork, description, worksNum: musicList.length, musicList }, musicList };
@@ -602,13 +614,18 @@ function signatureParams(params, platform = 'android', body = '') {
 
 
 async function getBatchMusicQualityInfo(hashList) {
-  if (!hashList || hashList.length === 0) return {};
+  const details = await getBatchMusicDetails(hashList);
+  return Object.fromEntries(Object.entries(details).map(([id, detail]) => [id, detail.qualities]));
+}
+
+async function getBatchMusicDetails(ids) {
+  const requested = new Map((ids || []).map(String)
+    .filter(id => /^[a-f0-9]{32}$/i.test(id) || (/^[1-9]\d*$/.test(id) && Number.isSafeInteger(Number(id))))
+    .map(id => [id.toUpperCase(), id]));
+  if (!requested.size) return {};
   
-  const resources = hashList.map((hash) => ({
-    id: 0,
-    type: 'audio',
-    hash,
-  }));
+  const resources = [...requested.values()].map(id => ({ id: 0, type: 'audio',
+    ...(/^[a-f0-9]{32}$/i.test(id) ? {hash:id} : {album_audio_id:id}) }));
 
   try {
     const res = await axios_1.default({
@@ -641,17 +658,16 @@ async function getBatchMusicQualityInfo(hashList) {
       },
     });
 
-    const qualityInfoMap = {};
-
-    const requested = new Map(hashList.map(hash => [hash.toUpperCase(), hash]));
+    const detailMap = {};
     if (res.data && res.data.error_code == 0 && Array.isArray(res.data.data)) {
       res.data.data.forEach(songData => {
-        const hash = typeof songData?.hash === 'string' ? requested.get(songData.hash.toUpperCase()) : undefined;
+        const hash = typeof songData?.hash === 'string' && /^[a-f0-9]{32}$/i.test(songData.hash) ? songData.hash.toUpperCase() : '';
+        const id = requested.get(hash) || requested.get(String(songData?.album_audio_id));
         const qualities = {};
 
-        if (!hash || !Array.isArray(songData.relate_goods)) return;
+        if (!id || !hash) return;
 
-        for (const quality_data of songData.relate_goods) {
+        for (const quality_data of Array.isArray(songData.relate_goods) ? songData.relate_goods : []) {
           const raw = quality_data?.info?.filesize;
           const size = typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : NaN;
           if (!Number.isSafeInteger(size) || size <= 0) continue;
@@ -716,11 +732,11 @@ async function getBatchMusicQualityInfo(hashList) {
           }
         }
 
-        qualityInfoMap[hash] = qualities;
+        detailMap[id] = {hash, qualities};
       });
     }
 
-    return qualityInfoMap;
+    return detailMap;
   } catch (error) {
     console.error('Failed to fetch KuGou quality info:', error);
     return {};
@@ -2401,7 +2417,7 @@ module.exports = {
   userVariables: [{key:"kg_user_id",name:"用户 ID",hint:"在 LyraMesh /connect 选择酷狗登录并复制连接码，用于个人每日推荐。"}],
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.3.2",
+  version: "1.3.3",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
