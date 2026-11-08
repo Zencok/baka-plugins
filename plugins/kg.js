@@ -8,6 +8,33 @@ function getPluginSiteUrl(path, fallback) {
 function kgVariables() {
   return typeof env !== "undefined" && typeof env.getUserVariables === "function" ? env.getUserVariables() || {} : {};
 }
+
+function dailyCover(value) {
+    return typeof value === 'string' && /^https?:\/\//i.test(value)
+        ? value.replace('{size}', '400') : '';
+}
+
+function formatDailyMusicItem(item) {
+    const qualities = {};
+    for (const [name, suffix, bitrate] of [['128k', '128', 128000], ['320k', '320', 320000], ['flac', 'flac', 1411000]]) {
+        const raw = item['filesize_' + suffix];
+        const size = typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : NaN;
+        const hash = item['hash_' + suffix];
+        if (Number.isSafeInteger(size) && size > 0 && typeof hash === 'string' && /^[a-f0-9]{32}$/i.test(hash))
+            qualities[name] = { size: formatFileSize(size), bitrate, hash };
+    }
+    return {
+        id: String(item.hash || item.hash_128 || item.FileHash || ''),
+        title: item.songname || item.official_songname || item.filename || '',
+        artist: item.singername || item.author_name || '', album: item.album_name || item.remark || '',
+        album_id: item.album_id || 0, album_audio_id: item.album_audio_id || item.audio_id || 0,
+        duration: normalizeDurationSeconds(item),
+        artwork: dailyCover(item.album_sizable_cover || item.sizable_cover || item.cover || item.trans_param?.union_cover),
+        sqhash: item.hash_flac || item.sqhash, '320hash': item.hash_320 || item['320hash'],
+        kg_daily: true, qualities,
+    };
+}
+
 async function getDailyRecommendations() {
   const connectUrl = getPluginSiteUrl("/connect", "https://mc.vsaa.cn/connect") + "?platform=kg";
   const result = {title:"每日三十首",accountName:"酷狗音乐",connectUrl};
@@ -23,16 +50,17 @@ async function getDailyRecommendations() {
     const data=body.data;
     const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
     if (data?.date !== today || !Array.isArray(data?.songs)) return {...result,state:"updating"};
-    const musicList=data.songs.map(item=>({
-      id:String(item.hash || item.hash_128 || item.FileHash || ""),
-      title:item.songname || item.official_songname || item.filename || "",
-      artist:item.singername || item.author_name || "",album:item.album_name || item.remark || "",
-      album_id:item.album_id || 0,album_audio_id:item.album_audio_id || item.audio_id || 0,
-      duration:normalizeDurationSeconds(item),artwork:String(item.album_sizable_cover || item.sizable_cover || item.cover || "").replace("{size}","400"),
-      sqhash:item.hash_flac || item.sqhash,"320hash":item.hash_320 || item["320hash"],kg_daily:true,
-    }));
-    return {...result,state:"ready",date:data.date,refreshAt:data.refresh_at,
-      sheetItem:{id:"kg-daily-"+data.date,title:"每日三十首",artist:"酷狗音乐",worksNum:musicList.length,musicList},musicList};
+    const musicList = data.songs.map(formatDailyMusicItem);
+    const hashes = [...new Set(musicList.map(item => item.id).filter(hash => /^[a-f0-9]{32}$/i.test(hash)))];
+    const details = await getBatchMusicQualityInfo(hashes);
+    const byHash = new Map(Object.entries(details).map(([hash, qualities]) => [hash.toUpperCase(), qualities]));
+    for (const item of musicList)
+        item.qualities = { ...item.qualities, ...byHash.get(item.id.toUpperCase()) };
+    const artwork = dailyCover(data.cover_img_url) || musicList.find(item => item.artwork)?.artwork || '';
+    const description = typeof data.sub_title === 'string' ? data.sub_title : '';
+    return { ...result, state: 'ready', date: data.date, refreshAt: data.refresh_at,
+        sheetItem: { id: 'kg-daily-' + data.date, title: result.title, artist: result.accountName,
+            artwork, coverImg: artwork, description, worksNum: musicList.length, musicList }, musicList };
   } catch(error) {
     const code=error?.response?.data?.code;
     return {...result,state:[1001,1004,1005].includes(code)?"login_required":[1002,1003].includes(code)?"blocked":"error"};
@@ -615,16 +643,18 @@ async function getBatchMusicQualityInfo(hashList) {
 
     const qualityInfoMap = {};
 
-    if (res.data && res.data.error_code == 0 && res.data.data) {
-      res.data.data.forEach((songData, index) => {
-        const hash = hashList[index];
+    const requested = new Map(hashList.map(hash => [hash.toUpperCase(), hash]));
+    if (res.data && res.data.error_code == 0 && Array.isArray(res.data.data)) {
+      res.data.data.forEach(songData => {
+        const hash = typeof songData?.hash === 'string' ? requested.get(songData.hash.toUpperCase()) : undefined;
         const qualities = {};
 
-        if (!songData || !songData.relate_goods) return;
+        if (!hash || !Array.isArray(songData.relate_goods)) return;
 
         for (const quality_data of songData.relate_goods) {
-          const size = quality_data.info.filesize;
-          if (!size) continue;
+          const raw = quality_data?.info?.filesize;
+          const size = typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : NaN;
+          if (!Number.isSafeInteger(size) || size <= 0) continue;
 
           switch (quality_data.quality) {
             case '128':
@@ -2371,7 +2401,7 @@ module.exports = {
   userVariables: [{key:"kg_user_id",name:"用户 ID",hint:"在 LyraMesh /connect 选择酷狗登录并复制连接码，用于个人每日推荐。"}],
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.3.1",
+  version: "1.3.2",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
