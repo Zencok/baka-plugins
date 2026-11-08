@@ -1,5 +1,45 @@
 // {{REQUEST_HANDLER}}
 
+function getPluginSiteUrl(path, fallback) {
+  const source = String(module.exports.srcUrl || "");
+  const match = source.match(/^(https?:\/\/(?:\[[^\]]+\]|[^/?#:@]+)(?::\d+)?)\/api\/plugins\/(?:source|xheaders)\//i);
+  return match ? match[1] + path : fallback;
+}
+function kgVariables() {
+  return typeof env !== "undefined" && typeof env.getUserVariables === "function" ? env.getUserVariables() || {} : {};
+}
+async function getDailyRecommendations() {
+  const connectUrl = getPluginSiteUrl("/connect", "https://mc.vsaa.cn/connect") + "?platform=kg";
+  const result = {title:"每日三十首",accountName:"酷狗音乐",connectUrl};
+  const token = String(kgVariables().kg_user_id || "").trim();
+  if (!token) return {...result,state:"unconfigured"};
+  if (!/^kg_[a-f0-9]{48}$/.test(token)) return {...result,state:"login_required"};
+  try {
+    const response = await (axios_1.default || axios_1).get(
+      getPluginSiteUrl("/api/kg/recommendations/daily", "https://mc.vsaa.cn/api/kg/recommendations/daily"),
+      {headers:{"X-User-Id":token},timeout:60000});
+    const body=response.data;
+    if (body?.code !== 0) return {...result,state:[1001,1004,1005].includes(body?.code)?"login_required":[1002,1003].includes(body?.code)?"blocked":"error"};
+    const data=body.data;
+    const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+    if (data?.date !== today || !Array.isArray(data?.songs)) return {...result,state:"updating"};
+    const musicList=data.songs.map(item=>({
+      id:String(item.hash || item.hash_128 || item.FileHash || ""),
+      title:item.songname || item.official_songname || item.filename || "",
+      artist:item.singername || item.author_name || "",album:item.album_name || item.remark || "",
+      album_id:item.album_id || 0,album_audio_id:item.album_audio_id || item.audio_id || 0,
+      duration:normalizeDurationSeconds(item),artwork:String(item.album_sizable_cover || item.sizable_cover || item.cover || "").replace("{size}","400"),
+      sqhash:item.hash_flac || item.sqhash,"320hash":item.hash_320 || item["320hash"],kg_daily:true,
+    }));
+    return {...result,state:"ready",date:data.date,refreshAt:data.refresh_at,
+      sheetItem:{id:"kg-daily-"+data.date,title:"每日三十首",artist:"酷狗音乐",worksNum:musicList.length,musicList},musicList};
+  } catch(error) {
+    const code=error?.response?.data?.code;
+    return {...result,state:[1001,1004,1005].includes(code)?"login_required":[1002,1003].includes(code)?"blocked":"error"};
+  }
+}
+
+
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
@@ -927,7 +967,8 @@ async function searchArtist(query, page) {
 
 async function getMediaSource(musicItem, quality) {
   try {
-    let songId = musicItem.sqhash || musicItem.id;
+    let songId = quality === "flac" ? (musicItem.sqhash || musicItem.id)
+      : quality === "320k" ? (musicItem["320hash"] || musicItem.id) : musicItem.id;
 
     const res = await requestMusicUrl('kg', songId, qualityLevels[quality] || quality);
 
@@ -1445,7 +1486,7 @@ async function getUserListDetail2(global_collection_id, sheetInfo) {
       };
 
       const detailResult = await axios_1.default.post(
-        `https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=390523108&uuid=92691C6246F86F28B149BAA1FD370DF1`,
+        `https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=0&uuid=92691C6246F86F28B149BAA1FD370DF1`,
         postData,
         {
           headers: {
@@ -1503,6 +1544,13 @@ function playlistSheetItem(sheet, ...totals) {
 }
 
 async function getMusicSheetInfo(sheet, page) {
+  if (String(sheet?.id || "").startsWith("kg-daily-")) {
+    if (Number(page || 1) > 1) return {isEnd:true,sheetItem:sheet,musicList:[]};
+    const daily=await getDailyRecommendations();
+    if (daily.state !== "ready") throw new Error("每日推荐暂不可用，请检查酷狗连接状态");
+    return {isEnd:true,sheetItem:daily.sheetItem,musicList:daily.musicList};
+  }
+
   try {
     let sheetId = sheet.id || sheet;
     
@@ -1693,7 +1741,7 @@ async function getKugouImportDetails(postData) {
   const data = [];
   for (let offset = 0; offset < postData.resource.length; offset += 200) {
     const response = await axios_1.default.post(
-      'https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=390523108&uuid=92691C6246F86F28B149BAA1FD370DF1',
+      'https://gateway.kugou.com/v2/get_res_privilege/lite?appid=1001&clienttime=1668883879&clientver=10112&dfid=2O3jKa20Gdks0LWojP3ly7ck&mid=70a02aad1ce4648e7dca77f2afa7b182&userid=0&uuid=92691C6246F86F28B149BAA1FD370DF1',
       { ...postData, resource: postData.resource.slice(offset, offset + 200) },
       { headers: { 'x-router': 'media.store.kugou.com' } },
     );
@@ -2012,7 +2060,7 @@ async function getRecommendSheetsByTag(tag, page) {
             key: 'f1f93580115bb106680d2375f8032d96',
             mid: '21511157a05844bd085308bc76ef3343',
             platform: 'pc',
-            userid: '262643156',
+            userid: '0',
             return_min: 6,
             return_max: 15,
           },
@@ -2319,9 +2367,11 @@ async function getHotSearch() {
 }
 
 module.exports = {
+  getDailyRecommendations,
+  userVariables: [{key:"kg_user_id",name:"用户 ID",hint:"在 LyraMesh /connect 选择酷狗登录并复制连接码，用于个人每日推荐。"}],
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.1.8",
+  version: "1.3.1",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

@@ -11,7 +11,13 @@ function fixture(count, failBatch = 0) {
   const ids = Array.from({ length: count }, (_, index) => index + 1);
   const batches = [];
   let qualityRequests = 0;
+  const qualityBatches = [];
   const axios = async config => {
+    if (config.url.endsWith('/eapi/batch')) {
+      const body = JSON.parse(new URLSearchParams(config.data).get('params'));
+      qualityBatches.push(Object.keys(body).length);
+      return {data:{code:200,...Object.fromEntries(Object.entries(body).map(([key,value])=>[key,{code:200,data:{jm:{size:5000},je:{size:4000},db:{size:3000}}}]))}};
+    }
     assert.equal(config.url, 'https://music.163.com/weapi/v3/song/detail');
     const data = JSON.parse(new URLSearchParams(config.data).get('params'));
     const batch = JSON.parse(data.ids);
@@ -48,8 +54,8 @@ function fixture(count, failBatch = 0) {
   });
   vm.runInContext(source, context, { timeout: 5000 });
   // Observe real batching/formatting; encryption is exercised by the live Rust host probe.
-  vm.runInContext('getParamsAndEnc = text => ({ params: text })', context);
-  return { plugin: module.exports, ids, batches, qualityRequests: () => qualityRequests };
+  vm.runInContext('getParamsAndEnc = text => ({ params: text }); eapiEncrypt = (path, body) => ({params: JSON.stringify(body)})', context);
+  return { plugin: module.exports, ids, batches, qualityBatches, qualityRequests: () => qualityRequests };
 }
 
 test('large shared playlist imports every batch without per-song quality requests', async () => {
@@ -68,9 +74,12 @@ test('large shared playlist imports every batch without per-song quality request
   assert.equal(sheet.musicList[0].artist, 'Artist');
   assert.equal(sheet.musicList[0].duration, 123);
   assert.equal(sheet.musicList[0].mv, 10001);
-  assert.equal(sheet.musicList[0].qualities['320k'].size, 4560000);
+  assert.equal(sheet.musicList[0].qualities['320k'].size, '4.35MB');
   assert.ok(sheet.musicList[0].qualities.flac);
   assert.ok(sheet.musicList[0].qualities.master);
+  assert.ok(sheet.musicList[0].qualities.atmos);
+  assert.ok(sheet.musicList[0].qualities.dolby);
+  assert.ok(f.qualityBatches.every(n => n <= 50));
 });
 
 test('failed detail batch rejects the import instead of saving an incomplete playlist', async () => {
