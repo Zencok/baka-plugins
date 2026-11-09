@@ -96,6 +96,7 @@ async function getDailyRecommendations() {
       item['320hash'] = item.qualities['320k']?.hash || item['320hash'];
       return item;
     });
+    await kgFillMissingImages(musicList);
     const artwork = dailyCover(data.cover_img_url) || musicList.find(item => item.artwork)?.artwork || '';
     const description = (typeof data.sub_title === 'string' && data.sub_title)
       || (typeof data.long_cpw?.content === 'string' ? data.long_cpw.content : '');
@@ -635,12 +636,76 @@ function signatureParams(params, platform = 'android', body = '') {
   const CryptoJS = require('crypto-js');
   let keyparam = 'OIlwieks28dk2k092lksi2UIkp';
   if (platform === 'web') keyparam = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
-  const param_list = params.split('&');
+  const param_list = typeof params === 'string' ? params.split('&')
+    : Object.entries(params).map(([key, value]) => `${key}=${value}`);
   param_list.sort();
   const sign_params = `${keyparam}${param_list.join('')}${body}${keyparam}`;
   return CryptoJS.MD5(sign_params).toString();
 }
 
+
+// Optional batch artwork fallback. Keep existing images and artist identities.
+async function kgFillArtistImage(artist) {
+  if (!artist || kgImage(artist.avatar) || !/^[1-9]\d*$/.test(String(artist.id))) return artist;
+  try {
+    const params = { album_image_type: -3, appid: 1005, author_image_type: '4,5',
+      clientver: 12029, count: 5, data: JSON.stringify([{author_id: Number(artist.id)}]),
+      isCdn: 1, publish_time: 1 };
+    params.signature = signatureParams(params);
+    const {data} = await axios_1.default.get('https://expendablekmrcdn.kugou.com/container/v2/image', {
+      params, headers: {'User-Agent': 'okhttp/5.4.0'}, timeout: 5000,
+    });
+    if (data?.status === 1 && Array.isArray(data.data)) {
+      const author = data.data.flatMap(row => Array.isArray(row?.author) ? row.author : [])
+        .find(row => String(row.author_id) === String(artist.id));
+      const avatar = kgImage(author?.sizable_avatar);
+      if (avatar) artist.avatar = avatar;
+    }
+  } catch (_) { /* Keep artist details usable when image lookup fails. */ }
+  return artist;
+}
+
+async function kgFillMissingImages(items) {
+  const pending = items.filter(item => !kgImage(item.artwork));
+  const byHash = new Map();
+  for (const item of pending) {
+    const hash = String(item.hash || item.id || '').toLowerCase();
+    if (!/^[a-f0-9]{32}$/.test(hash)) continue;
+    if (!byHash.has(hash)) byHash.set(hash, []);
+    byHash.get(hash).push(item);
+  }
+  const hashes = [...byHash.keys()];
+  for (let offset = 0; offset < hashes.length; offset += 20) {
+    const batch = hashes.slice(offset, offset + 20);
+    try {
+      const params = { album_image_type: -3, appid: 1005, author_image_type: '4,5',
+        clientver: 12029, count: 5, data: JSON.stringify(batch.map(hash => ({hash}))),
+        isCdn: 1, publish_time: 1 };
+      params.signature = signatureParams(params);
+      const {data} = await axios_1.default.get('https://expendablekmrcdn.kugou.com/container/v2/image', {
+        params, headers: {'User-Agent': 'okhttp/5.4.0'}, timeout: 5000,
+      });
+      // This endpoint returns positional rows without echoing the requested Hash.
+      if (data?.status !== 1 || !Array.isArray(data.data) || data.data.length !== batch.length) continue;
+      data.data.forEach((row, index) => {
+        for (const item of byHash.get(batch[index])) {
+          const albums = Array.isArray(row?.album) ? row.album : [];
+          const album = item.album_id ? albums.find(a => String(a.album_id) === String(item.album_id)) : albums[0];
+          if (!kgImage(item.artwork)) item.artwork = kgImage(album?.sizable_cover);
+          if (Array.isArray(item.singerList) && Array.isArray(row?.author)) {
+            item.singerList = item.singerList.map(singer => {
+              if (kgImage(singer.avatar)) return singer;
+              const author = row.author.find(a => String(a.author_id) === String(singer.id));
+              const avatar = kgImage(author?.sizable_avatar);
+              return avatar ? {...singer, avatar} : singer;
+            });
+          }
+        }
+      });
+    } catch (_) { /* Image lookup must not block search, lists or daily recommendations. */ }
+  }
+  return items;
+}
 
 async function getBatchMusicQualityInfo(hashList) {
   const details = await getBatchMusicDetails(hashList);
@@ -824,13 +889,10 @@ async function searchMusic(query, page) {
         keyword: query,
         page,
         pagesize: pageSize,
-        userid: 0,
-        clientver: "",
-        platform: "WebFilter",
-        filter: 2,
+        platform: "AndroidFilter",
         iscorrection: 1,
-        privilege_filter: 0,
-        area_code: 1,
+        hifiquality: 0,
+        PrivilegeFilter: 0,
       },
     })
   ).data;
@@ -865,7 +927,7 @@ async function searchMusic(query, page) {
     console.error('Failed to get quality info for KuGou search:', error);
   }
 
-  const songs = expandedList.map(song => formatExpandedMusicItem(song, qualityInfoMap));
+  const songs = await kgFillMissingImages(expandedList.map(song => formatExpandedMusicItem(song, qualityInfoMap)));
 
   return {
     isEnd: page * pageSize >= res.data.total,
@@ -873,50 +935,45 @@ async function searchMusic(query, page) {
   };
 }
 
-async function searchAlbum(query, page) {
-  const res = (
-    await axios_1.default.get("http://msearch.kugou.com/api/v3/search/album", {
-      headers,
-      params: {
-        version: 9108,
-        iscorrection: 1,
-        highlight: "em",
-        plat: 0,
-        keyword: query,
-        pagesize: 20,
-        page,
-        sver: 2,
-        with_res_tag: 0,
-      },
-    })
-  ).data;
-  const albums = res.data.info.map((_) => {
-    var _a, _b;
-    return {
-      id: _.albumid,
-      artwork:
-        (_a = _.imgurl) === null || _a === void 0
-          ? void 0
-          : _a.replace("{size}", "400"),
-      artist: _.singername,
-      title: (0, cheerio_1.load)(_.albumname).text(),
-      description: _.intro,
-      date:
-        (_b = _.publishtime) === null || _b === void 0
-          ? void 0
-          : _b.slice(0, 10),
-    };
+// Anonymous mobile search; signatures cover raw values before URL encoding.
+async function kgComplexSearch(type, query, page) {
+  const params = {
+    appid: 1005, clienttime: Math.floor(Date.now() / 1000), clientver: 20669,
+    current_mixsongid: 0, dfid: '-', iscorrection: 1, keyword: query,
+    mid: '-', page, pagesize: pageSize, platform: 'AndroidFilter', requestid: '-',
+    search_source: '手动输入', tag: 'em', token: '', userid: 0, uuid: '-',
+    ...(type === 'album' ? { category: 1, searchsong: 0, sorttype: 0 } : {}),
+  };
+  params.signature = signatureParams(params);
+  const { data } = await axios_1.default.get(`https://complexsearch.kugou.com/v1/search/${type}`, {
+    headers, params,
   });
+  if (data?.status !== 1 || !Array.isArray(data.data?.lists)) {
+    throw new Error('[酷狗] 搜索失败，请稍后重试');
+  }
+  return data.data;
+}
+
+async function searchAlbum(query, page) {
+  const data = await kgComplexSearch('album', query, page);
   return {
-    isEnd: page * 20 >= res.data.total,
-    data: albums,
+    isEnd: page * pageSize >= data.total,
+    data: data.lists.map(item => ({
+      id: item.albumid,
+      artwork: kgImage(item.img),
+      artist: (0, cheerio_1.load)(item.singer || '').text(),
+      title: (0, cheerio_1.load)(item.albumname || '').text(),
+      description: item.intro,
+      date: item.publish_time?.slice(0, 10),
+      worksNum: item.songcount,
+    })),
   };
 }
 
 async function searchMusicSheet(query, page) {
   const res = (
     await axios_1.default.get(
-      "http://mobilecdn.kugou.com/api/v3/search/special",
+      "https://msearchretry.kugou.com/api/v3/search/special",
       {
         headers,
         params: {
@@ -924,7 +981,10 @@ async function searchMusicSheet(query, page) {
           keyword: query,
           page,
           pagesize: pageSize,
-          showtype: 1,
+          showtype: 10,
+          filter: 0,
+          version: 7910,
+          sver: 2,
         },
       }
     )
@@ -965,79 +1025,18 @@ async function searchLyric(query, page) {
 
 
 async function searchArtist(query, page) {
-  try {
-    const res = (
-      await axios_1.default.get("http://mobilecdn.kugou.com/api/v3/search/singer", {
-        headers,
-        params: {
-          version: 9108,
-          keyword: query,
-          page,
-          pagesize: pageSize,
-          singingtype: -100,
-          accuracy: 1,
-          istag: 1,
-          area_code: 1,
-        },
-      })
-    ).data;
-
-    if (!res || res.status !== 1 || !res.data) {
-      console.error('[酷狗] 歌手搜索失败:', res);
-      return {
-        isEnd: true,
-        data: [],
-      };
-    }
-
-    const artistInfoPromises = res.data.map((_) =>
-      axios_1.default
-        .get("http://mobilecdn.kugou.com/api/v3/singer/info", {
-          headers,
-          params: {
-            version: 9108,
-            singerid: _.singerid,
-            area_code: 1,
-          },
-          timeout: 5000,
-        })
-        .then((infoRes) => ({
-          songCount: infoRes.data?.data?.songcount,
-          albumCount: infoRes.data?.data?.albumcount,
-          name: _.singername,
-          id: _.singerid,
-          avatar: kgImage(infoRes.data?.data?.imgurl, infoRes.data?.data?.sizable_avatar, _.imgurl, _.sizable_avatar),
-          description:
-            infoRes.data && infoRes.data.data && infoRes.data.data.profile
-              ? infoRes.data.data.profile
-              : undefined,
-          worksNum:
-            infoRes.data && infoRes.data.data && infoRes.data.data.songcount
-              ? infoRes.data.data.songcount
-              : 0,
-        }))
-        .catch(() => ({
-          name: _.singername,
-          id: _.singerid,
-          avatar: kgImage(_.imgurl, _.sizable_avatar),
-          description: undefined,
-          worksNum: 0,
-        }))
-    );
-
-    const artists = await Promise.all(artistInfoPromises);
-
-    return {
-      isEnd: res.data.length < pageSize,
-      data: artists,
-    };
-  } catch (error) {
-    console.error('[酷狗] 歌手搜索异常:', error.message);
-    return {
-      isEnd: true,
-      data: [],
-    };
-  }
+  const data = await kgComplexSearch('author', query, page);
+  return {
+    isEnd: page * pageSize >= data.total,
+    data: data.lists.map(item => ({
+      id: item.AuthorId,
+      name: (0, cheerio_1.load)(item.AuthorName || '').text(),
+      avatar: kgImage(item.Avatar),
+      songCount: item.AudioCount,
+      albumCount: item.AlbumCount,
+      worksNum: item.AudioCount,
+    })),
+  };
 }
 
 async function getMediaSource(musicItem, quality) {
@@ -1640,7 +1639,7 @@ async function getArtistInfo(artistItem) {
     }
     const d = res.data;
     const avatar = kgImage(d.imgurl, d.sizable_avatar, artistItem.avatar);
-    return {
+    return kgFillArtistImage({
       id: String(artistItem.id),
       name: d.singername || artistItem.name || "",
       avatar: avatar || "",
@@ -1649,7 +1648,7 @@ async function getArtistInfo(artistItem) {
       songCount: d.songcount ?? d.song_count,
       albumCount: d.albumcount ?? d.album_count,
       platform: "酷狗音乐",
-    };
+    });
   } catch (e) {
     console.error("[酷狗] 获取歌手详情失败:", e?.message || e);
     return null;
@@ -2442,7 +2441,7 @@ module.exports = {
   userVariables: [{key:"kg_user_id",name:"用户 ID",hint:"在 LyraMesh /connect 选择酷狗登录并复制连接码，用于个人每日推荐。"}],
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.3.4",
+  version: "1.3.6",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
