@@ -9,6 +9,34 @@ function kgVariables() {
   return typeof env !== "undefined" && typeof env.getUserVariables === "function" ? env.getUserVariables() || {} : {};
 }
 
+
+// Shared cover and artist identity normalization.
+function kgImage(...values) {
+    for (const value of values) {
+        if (typeof value !== 'string' || !/^https?:\/\//i.test(value.trim())) continue;
+        return value.trim().replace(/^http:\/\//i, 'https://').replace(/\{size\}/g, '400');
+    }
+    return '';
+}
+function kgSingerList(item) {
+    const structured = Array.isArray(item.singers) && item.singers.length ? item.singers : item.authors;
+    if (Array.isArray(structured) && structured.length) {
+        return structured.map(s => ({
+            id: String(s.singer_id ?? s.author_id ?? s.id ?? ''),
+            name: s.singer_name || s.author_name || s.name || '',
+            avatar: kgImage(s.singer_img, s.avatar, s.img),
+        })).filter(s => /^[1-9]\d*$/.test(s.id) && s.name);
+    }
+    const ids = String(item.singer_id || '').split(',').map(s => s.trim());
+    const names = String(item.singer_name || '').split(',').map(s => s.trim());
+    // Do not assign an arbitrary name to an ID when a joined field is ambiguous.
+    if (ids.length !== names.length) return [];
+    return ids.map((id, i) => ({ id, name: names[i], avatar: ids.length === 1 ? kgImage(item.singer_img) : '' }))
+        .filter(s => /^[1-9]\d*$/.test(s.id) && s.name);
+}
+
+
+
 function dailyCover(value) {
     return typeof value === 'string' && /^https?:\/\//i.test(value)
         ? value.replace('{size}', '400') : '';
@@ -26,6 +54,7 @@ function formatDailyMusicItem(item) {
     return {
         id: String(item.hash || item.hash_128 || item.FileHash || ''),
         title: item.songname || item.official_songname || item.filename || '',
+        singerList: kgSingerList(item),
         artist: item.singername || item.author_name || '', album: item.album_name || item.remark || '',
         album_id: item.album_id || 0, album_audio_id: item.album_audio_id || item.audio_id || 0,
         duration: normalizeDurationSeconds(item),
@@ -905,7 +934,8 @@ async function searchMusicSheet(query, page) {
     createAt: item.publishtime,
     description: item.intro,
     artist: item.nickname,
-    coverImg: item.imgurl,
+    coverImg: kgImage(item.imgurl),
+    artwork: kgImage(item.imgurl),
     gid: item.gid,
     playCount: item.playcount,
     id: item.specialid,
@@ -931,6 +961,8 @@ async function searchLyric(query, page) {
     })),
   };
 }
+
+
 
 async function searchArtist(query, page) {
   try {
@@ -974,10 +1006,7 @@ async function searchArtist(query, page) {
           albumCount: infoRes.data?.data?.albumcount,
           name: _.singername,
           id: _.singerid,
-          avatar:
-            infoRes.data && infoRes.data.data && infoRes.data.data.imgurl
-              ? infoRes.data.data.imgurl.replace("{size}", "400")
-              : undefined,
+          avatar: kgImage(infoRes.data?.data?.imgurl, infoRes.data?.data?.sizable_avatar, _.imgurl, _.sizable_avatar),
           description:
             infoRes.data && infoRes.data.data && infoRes.data.data.profile
               ? infoRes.data.data.profile
@@ -990,7 +1019,7 @@ async function searchArtist(query, page) {
         .catch(() => ({
           name: _.singername,
           id: _.singerid,
-          avatar: undefined,
+          avatar: kgImage(_.imgurl, _.sizable_avatar),
           description: undefined,
           worksNum: 0,
         }))
@@ -1129,6 +1158,7 @@ async function getMvSource(musicItem, videoQuality = "1080p") {
 }
 
 async function getMusicInfo(musicBase) {
+  if (musicBase.kg_daily) return { ...musicBase, platform: "酷狗音乐" };
   if (musicBase.artwork && musicBase.qualities && Object.keys(musicBase.qualities).length > 0) {
     return {
       id: musicBase.id,
@@ -1587,6 +1617,43 @@ function playlistSheetItem(sheet, ...totals) {
     }
   }
   return item;
+}
+
+async function getArtistInfo(artistItem) {
+  if (!artistItem?.id) {
+    return null;
+  }
+  try {
+    const res = (
+      await axios_1.default.get("http://mobilecdn.kugou.com/api/v3/singer/info", {
+        headers,
+        params: {
+          version: 9108,
+          singerid: artistItem.id,
+          area_code: 1,
+        },
+        timeout: 8000,
+      })
+    ).data;
+    if (!res || res.status !== 1 || !res.data) {
+      return null;
+    }
+    const d = res.data;
+    const avatar = kgImage(d.imgurl, d.sizable_avatar, artistItem.avatar);
+    return {
+      id: String(artistItem.id),
+      name: d.singername || artistItem.name || "",
+      avatar: avatar || "",
+      description: d.profile || d.intro || "",
+      worksNum: d.songcount ?? d.song_count,
+      songCount: d.songcount ?? d.song_count,
+      albumCount: d.albumcount ?? d.album_count,
+      platform: "酷狗音乐",
+    };
+  } catch (e) {
+    console.error("[酷狗] 获取歌手详情失败:", e?.message || e);
+    return null;
+  }
 }
 
 async function getMusicSheetInfo(sheet, page) {
@@ -2350,48 +2417,6 @@ function getMusicDetailPageUrl(musicItem) {
   return `https://www.kugou.com/song/#hash=${hash}&album_id=${albumId}`;
 }
 
-/** 补全作者头像/简介（歌曲 Singers 常无 img） */
-async function getArtistInfo(artistItem) {
-  if (!artistItem?.id) {
-    return null;
-  }
-  try {
-    const res = (
-      await axios_1.default.get("http://mobilecdn.kugou.com/api/v3/singer/info", {
-        headers,
-        params: {
-          version: 9108,
-          singerid: artistItem.id,
-          area_code: 1,
-        },
-        timeout: 8000,
-      })
-    ).data;
-    if (!res || res.status !== 1 || !res.data) {
-      return null;
-    }
-    const d = res.data;
-    const avatar = d.imgurl
-      ? String(d.imgurl).replace("{size}", "400")
-      : d.sizable_avatar
-        ? String(d.sizable_avatar).replace("{size}", "400")
-        : "";
-    return {
-      id: String(artistItem.id),
-      name: d.singername || artistItem.name || "",
-      avatar: avatar || "",
-      description: d.profile || d.intro || "",
-      worksNum: d.songcount ?? d.song_count,
-      songCount: d.songcount ?? d.song_count,
-      albumCount: d.albumcount ?? d.album_count,
-      platform: "酷狗音乐",
-    };
-  } catch (e) {
-    console.error("[酷狗] 获取歌手详情失败:", e?.message || e);
-    return null;
-  }
-}
-
 async function getHotSearch() {
   const response = await axios_1.default.get("https://gateway.kugou.com/api/v3/search/hot_tab", {
     params: { signature: "ee44edb9d7155821412d220bcaf509dd", appid: 1005, clientver: 10026, plat: 0 },
@@ -2417,7 +2442,7 @@ module.exports = {
   userVariables: [{key:"kg_user_id",name:"用户 ID",hint:"在 LyraMesh /connect 选择酷狗登录并复制连接码，用于个人每日推荐。"}],
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.3.3",
+  version: "1.3.4",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

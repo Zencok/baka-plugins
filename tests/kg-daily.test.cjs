@@ -11,7 +11,7 @@ function fixture({metadata = true, failure = false, songs, native = false, misma
   const sourceCalls = [];
   const daily = {code:0, data:{date, refresh_at:Date.now()+60000,
     ...(metadata ? {cover_img_url:'https://imge.kugou.com/official/{size}.jpg', sub_title:'Official daily introduction'} : {}),
-    songs:songs ?? (native ? [{song_id:123,song_name:'First',singer_name:'Singer',album_img:'https://imge.kugou.com/song/{size}.jpg',duration:180000}, {song_id:456,song_name:'Second'}] : [{hash:first,songname:'First',sizable_cover:'https://imge.kugou.com/song/{size}.jpg',
+    songs:songs ?? (native ? [{song_id:123,song_name:'First',singer_id:'3520',singer_name:'Singer',album_img:'https://imge.kugou.com/song/{size}.jpg',duration:180000}, {song_id:456,song_name:'Second'}] : [{hash:first,songname:'First',sizable_cover:'https://imge.kugou.com/song/{size}.jpg',
       hash_flac:flac,filesize_flac:12345678,time_length:180000}, {hash:second,songname:'Second'}])}};
   const axios = async options => {
     calls.push(options);
@@ -125,4 +125,13 @@ test('unavailable or mismatched native Hash mappings never publish a partial pla
     assert.ok(!result.musicList);
     assert.equal(sourceCalls.length,0);
   }
+});
+
+test('native daily keeps singer navigation while converting playback to Hash',async()=>{
+  const {plugin}=fixture({native:true});
+  const result=await plugin.getDailyRecommendations();
+  assert.equal(result.state,'ready');
+  assert.equal(result.musicList[0].id,first);
+  assert.equal(result.musicList[0].singerList[0].id,'3520');
+  assert.equal((await plugin.getMusicInfo(result.musicList[0])).singerList[0].id,'3520');
 });
