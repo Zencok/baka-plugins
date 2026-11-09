@@ -1933,10 +1933,12 @@ async function readDailyMusicSheet(url, metadata = {}) {
   }).slice(0, 30).map(formatDailyMusicItem);
   if (!musicList.length) throw dailyFailure("updating");
   const date = metadata.date || new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-  const artwork = dailyCover(group.baseImg) || musicList.find(item => item.artwork)?.artwork || "";
+  // baseImg is the native page's decorative background, not playlist artwork.
+  const artwork = musicList.find(item => item.artwork)?.artwork || "";
+  const description = `酷我音乐为你推荐的 ${musicList.length} 首歌曲，每日更新。`;
   return { isEnd: true, date, refreshAt: metadata.refresh_at,
     sheetItem: { id: "kw-daily-" + date, title: "每日三十首", artist: "酷我音乐",
-      artwork, coverImg: artwork, worksNum: musicList.length, musicList }, musicList };
+      artwork, coverImg: artwork, description, worksNum: musicList.length, musicList }, musicList };
 }
 async function loadDailyMusicSheet() {
   const key = String(kwVariables().kw_user_id || "").trim();
@@ -1968,7 +1970,7 @@ module.exports = {
   getHotSearch,
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.2.0",
+  version: "1.2.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",

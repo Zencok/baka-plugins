@@ -55,7 +55,9 @@ test('daily recommendation resolves the direct URL and maps native fields withou
   assert.equal(result.connectUrl, site + '/connect?platform=kw');
   assert.equal(result.sheetItem.id, 'kw-daily-' + date);
   assert.equal(result.sheetItem.worksNum, 2);
-  assert.equal(result.sheetItem.artwork, 'https://img4.kuwo.cn/daily.jpg');
+  assert.equal(result.sheetItem.artwork, 'https://img4.kuwo.cn/one.jpg');
+  assert.equal(result.sheetItem.coverImg, result.sheetItem.artwork);
+  assert.equal(result.sheetItem.description, '酷我音乐为你推荐的 2 首歌曲，每日更新。');
   assert.equal(result.musicList[0].title, 'One & Two');
   assert.equal(result.musicList[0].album, 'Album & More');
   assert.equal(result.musicList[0].albumId, 12);
@@ -85,6 +87,11 @@ test('playlist detail, alias import, direct URL import and pagination share the 
   assert.deepEqual(JSON.parse(JSON.stringify(alias.musicList)), JSON.parse(JSON.stringify(detail.musicList)));
   assert.deepEqual(JSON.parse(JSON.stringify(imported.musicList)), JSON.parse(JSON.stringify(detail.musicList)));
   assert.equal(imported.id, 'kw-daily-' + date);
+  for (const sheet of [detail.sheetItem, alias, imported]) {
+    assert.equal(sheet.artwork, 'https://img4.kuwo.cn/one.jpg');
+    assert.equal(sheet.coverImg, sheet.artwork);
+    assert.equal(sheet.description, '酷我音乐为你推荐的 2 首歌曲，每日更新。');
+  }
   assert.equal(calls.length, 5);
   assert.equal((await plugin.getMusicSheetInfo(detail.sheetItem, 2)).musicList.length, 0);
   assert.equal(calls.length, 5);
@@ -132,6 +139,18 @@ test('native recommendation lists preserve order, remove duplicate IDs and cap a
   const result = await plugin.getDailyRecommendations();
   assert.equal(result.musicList.length, 30);
   assert.deepEqual(Array.from(result.musicList, item => item.id), Array.from({ length: 30 }, (_, i) => String(i + 1)));
+});
+
+test('daily artwork skips missing song covers and never uses the decorative page background', async () => {
+  const payload = native();
+  payload.child[0].child[0].img = '';
+  payload.child[0].child[1].musicdata.img = 'http://img4.kuwo.cn/second.jpg';
+  const result = await load({ payload }).plugin.getDailyRecommendations();
+  assert.equal(result.sheetItem.artwork, 'https://img4.kuwo.cn/second.jpg');
+  payload.child[0].child[1].musicdata.img = '';
+  const missing = await load({ payload }).plugin.getDailyRecommendations();
+  assert.equal(missing.sheetItem.artwork, '');
+  assert.equal(missing.sheetItem.description, '酷我音乐为你推荐的 2 首歌曲，每日更新。');
 });
 
 if (source.includes('// {{REQUEST_HANDLER}}')) test('direct URL playlist items remain playable through the injected source handler', async () => {
