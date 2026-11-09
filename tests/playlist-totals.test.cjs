@@ -47,9 +47,11 @@ for (const file of files) optional(file, 'valid totals, zero, unknown and standa
 });
 
 for (const file of kwFiles) optional(file, 'first and later pages retain source total', async () => {
+  const names = ['getMusicSheetInfo'];
+  if (/function isDailySheet\(/.test(fs.readFileSync(file, 'utf8'))) names.unshift('isDailySheet');
   for (const total of [603, 0, undefined]) {
     const song = { id: 1, name: 'song', artist: 'artist', albumpic: 'cover' };
-    const f = load(file, ['getMusicSheetInfo'], {
+    const f = load(file, names, {
       pageSize: 20,
       enrichKuwoMusicItems: async items => items, formatKuwoPlaylistItem: x => x,
       getMusicSheetResponseById: async () => ({ total, musiclist: total === 0 ? [] : [song] }),

@@ -1416,6 +1416,14 @@ async function getMusicSheetResponseById(id, page, pagesize = 50) {
 }
 
 async function importMusicSheet(urlLike) {
+  if (isDailyUrl(urlLike)) {
+    const result = await readDailyMusicSheet(urlLike);
+    return { ...result.sheetItem, musicList: result.musicList };
+  }
+  if (isDailySheet(urlLike)) {
+    const result = await getMusicSheetInfo({ id: "kw-daily" }, 1);
+    return { ...result.sheetItem, musicList: result.musicList };
+  }
   var _a, _b, _c, _d, _e;
   let id;
   let fullUrl = null;
@@ -1609,6 +1617,10 @@ function playlistSheetItem(sheet, ...totals) {
 }
 
 function getMusicSheetInfo(sheet, page) {
+  if (isDailySheet(sheet?.id)) {
+    if (page > 1) return Promise.resolve({ isEnd: true, musicList: [] });
+    return loadDailyMusicSheet();
+  }
   return getMusicSheetResponseById(sheet.id, page, pageSize).then(res => {
     return enrichKuwoMusicItems(res.musiclist.map(formatKuwoPlaylistItem)).then(musicList => {
       return {
@@ -1848,18 +1860,124 @@ async function getHotSearch() {
     .map(word => word.trim()))].slice(0, 30);
 }
 
+function getPluginSiteUrl(path, fallback) {
+  const source = String(module.exports.srcUrl || "");
+  const match = source.match(/^(https?:\/\/(?:\[[^\]]+\]|[^/?#:@]+)(?::\d+)?)\/api\/plugins\/(?:source|xheaders)\//i);
+  return match ? match[1] + path : fallback;
+}
+function kwVariables() {
+  return typeof env !== "undefined" && typeof env.getUserVariables === "function" ? env.getUserVariables() || {} : {};
+}
+
+function dailyErrorState(code) {
+  return [1001, 1004, 1005].includes(Number(code)) ? "login_required" : "error";
+}
+function isDailySheet(value) {
+  return /^kw-daily(?:-\d{4}-\d{2}-\d{2})?$/.test(String(value || "").trim());
+}
+function isDailyUrl(value) {
+  if (typeof value !== "string") return false;
+  const match = value.match(/^https:\/\/wapi\.kuwo\.cn\/openapi\/v1\/recommend\/daily\/main\?([^\s#]{1,4096})$/);
+  if (!match) return false;
+  try {
+    const pairs = match[1].split("&").map(pair => {
+      const split = pair.indexOf("=");
+      return [decodeURIComponent(pair.slice(0, split)), decodeURIComponent(pair.slice(split + 1))];
+    });
+    return ["loginUid", "loginSid"].every(key => {
+      const values = pairs.filter(pair => pair[0] === key);
+      return values.length === 1 && /^\d{1,128}$/.test(values[0][1]) && /[1-9]/.test(values[0][1]);
+    });
+  } catch { return false; }
+}
+function dailyFailure(state) {
+  const error = new Error(["login_required", "unconfigured"].includes(state) ? "请先连接酷我账号" : "每日推荐暂不可用，请稍后重试");
+  error.dailyState = state;
+  return error;
+}
+function dailyCover(value) {
+  return typeof value === "string" && /^https?:\/\/(?:[a-z0-9-]+\.)*kuwo\.cn\//i.test(value)
+    ? value.replace(/^http:/i, "https:").split(/[?#]/)[0] : "";
+}
+function formatDailyMusicItem(item) {
+  const data = item.data && typeof item.data === "object" ? item.data : item.musicdata || {};
+  const mvId = normalizeKuwoMvId(data.vid || data.mvpayinfo?.vid);
+  const id = String(data.rid || "");
+  return withKuwoArtists({
+    id, title: he.decode(String(data.name || item.title || "")),
+    album: he.decode(String(data.album || "")), albumId: data.albumid,
+    duration: getDurationSeconds({ duration: item.duration ?? data.duration }),
+    artwork: dailyCover(item.img || data.img || item.musicdata?.img),
+    formats: data.format || data.formats, nMInfo: data.n_minfo,
+    qualities: ensureQualities(parseKuWoQualityInfo(data.n_minfo || data.minfo)),
+    mv: mvId, mvId, mvSongId: id,
+  }, data.artist, data.artistid, "");
+}
+// The direct URL is used only for this request; playlist objects never retain it.
+async function readDailyMusicSheet(url, metadata = {}) {
+  if (!isDailyUrl(url)) throw dailyFailure("error");
+  let payload;
+  try {
+    payload = (await axios_1.default.get(url, { timeout: 20000, maxRedirects: 0,
+      headers: { "User-Agent": "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Mobile Safari/537.36/ kuwopage" },
+    })).data;
+  } catch { throw dailyFailure("error"); }
+  const group = Array.isArray(payload?.child) ? payload.child.find(item => Array.isArray(item?.child)) : null;
+  if (!group) throw dailyFailure("error");
+  const seen = new Set();
+  const musicList = group.child.filter(item => {
+    const data = item?.data && typeof item.data === "object" ? item.data : item?.musicdata;
+    const id = String(data?.rid || "");
+    if (!/^[1-9]\d{0,23}$/.test(id) || !(data?.name || item?.title) || seen.has(id)) return false;
+    seen.add(id); return true;
+  }).slice(0, 30).map(formatDailyMusicItem);
+  if (!musicList.length) throw dailyFailure("updating");
+  const date = metadata.date || new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const artwork = dailyCover(group.baseImg) || musicList.find(item => item.artwork)?.artwork || "";
+  return { isEnd: true, date, refreshAt: metadata.refresh_at,
+    sheetItem: { id: "kw-daily-" + date, title: "每日三十首", artist: "酷我音乐",
+      artwork, coverImg: artwork, worksNum: musicList.length, musicList }, musicList };
+}
+async function loadDailyMusicSheet() {
+  const key = String(kwVariables().kw_user_id || "").trim();
+  if (!key) throw dailyFailure("unconfigured");
+  if (!/^kw_[a-f0-9]{48}$/.test(key)) throw dailyFailure("login_required");
+  try {
+    const response = await axios_1.default.get(getPluginSiteUrl("/api/kw/recommendations/daily", "https://mc.vsaa.cn/api/kw/recommendations/daily"), {
+      headers: { "X-User-Id": key }, timeout: 60000,
+    });
+    const body = response.data;
+    if (body?.code !== 0) throw dailyFailure(dailyErrorState(body?.code));
+    const data = body.data;
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    if (data?.date !== today || !Number.isFinite(data.refresh_at) || data.refresh_at <= Date.now()) throw dailyFailure("updating");
+    return await readDailyMusicSheet(data.url, data);
+  } catch (error) { throw error?.dailyState ? error : dailyFailure(dailyErrorState(error?.response?.data?.code)); }
+}
+async function getDailyRecommendations() {
+  const base = { title: "每日三十首", accountName: "酷我音乐",
+    connectUrl: getPluginSiteUrl("/connect", "https://mc.vsaa.cn/connect") + "?platform=kw" };
+  try {
+    const result = await getMusicSheetInfo({ id: "kw-daily" }, 1);
+    return { ...base, state: "ready", date: result.date, refreshAt: result.refreshAt, sheetItem: result.sheetItem, musicList: result.musicList };
+  } catch (error) { return { ...base, state: error?.dailyState || "error" }; }
+}
+
 module.exports = {
+  getDailyRecommendations,
   getHotSearch,
   platform: "酷我音乐",
   author: "Toskysun",
-  version: "1.1.8",
+  version: "1.2.0",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
+  userVariables: [{ key: "kw_user_id", name: "酷我连接码", hint: "连接酷我账号后，将 kw_ 开头的连接码填入此处：https://mc.vsaa.cn/connect?platform=kw" }],
   supportedQualities: ["128k", "320k", "flac"],
   supportedVideoQualities: ["240p", "360p", "480p", "720p", "1080p"],
   hints: {
     importMusicSheet: [
+      "已连接酷我账号后，输入 kw-daily 可导入今天的每日推荐",
       "酷我APP：自建歌单-分享-复制试听链接，直接粘贴即可",
       "H5：复制URL并粘贴，或者直接输入纯数字歌单ID即可",
       "导入时间和歌单大小有关，请耐心等待",
