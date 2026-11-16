@@ -283,4 +283,4 @@ npm start
 
 歌手详情头像为空时，图片接口按 author_id 补充并校验歌手 ID；歌曲列表仅缺封面触发，继续使用 Hash。
 
-Apple Music 使用通用 `am.js` 模板，音源请求与鉴权由分发端注入；当前只在 ikun 订阅中启用。独立链接为 `https://music.cwo.cc.cd/plugins/am.js?source=ikun&key=YOUR_KEY`。支持 `320k`、`flac`、`hires`（后两档为 ALAC，无需新增 FFmpeg）。当前已完成插件适配，客户端 Temari 流式播放仍待实现；不代表已经可以完整播放。详见 [Apple Music 接入协议与验证状态](docs/APPLE_MUSIC.md)。
+Apple Music 使用通用 `am.js` 模板，音源请求与鉴权由分发端注入；当前只在 ikun 订阅中启用。独立链接为 `https://music.cwo.cc.cd/plugins/am.js?source=ikun&key=YOUR_KEY`。支持 `320k`、`flac`、`hires`（后两档为 ALAC，无需新增 FFmpeg）。当前已完成插件适配及客户端原生流式播放实现、合成主机测试；真实音源和设备播放仍待验证。详见 [Apple Music 接入协议与验证状态](docs/APPLE_MUSIC.md)。
