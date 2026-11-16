@@ -116,6 +116,22 @@ function generateRequestHandler(sourceConfig, pluginName, apiUrl, effectiveKey, 
   code += `const API_KEY = ${JSON.stringify(effectiveKey)};\n`;
   code += `const UPDATE_URL = ${JSON.stringify(updateUrl)};\n`;
 
+  // Apple Music's provider adapter is injected just like URL resolution.
+  // Keep provider authentication and endpoint conventions out of the template.
+  if (pluginName === 'am.js' && apiType === 'ikun') {
+    code += `
+async function requestAppleMusicApi(path, body) {
+  if (!API_KEY) throw new Error("Apple Music: missing source key");
+  return (await (axios_1.default || axios_1).post(API_URL.replace(/\\/$/, "") + path, body, {
+    headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" }, timeout: 12000
+  })).data;
+}
+async function requestMusicUrl(source, songId, quality) {
+  return requestAppleMusicApi("/music/url", { source, musicId: String(songId), quality });
+}`;
+    return code;
+  }
+
   switch (apiType) {
     // ── ikun: POST ${url}/music/url, X-API-Key, {code:200} ──
     case 'ikun':

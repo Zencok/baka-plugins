@@ -1464,7 +1464,7 @@
         <section class="hero fade-in">
             <p class="hero-eyebrow">Plugin Subscription</p>
             <h1 class="hero-title">BakaMusic</h1>
-            <p class="hero-subtitle">7 大音乐平台插件订阅服务，一键导入，畅享音乐。</p>
+            <p class="hero-subtitle">8 大音乐平台插件订阅服务，一键导入，畅享音乐。</p>
             <div class="status-badge">
                 <span class="status-dot" aria-hidden="true"></span>
                 <span>Service Online</span>
@@ -1763,6 +1763,7 @@
 
         // Plugin Configuration
         const PLUGINS = [
+            { name: 'Apple Music', file: 'am.js', version: '0.1.0', emoji: '🎵', requiresKey: true },
             { name: '网易云音乐', file: 'wy.js', version: '1.1.7', emoji: '☁️', requiresKey: true },
             { name: 'QQ音乐', file: 'qq.js', version: '1.3.2', emoji: '🐧', requiresKey: true },
             { name: '酷狗音乐', file: 'kg.js', version: '1.3.6', emoji: '🐕', requiresKey: true },
@@ -1775,7 +1776,7 @@
         // 音源 → 支持的音源插件 (免密插件始终包含)
         const SOURCE_PLUGINS = {
             'xinghai':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
-            'ikun':       ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
+            'ikun':       ['wy.js', 'qq.js', 'kg.js', 'kw.js', 'am.js'],
             'oi':         ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'linglan':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
             'cihedai':    ['wy.js', 'qq.js', 'kg.js', 'kw.js'],
@@ -1786,7 +1787,7 @@
         const SOURCE_QUALITIES = {
             'xinghai':    { 'wy.js': ['128k','320k','flac','hires','atmos','master'], 'qq.js': ['128k','320k','flac','atmos','master'], 'kg.js': ['128k','320k','flac','hires','atmos','master'], 'kw.js': ['flac'] },
             // 与 source-config ikun 一致：wy/qq/kg 用插件默认，kw 覆盖高阶环绕
-            'ikun':       { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
+            'ikun':       { 'am.js': ['320k','flac','hires'], 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kg.js': null, 'kw.js': ['128k','320k','flac','atmos','atmos_plus','master'] },
             'oi':         { 'wy.js': ['128k','320k','flac','hires','atmos','atmos_plus','master'], 'qq.js': ['128k','320k','flac','hires','atmos','atmos_plus','master'], 'kg.js': ['128k','320k','flac','hires','atmos','master'], 'kw.js': ['128k','320k','flac','hires','atmos','atmos_plus','master'] },
             'linglan':    { 'wy.js': null, 'qq.js': ['128k','320k','flac','flac24bit','hires','atmos','master'], 'kg.js': null, 'kw.js': null },
             'cihedai':    { 'wy.js': ['128k','320k','flac','hires'], 'qq.js': ['96k','192k','flac'], 'kg.js': ['320k','flac','hires'], 'kw.js': ['flac'] },
@@ -1795,6 +1796,7 @@
 
         // 插件默认音质 (音源配置为 null 时使用；与 plugins/*.js supportedQualities 对齐)
         const DEFAULT_QUALITIES = {
+            'am.js':  ['320k', 'flac', 'hires'],
             'wy.js':  ['128k', '320k', 'flac', 'hires', 'atmos', 'master'],
             'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus', 'master'],
             'kg.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
@@ -1820,6 +1822,7 @@
 
         // 插件显示信息 (用于音质表格)
         const PLUGIN_DISPLAY = {
+            'am.js':  { emoji: '🎵', name: 'Apple Music' },
             'wy.js':  { emoji: '☁️', name: '网易云' },
             'qq.js':  { emoji: '🐧', name: 'QQ音乐' },
             'kg.js':  { emoji: '🐕', name: '酷狗' },
@@ -1869,7 +1872,7 @@
                     const info = QUALITY_INFO[q] || { label: q, cls: 'q-basic' };
                     const tag = document.createElement('span');
                     tag.className = 'quality-tag ' + info.cls;
-                    tag.textContent = info.label;
+                    tag.textContent = file === 'am.js' && q === 'flac' ? 'ALAC' : info.label;
                     tags.appendChild(tag);
                 });
 

@@ -63,6 +63,7 @@ const SOURCE_CONFIG = {
     apiType: 'ikun',
     // 平台顺序 wy→qq→kg→kw；null = 使用插件默认 supportedQualities
     plugins: {
+      'am.js':  ['320k', 'flac', 'hires'],
       'wy.js':  null,
       'qq.js':  ['128k', '320k', 'flac', 'flac24bit', 'hires', 'atmos', 'master'],
       'kg.js':  null,
