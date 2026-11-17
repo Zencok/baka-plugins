@@ -1119,6 +1119,12 @@ async function getSheetMusicById(id, withSheetInfo = false) {
 }
 
 async function importMusicSheet(urlLike) {
+  if (/^wy-daily(?:-\d{4}-\d{2}-\d{2})?$/.test(String(urlLike || '').trim())) {
+    const daily = await getDailyRecommendations();
+    if (daily.state !== 'ready') throw new Error('每日推荐暂不可用，请检查网易云连接状态');
+    return daily.sheetItem;
+  }
+
   // 改进的正则：支持多种 URL 格式（包括 # 路由）
   // 匹配: y.music.163.com, music.163.com, music.163.com/#/, music.163.com/m/, 纯数字
   const matchResult = urlLike.match(
@@ -1153,6 +1159,13 @@ function playlistSheetItem(sheet, ...totals) {
 }
 
 async function getMusicSheetInfo(sheet, page) {
+  if (/^wy-daily(?:-\d{4}-\d{2}-\d{2})?$/.test(String(sheet?.id || sheet || ''))) {
+    if (Number(page || 1) > 1) return { isEnd: true, sheetItem: sheet, musicList: [] };
+    const daily = await getDailyRecommendations();
+    if (daily.state !== 'ready') throw new Error('每日推荐暂不可用，请检查网易云连接状态');
+    return { isEnd: true, sheetItem: daily.sheetItem, musicList: daily.musicList };
+  }
+
   const id = sheet?.id != null && sheet.id !== "" ? String(sheet.id) : "";
   if (!id) {
     return { isEnd: true, musicList: [] };
@@ -1531,11 +1544,58 @@ async function getHotSearch() {
     .map(word => word.trim()))].slice(0, 30);
 }
 
+function getPluginSiteUrl(path, fallback) {
+  const match = String(module.exports.srcUrl || '').match(/^(https?:\/\/(?:\[[^\]]+\]|[^/?#:@]+)(?::\d+)?)\/api\/plugins\/(?:source|xheaders)\//i);
+  return match ? match[1] + path : fallback;
+}
+function wyVariables() {
+  return typeof env !== 'undefined' && typeof env.getUserVariables === 'function' ? env.getUserVariables() || {} : {};
+}
+
+async function getDailyRecommendations() {
+  const connectUrl = getPluginSiteUrl('/connect', 'https://mc.vsaa.cn/connect') + '?platform=wy';
+  const result = { title: '每日推荐', accountName: '网易云音乐', connectUrl };
+  const token = String(wyVariables().wy_user_id || '').trim();
+  if (!token) return { ...result, state: 'unconfigured' };
+  if (!/^wy_[a-f0-9]{48}$/.test(token)) return { ...result, state: 'login_required' };
+  try {
+    const response = await axios_1.default.get(getPluginSiteUrl('/api/wy/recommendations/daily', 'https://mc.vsaa.cn/api/wy/recommendations/daily'), {
+      headers: { 'X-User-Id': token }, timeout: 60000,
+    });
+    const body = response.data;
+    if (body?.code !== 0) return { ...result, state: [-100, 401, 403, 1001, 1005, 28010].includes(body?.code) ? 'login_required' : 'error' };
+    const data = body.data;
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    if (data?.date !== today || !Array.isArray(data.tracks)) return { ...result, state: 'updating' };
+    if (!Number.isFinite(data.refresh_at) || data.refresh_at <= Date.now()) return { ...result, state: 'updating' };
+    const image = value => typeof value === 'string' && /^(?:https?:)?\/\//.test(value)
+      ? value.replace(/^http:\/\//, 'https://').replace(/^\/\//, 'https://') : '';
+    const songs = data.tracks.filter(t => /^[1-9]\d*$/.test(String(t?.id || ''))).map(t => ({
+      ...t, id: t.id, name: t.title || t.name, ar: t.artists || t.ar || [],
+      al: { ...(t.album || t.al || {}), picUrl: image(t.cover || t.album?.picUrl || t.al?.picUrl) },
+      dt: t.duration_ms ?? t.duration,
+    }));
+    const musicList = songs.map(formatMusicItem);
+    const qualityMap = await getBatchMusicQualityInfo(songs.map(t => t.id), songs);
+    for (const item of musicList) item.qualities = { ...item.qualities, ...qualityMap[item.id] };
+    const artwork = image(data.cover) || musicList.find(t => t.artwork)?.artwork || '';
+    const description = typeof data.description === 'string' && data.description.trim()
+      ? data.description.trim() : '根据你的音乐偏好，每天更新推荐歌曲。';
+    return { ...result, title: data.title || result.title, state: 'ready', date: data.date, refreshAt: data.refresh_at,
+      sheetItem: { id: 'wy-daily-' + data.date, title: data.title || result.title, artist: result.accountName,
+        artwork, coverImg: artwork, description, worksNum: musicList.length, musicList }, musicList };
+  } catch (error) {
+    return { ...result, state: [401, 403].includes(error?.response?.status) ? 'login_required' : 'error' };
+  }
+}
+
 module.exports = {
+  getDailyRecommendations,
+  userVariables: [{ key: "wy_user_id", name: "网易云连接码", hint: "在 https://mc.vsaa.cn/connect?platform=wy 登录后，将 wy_ 开头的连接码填入此处，用于个人每日推荐。" }],
   getHotSearch,
   platform: "网易云音乐",
   author: "Toskysun",
-  version: "1.1.7",
+  version: "1.1.8",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-store",
