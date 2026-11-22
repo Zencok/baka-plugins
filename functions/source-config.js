@@ -133,7 +133,7 @@ const SOURCE_CONFIG = {
 };
 
 // 免密插件: 始终包含，不需要 source/key（mg 内置官方线路）
-const FREE_PLUGINS = ['bilibili.js', 'qishui.js', 'mg.js'];
+const FREE_PLUGINS = ['bilibili.js', 'mg.js'];
 
 const DEFAULT_SOURCE = 'ikun';
 

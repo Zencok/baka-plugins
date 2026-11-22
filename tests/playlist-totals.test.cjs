@@ -7,13 +7,11 @@ const vm = require('node:vm');
 const musicRoot = path.resolve(__dirname, '../..');
 const distributed = name => path.join(__dirname, '../plugins', name);
 const external = name => path.join(musicRoot, 'QQ音乐/Vkey', name);
-const qishuiFiles = [distributed('qishui.js'), external('汽水音乐[K].js'),
-  ...['汽水3.3.0.js', '汽水直连.js'].map(name => path.join(musicRoot, '汽水音乐', name))];
 const jooxFiles = ['joox.js', 'joox[T].js'].map(external);
 const qqFiles = ['qq - l1.js', 'qq - l2.js'].map(external);
 const kwFiles = [distributed('kw.js'), external('kw.js')];
 const files = [...['wy.js', 'qq.js', 'kg.js', 'mg.js', 'bilibili.js'].map(distributed),
-  ...kwFiles, ...qishuiFiles, ...jooxFiles, ...qqFiles];
+  ...kwFiles, ...jooxFiles, ...qqFiles];
 
 // Evaluate the actual exported-method implementation with network/formatting
 // collaborators replaced. No credentials, provider uptime or installed host needed.
@@ -142,21 +140,6 @@ for (const file of jooxFiles) optional(file, 'nested host metadata uses total, n
   }
 });
 
-for (const file of qishuiFiles) optional(file, 'playlist metadata and toplist fallback carry totals', async () => {
-  for (const total of [603, 0, undefined]) {
-    const f = load(file, ['getMusicPlaylistInfo', 'normalizePlaylist'], {
-      QISHUI_TOP_LIST_IDS: new Set(['top']), QISHUI_TOP_LIST_ITEMS: [],
-      getTopListDetail: async () => ({ musicList: [{ id: 'a' }, { id: 'b' }] }),
-      fetchPlaylistDetail: async () => ({ playlistInfo: { count_tracks: total }, media_resources: total === 0 ? [] : [{ id: 'a' }] }),
-      parsePlaylistItem: () => ({ id: 'x', worksNum: 0 }),
-      parsePlaylistMediaResource: x => x, prepareMusicList: x => x,
-    });
-    const result = await f.getMusicPlaylistInfo({ id: 'x' });
-    assert.equal(result.sheetItem.worksNum, total == null ? 1 : total);
-    assert.equal((await f.getMusicPlaylistInfo({ id: 'top' })).sheetItem.worksNum, 2);
-  }
-});
-
 test('Migu primary and signed fallback forward totalCount', async () => {
   for (const branch of ['primary', 'signed']) {
     for (const total of [603, 0, undefined]) {
@@ -248,11 +231,4 @@ test('Migu metadata fills an absent page total and reuses it on subsequent pages
   assert.equal(item.worksNum, 603);
   assert.equal((await f.miguPlaylistSheetItem(item, 'x')).worksNum, 603);
   assert.equal(requests, 1);
-});
-
-for (const file of qishuiFiles) optional(file, 'valid empty playlist survives API/web fallback selection', () => {
-  const f = load(file, ['hasValidPlaylistDetail', 'normalizePlaylist']);
-  assert.equal(f.hasValidPlaylistDetail({ playlistInfo: { entity: { playlist: { count_tracks: 0 } } }, media_resources: [] }), true);
-  assert.equal(f.hasValidPlaylistDetail({ playlistInfo: null, media_resources: [] }), false);
-  assert.equal(f.hasValidPlaylistDetail({ playlistInfo: { count_tracks: 603 }, media_resources: [] }), false);
 });

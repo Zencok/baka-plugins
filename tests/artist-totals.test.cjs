@@ -10,9 +10,7 @@ const external = name => path.join(root, 'QQ音乐/Vkey', name);
 const qqFiles = [distributed('qq.js'), ...['qq - l1.js', 'qq - l2.js'].map(external)];
 const kwFiles = [distributed('kw.js'), external('kw.js')];
 const jooxFiles = ['joox.js', 'joox[T].js'].map(external);
-const qishuiFiles = [distributed('qishui.js'), external('汽水音乐[K].js'),
-  ...['汽水3.3.0.js', '汽水直连.js'].map(name => path.join(root, '汽水音乐', name))];
-const all = [...qqFiles, ...kwFiles, ...jooxFiles, ...qishuiFiles,
+const all = [...qqFiles, ...kwFiles, ...jooxFiles,
   ...['wy.js', 'kg.js', 'mg.js', 'bilibili.js'].map(distributed)];
 
 function load(file, names, mocks = {}) {
@@ -148,25 +146,6 @@ for (const file of jooxFiles) optional(file, 'JOOX totals describe the artist, n
   assert.equal(albums.artistItem.albumCount, 34);
   assert.equal(songs.data.length, 10);
   assert.equal(albums.data.length, 6);
-});
-
-for (const file of qishuiFiles) optional(file, 'Qishui reads artist_info counts and keeps them on both lists', async () => {
-  const f = load(file, ['getArtistWorks', 'fetchArtistAlbumsPage', 'normalizeArtist'], {
-    PAGE_SIZE: 20,
-    qishuiPcGet: async (url, params) => {
-      if (!url.endsWith('/albums') && !url.endsWith('/tracks')) {
-        return { artist_info: { count_tracks: 65, count_albums: 9 } };
-      }
-      if (url.endsWith('/tracks')) return { tracks: [{}], has_more: true };
-      return { albums: Array.from({ length: 9 }, (_, id) => ({ id: String(id + 1) })), has_more: false };
-    }, parseTrackItem: x => x, parseAlbumItem: x => x,
-  });
-  const songs = await f.getArtistWorks({ id: 'x' }, 1, 'music');
-  const albums = await f.getArtistWorks({ id: 'x' }, 1, 'album');
-  assert.equal(songs.artistItem.songCount, 65);
-  assert.equal(songs.artistItem.albumCount, 9);
-  assert.equal(albums.artistItem.albumCount, 9);
-  assert.equal((await f.getArtistWorks(songs.artistItem, 2, 'music')).artistItem.songCount, 65);
 });
 
 test('Migu never labels artist-filtered search totals as exact artist album counts', async () => {

@@ -20,7 +20,6 @@ Flutter 接收作者元数据，分别保留两个总数，切换单曲/专辑�
 | baka-plugins/plugins/kg.js | 1.1.6 | 1.1.7 |
 | baka-plugins/plugins/kw.js | 1.1.6 | 1.1.7 |
 | baka-plugins/plugins/mg.js | 1.3.4 | 1.3.5 |
-| baka-plugins/plugins/qishui.js | 3.3.1 | 3.3.2 |
 | baka-plugins/plugins/qq.js | 1.1.9 | 1.2.0 |
 | baka-plugins/plugins/wy.js | 1.1.5 | 1.1.6 |
 | QQ音乐/Vkey/qq - l1.js | 1.1.7 | 1.1.8 |
@@ -28,9 +27,6 @@ Flutter 接收作者元数据，分别保留两个总数，切换单曲/专辑�
 | QQ音乐/Vkey/joox.js | 2.1.0 | 2.1.1 |
 | QQ音乐/Vkey/joox[T].js | 3.0.3 | 3.0.4 |
 | QQ音乐/Vkey/kw.js | 2.2.1 | 2.2.2 |
-| QQ音乐/Vkey/汽水音乐[K].js | 4.0.2 | 4.0.3 |
-| 汽水音乐/汽水3.3.0.js | 3.3.1 | 3.3.2 |
-| 汽水音乐/汽水直连.js | 5.0.1 | 5.0.2 |
 
 版本按逢 9 进位维护，QQ 分发插件从 1.1.9 升至 1.2.0，没有使用 .10。
 
@@ -52,9 +48,6 @@ Flutter 接收作者元数据，分别保留两个总数，切换单曲/专辑�
 | QQ / 0025NhlN2yWrP4 | 1011 | 43 | `u.y.qq.com/cgi-bin/musicu.fcg` 的 `GetSingerSongList` / `get_singer_album`；首屏各 20 条，分别读取 `totalNum` / `total`。 |
 | 酷狗 / 3520 | 1848 | 49 | `mobilecdn.kugou.com/api/v3/singer/song` / `album`；首屏分别 100 首、20 张，状态均为 1。 |
 | 酷我 / 336 | 1708 | 45 | `search.kuwo.cn/r.s` 的 `artist2music` / `albumlist`；首屏各 20 条，总数是字符串字段 `total`。 |
-| 汽水 / 6816294167841343490 | 65 | 9 | `api.qishui.com/luna/pc/artists/{id}` 在 `artist_info` 中提供 `count_tracks` / `count_albums`；作品首屏返回 50 首且 `has_more=true`。 |
 | JOOX / BLACKPINK | 269 | 34 | `cache.api.joox.com/page/artistDetail` 的 `artistInfo` 及嵌套 `total_count`；实际预览分别 94 首、6 张，明确不能用预览长度代替总数。 |
 | 咪咕 / 112 | 未提供 | 未验证 | 原作品接口返回含格式异常的响应，经插件已有 JSON 修复后业务码 000000，当前页 50 首；未提供总数。没有伪造全量统计。 |
 | B站 | 未做成功在线验证 | 无作者专辑接口 | 通过模拟真实函数返回路径检查上传数转交和专辑空列表行为。 |
-
-需要同时更新 App 与插件后使用新协议。此次只创建本地提交，没有执行 push。外部八个文件仍在原路径更新；QQ 目录不是 Git 仓库，两个汽水独立文件原本未跟踪且含现有会话配置，没有把完整文件新增进版本控制。

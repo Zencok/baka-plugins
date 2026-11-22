@@ -33,7 +33,7 @@ test('xinghai subscriptions need no key and preserve bare free-plugin URLs', asy
     assert.equal(url.searchParams.get('source'), 'xinghai');
     assert.equal(url.searchParams.has('key'), false);
   }
-  for (const file of ['bilibili.js', 'qishui.js', 'mg.js']) {
+  for (const file of ['bilibili.js', 'mg.js']) {
     const url = new URL(plugins.find(p => new URL(p.url).pathname.endsWith('/' + file)).url);
     assert.equal(url.search, '');
   }
