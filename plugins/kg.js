@@ -2281,15 +2281,37 @@ async function getTopLists() {
   return res;
 }
 
-async function getTopListDetail(topListItem) {
-  const res = await axios_1.default.get(
-    `http://mobilecdnbj.kugou.com/api/v3/rank/song?version=9108&ranktype=0&plat=0&pagesize=100&area_code=1&page=1&volid=35050&rankid=${topListItem.id}&with_res_tag=0`,
-    {
-      headers,
+async function getTopListDetail(topListItem, page) {
+  const paged = page != null;
+  if (paged && (!Number.isSafeInteger(page) || page < 1)) throw new Error('榜单页码无效');
+  const firstPage = paged ? page : 1;
+  const songList = [];
+  const seenPages = new Set();
+  let isEnd = false;
+  let total = NaN;
+  for (let offset = 0; offset < (paged ? 1 : 100); offset++) {
+    const upstreamPage = firstPage + offset;
+    const res = await axios_1.default.get(
+      `http://mobilecdnbj.kugou.com/api/v3/rank/song?version=9108&ranktype=0&plat=0&pagesize=100&area_code=1&page=${upstreamPage}&volid=35050&rankid=${encodeURIComponent(topListItem.id)}&with_res_tag=0`,
+      { headers, timeout: 15000 }
+    );
+    const data = res.data?.data;
+    if (res.data?.status !== 1 || !Array.isArray(data?.info)) throw new Error('酷狗榜单歌曲加载失败，请稍后重试');
+    const signature = JSON.stringify(data.info.map(item => [item.hash, item.album_id, item.album_audio_id]));
+    if (data.info.length && seenPages.has(signature)) throw new Error('酷狗榜单分页异常，请稍后重试');
+    seenPages.add(signature);
+    songList.push(...data.info);
+    const reportedTotal = data.total == null || data.total === '' ? NaN : Number(data.total);
+    if (Number.isSafeInteger(reportedTotal) && reportedTotal >= 0) total = reportedTotal;
+    const hasTotal = Number.isSafeInteger(total) && total >= 0;
+    if (hasTotal && data.info.length < Math.min(100, Math.max(0, total - (upstreamPage - 1) * 100))) {
+        throw new Error('酷狗榜单歌曲不完整，请稍后重试');
     }
-  );
-
-  const songList = res.data.data.info;
+    isEnd = data.info.length === 0 || (hasTotal
+      ? upstreamPage * 100 >= total : data.info.length < 100);
+    if (isEnd) break;
+  }
+  if (!paged && !isEnd) throw new Error('酷狗榜单分页异常，请稍后重试');
 
   const hashList = songList.map(item => item.hash).filter(Boolean);
 
@@ -2317,6 +2339,7 @@ async function getTopListDetail(topListItem) {
   });
 
   return Object.assign(Object.assign({}, topListItem), {
+    isEnd,
     musicList: musicList,
   });
 }
@@ -2441,7 +2464,7 @@ module.exports = {
   userVariables: [{key:"kg_user_id",name:"用户 ID",hint:"在 LyraMesh /connect 选择酷狗登录并复制连接码，用于个人每日推荐。"}],
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.3.6",
+  version: "1.3.7",
   author: "Toskysun",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
