@@ -1,0 +1,15 @@
+{
+  "id": "repair-public-v2-failures",
+  "title": "Reproduce and repair failed public V2 plugins against current client",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "plugins",
+  "currentPhase": "completed",
+  "nextAction": "Archived; published patch verified on both domains",
+  "createdAt": "2026-11-28",
+  "branch": "main",
+  "completedAt": "2026-11-28",
+  "commit": "0349cf027064398d197baed7878b9eb2c708c39e",
+  "pushed": true
+}
