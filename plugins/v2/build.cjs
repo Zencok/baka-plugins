@@ -392,7 +392,7 @@ function Rsa(text) {
   },
   discovery: {
     charts: async (request, sdk) => sliceResult(await operations(sdk).charts(), request),
-    playlistTags: async (request, sdk) => sliceResult(await operations(sdk).tags(), request),
+    playlistTags: async (request, sdk) => tagResult(await operations(sdk).tags(), request),
     playlists: async (request, sdk) => pageResult(await operations(sdk).playlists(request.tag, pageNumber(request.cursor)), request),
     hotSearch: async (request, sdk) => sliceResult(await operations(sdk).hotSearch(), request),
     ${currentExports.getDailyRecommendations ? "daily: async (request, sdk) => dailyResult(await operations(sdk).daily(), request)," : ""}

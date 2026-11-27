@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "bilibili.v1",
   id: "cc.baka.bilibili",
   name: "bilibili",
-  version: "1.0.1",
+  version: "1.0.2",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-cache",
@@ -165,6 +165,15 @@ function sliceResult(result, request) {
     items.unshift(...result.pinned.filter((item) => !existing.has(String(item && item.id))));
   }
   return pageResult({ data: items, total: items.length, isEnd: true }, request);
+}
+function tagResult(result, request) {
+  const items = flattenGroups((result && (result.data || result.tags)) || result);
+  const page = pageResult({ data: items, total: items.length, isEnd: true }, request);
+  // Pins have their own order and may not belong to a category. Keep both lists.
+  if (request.cursor == null && result && Array.isArray(result.pinned)) {
+    page.pinned = result.pinned.map((item) => ({ ...item }));
+  }
+  return page;
 }
 function dailyResult(result, request) {
   result = result || {};
@@ -1986,7 +1995,7 @@ const handlers = {
   },
   discovery: {
     charts: async (request, sdk) => sliceResult(await operations(sdk).charts(), request),
-    playlistTags: async (request, sdk) => sliceResult(await operations(sdk).tags(), request),
+    playlistTags: async (request, sdk) => tagResult(await operations(sdk).tags(), request),
     playlists: async (request, sdk) =>
       pageResult(await operations(sdk).playlists(request.tag, pageNumber(request.cursor)), request),
     hotSearch: async (request, sdk) => sliceResult(await operations(sdk).hotSearch(), request),

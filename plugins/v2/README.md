@@ -4,8 +4,8 @@ These seven templates are adapted from this repository's public V1 providers at
 `20bfcc9`. LyraMesh's internal QQ playlist, Kugou and other upstream APIs are a
 separate implementation and must not be copied into this family.
 
-Packages initially started at `1.0.0`; Kuwo is now `1.0.2` and the other six
-providers are `1.0.1`. This revision restores public-baseline dispatch, chart
+Packages initially started at `1.0.0`; Kuwo is now `1.0.3`, Apple Music is `1.0.1`
+and the other five providers are `1.0.2`. This revision restores public-baseline dispatch, chart
 groups, import selection and media quality policy; Kuwo also retains its earlier
 search, album and artist catalog HTTPS fixes. Stable package IDs are:
 `cc.baka.am`, `cc.baka.wy`, `cc.baka.qq`,
@@ -51,6 +51,13 @@ fixed 30-song protocol. Providers must return at most the requested limit. Opaqu
 cursors retain the upstream page and offset so a 100-song source response can
 be consumed in smaller requests without losing songs. Grouped charts retain their
 category labels. Invalid/nonprogressing pages fail explicitly.
+
+Playlist category pages retain the original group and member order, typed IDs and
+opaque filter metadata. The first page also returns the legacy `pinned` array in
+its own original order, including pins outside the category groups. Later pages
+omit `pinned`; the client retains the first-page selection while paging categories.
+Keep this separate from chart/hot-search flattening. Clients must support both
+flat category `group` labels and page-level pins.
 
 Explicit imports preserve the public provider's complete import protocol. A
 single active snapshot per SDK instance (maximum 100,000 tracks, ten-minute

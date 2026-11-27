@@ -44,3 +44,13 @@ catalog call sites now use HTTPS, covering five search kinds, album metadata and
 artist songs/albums. Query parameters, typed IDs and cursor behavior are unchanged.
 V1 remains separate. Regression tests assert transport and returned records;
 remote smoke checks are host observations, not device playback evidence.
+
+2026-11-28 playlist category metadata: a tag-only paging adapter preserves the
+public V1 category group/member order, typed IDs and all filter fields. Pins are
+returned separately on the first page, preserving their independent V1 order and
+pins absent from categories. Moving matching pins to the beginning of the flat
+category list would corrupt category order. Chart/hot-search behavior is unchanged.
+The maintained providers and migration draft helper share this adapter. Kuwo is
+1.0.3; NetEase, QQ, Kugou, Migu and Bilibili are 1.0.2; Apple stays at 1.0.1.
+Deterministic comparisons execute each exact pre-V2 category function, and native
+QuickJS fixtures validate the extra page metadata and unmodified filter round trip.

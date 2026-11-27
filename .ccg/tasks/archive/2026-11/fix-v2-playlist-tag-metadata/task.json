@@ -1,0 +1,13 @@
+{
+  "id": "fix-v2-playlist-tag-metadata",
+  "title": "Restore public V2 playlist tag groups and pinned selection metadata",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "plugins",
+  "currentPhase": "completed",
+  "nextAction": "Archived with the scoped tag release; publication is outside this task",
+  "createdAt": "2026-11-27T20:03:32.261942+00:00",
+  "completedAt": "2026-11-27T20:22:39Z",
+  "branch": "main"
+}

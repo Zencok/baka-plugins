@@ -87,6 +87,15 @@ function sliceResult(result, request) {
   }
   return pageResult({ data: items, total: items.length, isEnd: true }, request);
 }
+function tagResult(result, request) {
+  const items = flattenGroups((result && (result.data || result.tags)) || result);
+  const page = pageResult({ data: items, total: items.length, isEnd: true }, request);
+  // Pins have their own order and may not belong to a category. Keep both lists.
+  if (request.cursor == null && result && Array.isArray(result.pinned)) {
+    page.pinned = result.pinned.map((item) => ({ ...item }));
+  }
+  return page;
+}
 function dailyResult(result, request) {
   result = result || {};
   return {

@@ -1,0 +1,403 @@
+
+> bakamusic-plugins@1.0.0 test
+> node --test tests/*.test.cjs
+
+Using source: ikun (ikun 音源)
+Found plugin: am.js (Apple Music v0.1.0)
+Found plugin: bilibili.js (bilibili v2.1.2)
+Found plugin: kg.js (酷狗音乐 v1.3.7)
+Found plugin: kw.js (酷我音乐 v1.2.1)
+Found plugin: mg.js (咪咕音乐 v1.3.5)
+Found plugin: qq.js (QQ音乐 v1.3.2)
+Found plugin: wy.js (网易云音乐 v1.1.8)
+Scanned 7 plugins
+Subscription: source=ikun, plugins=7, key=fixture-..., ip=unknown
+Using source: linglan (聆澜音源)
+Found plugin: am.js (Apple Music v0.1.0)
+Found plugin: bilibili.js (bilibili v2.1.2)
+Found plugin: kg.js (酷狗音乐 v1.3.7)
+Found plugin: kw.js (酷我音乐 v1.2.1)
+Found plugin: mg.js (咪咕音乐 v1.3.5)
+Found plugin: qq.js (QQ音乐 v1.3.2)
+Found plugin: wy.js (网易云音乐 v1.1.8)
+Scanned 7 plugins
+Skipping am.js: not supported by source linglan
+Subscription: source=linglan, plugins=6, key=fixture-..., ip=unknown
+Using source: xinghai (星海音源)
+Found plugin: am.js (Apple Music v0.1.0)
+Found plugin: bilibili.js (bilibili v2.1.2)
+Found plugin: kg.js (酷狗音乐 v1.3.7)
+Found plugin: kw.js (酷我音乐 v1.2.1)
+Found plugin: mg.js (咪咕音乐 v1.3.5)
+Found plugin: qq.js (QQ音乐 v1.3.2)
+Found plugin: wy.js (网易云音乐 v1.1.8)
+Scanned 7 plugins
+Skipping am.js: not supported by source xinghai
+Subscription: source=xinghai, plugins=6, key=fixture-..., ip=unknown
+Using source: oi (OI 音源)
+Found plugin: am.js (Apple Music v0.1.0)
+Found plugin: bilibili.js (bilibili v2.1.2)
+Found plugin: kg.js (酷狗音乐 v1.3.7)
+Found plugin: kw.js (酷我音乐 v1.2.1)
+Found plugin: mg.js (咪咕音乐 v1.3.5)
+Found plugin: qq.js (QQ音乐 v1.3.2)
+Found plugin: wy.js (网易云音乐 v1.1.8)
+Scanned 7 plugins
+Skipping am.js: not supported by source oi
+Subscription: source=oi, plugins=6, key=(user-provided), ip=unknown
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: (none), qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+Using source: ikun -> https://c.wwwweb.top
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\am.js
+Serving plugin: am.js, source: ikun, apiType: ikun, key: fixture-..., qualities: ["320k","flac","hires"]
+✔ template stays provider neutral and accepts a different injected adapter (3.9824ms)
+✔ am is available only in ikun subscriptions and generates valid code (13.8827ms)
+✔ search maps song fields, seconds, pagination and quality metadata (3.0637ms)
+✔ albums collect all pages; artist albums and songs preserve page boundaries (1.5725ms)
+✔ lyrics preserve original TTML and supplementary tracks without JS parsing (1.7839ms)
+✔ media returns a versioned encrypted descriptor with no plaintext URL or credentials (1.7075ms)
+✔ key callback handles public samples and validates endpoint before sending credentials (1.4846ms)
+✔ authentication errors never return upstream secrets and missing keys make no request (3.6033ms)
+✔ malformed replies fail clearly and albums never silently truncate (3.6435ms)
+✔ baka-plugins\plugins\qq.js: song and album metadata never borrow generic works counts (2.9108ms)
+﹣ QQ音乐\Vkey\qq - l1.js: song and album metadata never borrow generic works counts (0.0962ms) # SKIP
+﹣ QQ音乐\Vkey\qq - l2.js: song and album metadata never borrow generic works counts (0.06ms) # SKIP
+✔ baka-plugins\plugins\kw.js: song and album metadata never borrow generic works counts (2.7038ms)
+﹣ QQ音乐\Vkey\kw.js: song and album metadata never borrow generic works counts (0.2148ms) # SKIP
+﹣ QQ音乐\Vkey\joox.js: song and album metadata never borrow generic works counts (0.1615ms) # SKIP
+﹣ QQ音乐\Vkey\joox[T].js: song and album metadata never borrow generic works counts (0.0972ms) # SKIP
+✔ baka-plugins\plugins\wy.js: song and album metadata never borrow generic works counts (2.3709ms)
+✔ baka-plugins\plugins\kg.js: song and album metadata never borrow generic works counts (2.0973ms)
+✔ baka-plugins\plugins\mg.js: song and album metadata never borrow generic works counts (2.1696ms)
+✔ baka-plugins\plugins\bilibili.js: song and album metadata never borrow generic works counts (1.6791ms)
+✔ baka-plugins\plugins\qq.js: song and album pages return independent source totals (4.8939ms)
+﹣ QQ音乐\Vkey\qq - l1.js: song and album pages return independent source totals (0.0829ms) # SKIP
+﹣ QQ音乐\Vkey\qq - l2.js: song and album pages return independent source totals (0.0359ms) # SKIP
+✔ baka-plugins\plugins\kw.js: Kuwo totals survive both kinds of pagination (1.4351ms)
+﹣ QQ音乐\Vkey\kw.js: Kuwo totals survive both kinds of pagination (0.1096ms) # SKIP
+✔ baka-plugins\plugins\qq.js: search artist count has an explicit song meaning (1.3834ms)
+﹣ QQ音乐\Vkey\qq - l1.js: search artist count has an explicit song meaning (0.0403ms) # SKIP
+﹣ QQ音乐\Vkey\qq - l2.js: search artist count has an explicit song meaning (0.0313ms) # SKIP
+✔ baka-plugins\plugins\kw.js: search artist count has an explicit song meaning (1.3831ms)
+﹣ QQ音乐\Vkey\kw.js: search artist count has an explicit song meaning (0.1057ms) # SKIP
+✔ Migu artist search retains exact counts without substituting its search-result total (1.7252ms)
+✔ Kugou source totals are returned for songs and albums (1.4229ms)
+✔ NetEase album request includes offset and carries both authoritative counts (1.4335ms)
+﹣ QQ音乐\Vkey\joox.js: JOOX totals describe the artist, not its preview lists (0.059ms) # SKIP
+﹣ QQ音乐\Vkey\joox[T].js: JOOX totals describe the artist, not its preview lists (0.037ms) # SKIP
+✔ Migu never labels artist-filtered search totals as exact artist album counts (1.4885ms)
+✔ Bilibili upload total is a music-work count and is never exposed as albums (1.1396ms)
+✔ KW batches 205 unique IDs, matches reordered responses by ID and preserves existing data (3.7195ms)
+✔ KW optional detail failure preserves imported items and never searches by title (1.9619ms)
+✔ WY batches advanced tiers even when ordinary file sizes are already present (3.1078ms)
+✔ WY retries failed batches without an unbounded single-song request fallback (1.8212ms)
+✔ TOP500 without a page fetches every upstream page in order for single-call hosts (5.2145ms)
+✔ explicit pages return 100 songs each, ending at page five without skipping songs (1.8662ms)
+✔ unknown totals, string totals, empty charts and short final pages terminate correctly (3.8321ms)
+✔ unknown totals at exact page boundaries request an empty final page (1.074ms)
+✔ malformed responses, failed later pages and repeated pages cannot masquerade as complete charts (6.0934ms)
+✔ invalid page numbers are rejected before any HTTP requests (0.7739ms)
+✔ daily playlist supplies official cover and introduction plus per-track badge qualities (4.3428ms)
+✔ optional quality errors retain official metadata, songs and proven native sizes (2.3277ms)
+✔ legacy daily responses use a song cover without inventing an official introduction (1.1372ms)
+✔ empty daily playlists stay usable without any quality request or made-up cover (0.8665ms)
+✔ SSO daily IDs resolve in one batch and selected source always receives Hashes (1.2377ms)
+✔ unavailable or mismatched native Hash mappings never publish a partial playlist (1.4313ms)
+✔ native daily keeps singer navigation while converting playback to Hash (1.7408ms)
+✔ mobile signed artist search preserves identities, totals and real covers without SSO (4.0043ms)
+✔ playlist search replaces cover size placeholders and supplies both host cover fields (1.4299ms)
+✔ daily singer identities retain structured artists and safely split legacy SSO joined fields (2.0546ms)
+✔ mobile album search maps cover, date and pagination (2.0951ms)
+✔ song search uses captured mobile filter parameters and keeps Hash IDs (1.8505ms)
+✔ mobile search failures propagate instead of masquerading as empty complete results (1.6668ms)
+✔ image fallback batches only missing images, preserves IDs and existing artwork, matches artist IDs (2.5ms)
+✔ complete lists and numeric IDs without Hash do not request images (0.9093ms)
+✔ failure, incomplete positional rows and wrong albums never break lists or attach unrelated covers (3.516ms)
+✔ image requests are bounded to twenty unique Hashes per batch (1.8911ms)
+✔ artist page requests by author ID only for absent avatars and rejects mismatched identities (2.8864ms)
+✔ lyric search reuses song search and retains hash, cover, album and pagination (1.3454ms)
+✔ lyric search preserves empty results and propagates song search failures (1.5215ms)
+✔ actual KRC parser extracts timed romanization and translation from language metadata (1.2271ms)
+✔ new gcid share link imports all 888 tracks and preserves playlist metadata (13.8266ms)
+✔ bare gcid and empty playlists are supported (1.8633ms)
+✔ decode and pagination errors reject rather than report a partial import (3.5793ms)
+✔ numeric command codes keep the legacy import path (2.0632ms)
+✔ unsupported URLs cannot become accidental numeric command codes (0.8477ms)
+✔ daily recommendation resolves the direct URL and maps native fields without retaining credentials (6.3517ms)
+✔ playlist detail, alias import, direct URL import and pagination share the same converter (2.5438ms)
+✔ missing connection, rejected login, stale metadata and upstream failures return usable states (6.7302ms)
+✔ direct-link validation rejects other origins, credentials, duplicate identities and fragments before HTTP (4.4764ms)
+✔ native recommendation lists preserve order, remove duplicate IDs and cap at thirty (1.5191ms)
+✔ daily artwork skips missing song covers and never uses the decorative page background (1.914ms)
+✔ direct URL playlist items remain playable through the injected source handler (1.351ms)
+✔ baka-plugins\plugins\wy.js: valid totals, zero, unknown and standalone syntax (3.1151ms)
+✔ baka-plugins\plugins\qq.js: valid totals, zero, unknown and standalone syntax (1.7611ms)
+✔ baka-plugins\plugins\kg.js: valid totals, zero, unknown and standalone syntax (2.1596ms)
+✔ baka-plugins\plugins\mg.js: valid totals, zero, unknown and standalone syntax (2.9125ms)
+✔ baka-plugins\plugins\bilibili.js: valid totals, zero, unknown and standalone syntax (2.1035ms)
+✔ baka-plugins\plugins\kw.js: valid totals, zero, unknown and standalone syntax (3.1312ms)
+﹣ QQ音乐\Vkey\kw.js: valid totals, zero, unknown and standalone syntax (0.1342ms) # SKIP
+﹣ QQ音乐\Vkey\joox.js: valid totals, zero, unknown and standalone syntax (0.072ms) # SKIP
+﹣ QQ音乐\Vkey\joox[T].js: valid totals, zero, unknown and standalone syntax (0.1476ms) # SKIP
+﹣ QQ音乐\Vkey\qq - l1.js: valid totals, zero, unknown and standalone syntax (0.2ms) # SKIP
+﹣ QQ音乐\Vkey\qq - l2.js: valid totals, zero, unknown and standalone syntax (0.1832ms) # SKIP
+✔ baka-plugins\plugins\kw.js: first and later pages retain source total (4.1541ms)
+﹣ QQ音乐\Vkey\kw.js: first and later pages retain source total (0.0768ms) # SKIP
+✔ Kugou numeric playlist forwards API total rather than page length (4.2591ms)
+✔ Kugou full-import branch reports full collection count before slicing (1.2802ms)
+✔ QQ source total handles numeric strings, empty playlists and missing counts (5.0215ms)
+﹣ QQ音乐\Vkey\qq - l1.js: complete import metadata and array fallback (0.062ms) # SKIP
+﹣ QQ音乐\Vkey\qq - l2.js: complete import metadata and array fallback (0.0302ms) # SKIP
+﹣ QQ音乐\Vkey\joox.js: nested host metadata uses total, never partial page length (0.0277ms) # SKIP
+﹣ QQ音乐\Vkey\joox[T].js: nested host metadata uses total, never partial page length (0.0622ms) # SKIP
+✔ Migu primary and signed fallback forward totalCount (7.9974ms)
+✔ Migu H5 fallback does not assume its ambiguous total is the playlist count (1.9916ms)
+✔ Bilibili favorite metadata keeps source zero and never invents a page total (5.3054ms)
+✔ NetEase keeps authoritative count even when fewer track IDs are accessible, including cache reopen (1.803ms)
+✔ NetEase empty playlist returns an explicit zero (1.0607ms)
+✔ Migu metadata fills an absent page total and reuses it on subsequent pages (1.2977ms)
+✔ connection configuration is plugin-owned and missing/invalid keys never make requests (3.2171ms)
+✔ user ID stays in headers; tid opens through the normal paginated playlist API (3.6896ms)
+✔ cross-day or expired content is never returned as ready (1.6523ms)
+✔ existing short collection user IDs remain usable (1.9351ms)
+✔ HTTP business errors remain useful states without forwarding server diagnostics (1.4283ms)
+✔ Netlify routes force dynamic V2 responses and package runtime-read dependencies (1.616ms)
+✔ credential-specific V2 documents forbid shared caching and source transformation (26.3669ms)
+✔ ikun and query source adapters use direct SDK calls and encode identifiers (3.9344ms)
+✔ lxmusic applies configured source mapping and auth header (1.2338ms)
+✔ Apple source adapter retains public authentication and endpoint envelope (0.8608ms)
+✔ OI packet preserves SHA256 core, XOR framing and MD5 trailer using SDK primitives (2.0231ms)
+✔ xinghai refreshes rejected token and verifies byte signatures (1.4371ms)
+✔ aggregate sources preserve provider ordering, fallback and QQ quality fields (4.8295ms)
+✔ V2 source/key validation never applies V1 json suffix rewriting (0.6192ms)
+✔ V2 subscription metadata is extracted without host modules or network (2.2096ms)
+✔ distribution serves suffixless and js routes with manifest-derived subscription metadata (46.6522ms)
+✔ every configured V2 source emits loadable SDK-only providers and correct quality overrides (173.4788ms)
+✔ am: HTTP and network failures cannot become successful empty pages (6.5854ms)
+✔ wy: HTTP and network failures cannot become successful empty pages (8.1404ms)
+✔ qq: HTTP and network failures cannot become successful empty pages (6.8388ms)
+✔ kg: HTTP and network failures cannot become successful empty pages (7.534ms)
+✔ kw: HTTP and network failures cannot become successful empty pages (7.6737ms)
+✔ mg: HTTP and network failures cannot become successful empty pages (8.4305ms)
+✔ bilibili: HTTP and network failures cannot become successful empty pages (8.4821ms)
+✔ wy: service errors fail while confirmed empty comments remain valid (3.6769ms)
+✔ qq: service errors fail while confirmed empty comments remain valid (2.6067ms)
+✔ kg: service errors fail while confirmed empty comments remain valid (3.2979ms)
+✔ kw: service errors fail while confirmed empty comments remain valid (3.4383ms)
+✔ mg: service errors fail while confirmed empty comments remain valid (3.2529ms)
+✔ bilibili: service errors fail while confirmed empty comments remain valid (3.5416ms)
+✔ wy: unavailable collection metadata cannot publish an empty snapshot (3.72ms)
+✔ kg: unavailable collection metadata cannot publish an empty snapshot (3.9127ms)
+✔ mg: unavailable collection metadata cannot publish an empty snapshot (3.303ms)
+✔ NetEase final song-details failure cannot become an empty final collection page (1.7009ms)
+✔ QQ song identity lookup failure cannot become empty comments (1.2646ms)
+✔ Migu album retries fail clearly and confirmed empty albums remain valid (2.9064ms)
+✔ Kugou discovery preserves an available fallback and rejects failure of both sources (4.0981ms)
+✔ Bilibili chart fallback rejects a total outage and retains a successful retry (3.198ms)
+✔ am: cursors reject changed request, typed identity and account before fetching (4.7654ms)
+✔ wy: cursors reject changed request, typed identity and account before fetching (4.5432ms)
+✔ qq: cursors reject changed request, typed identity and account before fetching (3.8159ms)
+✔ kg: cursors reject changed request, typed identity and account before fetching (3.7358ms)
+✔ kw: cursors reject changed request, typed identity and account before fetching (4.8798ms)
+✔ mg: cursors reject changed request, typed identity and account before fetching (6.5529ms)
+✔ bilibili: cursors reject changed request, typed identity and account before fetching (4.3277ms)
+✔ Apple album browsing fetches one upstream page and reaches the exact final track (8.5468ms)
+✔ NetEase ordinary chart browsing fetches only one bounded song-details page (13.1276ms)
+✔ Kugou ordinary gcid_abcdef123 browsing requests one source page at a time (8.673ms)
+✔ Kugou ordinary collection_1_2_3_4 browsing requests one source page at a time (3.5354ms)
+✔ Kugou bounded collection pages distinguish confirmed empty, failed and truncated source pages (6.7377ms)
+✔ Migu artist music preserves continuation and rejects failed or malformed pages (10.5596ms)
+✔ Kuwo V2 music search uses HTTPS and preserves search paging (4.9871ms)
+✔ Kuwo V2 album search uses HTTPS and preserves search paging (2.0191ms)
+✔ Kuwo V2 artist search uses HTTPS and preserves search paging (2.3405ms)
+✔ Kuwo V2 sheet search uses HTTPS and preserves search paging (1.418ms)
+✔ Kuwo V2 lyric search uses HTTPS and preserves search paging (1.5251ms)
+✔ Kuwo V2 album and artist detail requests use the same HTTPS catalog (3.0971ms)
+✔ every distributed source/provider passes native V2 inspection and loading (2560.2053ms)
+✔ public providers load and paginate through the actual QuickJS HTTP SDK (1279.0385ms)
+﹣ isolated Netlify bundles serve every configured V2 subscription and provider (0.5364ms) # SKIP
+✔ wy V2 retains every pre-V2 group, pinned selection and tag metadata across pages (85.5173ms)
+✔ wy category selection passes its opaque filter unchanged to playlist loading (3.498ms)
+✔ qq V2 retains every pre-V2 group, pinned selection and tag metadata across pages (72.176ms)
+✔ qq category selection passes its opaque filter unchanged to playlist loading (2.9843ms)
+✔ kg V2 retains every pre-V2 group, pinned selection and tag metadata across pages (72.2875ms)
+✔ kg category selection passes its opaque filter unchanged to playlist loading (4.131ms)
+✔ kw V2 retains every pre-V2 group, pinned selection and tag metadata across pages (68.5894ms)
+✔ kw category selection passes its opaque filter unchanged to playlist loading (3.3196ms)
+✔ mg V2 retains every pre-V2 group, pinned selection and tag metadata across pages (68.0712ms)
+✔ mg category selection passes its opaque filter unchanged to playlist loading (4.4806ms)
+✔ bilibili V2 retains every pre-V2 group, pinned selection and tag metadata across pages (61.6546ms)
+✔ bilibili category selection passes its opaque filter unchanged to playlist loading (3.0618ms)
+✔ playlist tags preserve independent pin and category orders, typed IDs and opaque metadata (7.8517ms)
+✔ pin-only and empty categories terminate in one page without losing pin metadata (8.2655ms)
+✔ draft paging helper and maintained providers share the tag adapter without changing chart flattening (3.0437ms)
+✔ native QuickJS preserves tag pins, typed IDs and filters through the V2 host (1620.0869ms)
+✔ all seven V2 providers load with no Node/DOM/package globals and declare implemented handlers (27.3447ms)
+✔ QQ playlist import uses public uniform_get_Dissinfo and advances source offsets across short pages (3.5806ms)
+✔ SDK transport retains HTML/text before opportunistic JSON parsing (4.6953ms)
+✔ QQ V2 cursor slices public 100-track pages to host limit without gaps or duplicates (6.3682ms)
+✔ provider paging rejects empty nonterminal pages and accepts default/bounded limits (5.298ms)
+✔ Kugou gcid import uses public signed decode and gateway list APIs (3.7863ms)
+✔ Kugou numeric import uses public command endpoint rather than internal music API (2.0424ms)
+✔ Kuwo authenticated import URL is consumed once and native member enumeration uses its snapshot (5.3887ms)
+✔ Migu short-link redirect imports its public metadata, HTML songs and snapshot without request globals (6.1212ms)
+✔ import snapshot rejects more than 100000 tracks before allocating a snapshot token (3.6576ms)
+✔ Kugou KRC and Kuwo lyric bytes use SDK decompression and decoding (13.7839ms)
+✔ WY EAPI encryption and WEAPI RSA/AES use SDK crypto with original protocol keys (3.423ms)
+✔ provider media.prepare owns LX context and selected resolution consumes complete entity (17.7782ms)
+✔ QQ encrypted lyrics preserve the public QRC/translation/romanization response for native parsing (2.5821ms)
+✔ Migu strategy binary decoding uses SDK bytes and preserves public encoding algorithm (6.54ms)
+✔ Bilibili native DASH resolution signs WBI with SDK crypto and preserves cookie and quality (5.3111ms)
+✔ Apple TTML and native key callbacks keep public envelopes and reject foreign key endpoints (3.8039ms)
+✔ public V2 dispatches native kind and legacy type to their own album/artist/chart operations (34.0597ms)
+✔ public collection cursors bind normalized entity kind and reject same-ID cross-kind replay (33.7971ms)
+✔ WY chart HTML retains public headings, order, artwork and descriptions (9.174ms)
+✔ Migu imports only public row.J_CopySong members rather than unrelated data-cid (8.4302ms)
+✔ Bilibili track import is reachable through native entities and explicit links while default links stay collections (7.1107ms)
+✔ native QuickJS runs restored WY HTML groups and Bilibili URL track import (406.2999ms)
+✔ public media resolution keeps WY/QQ quality guards, KG quality hashes and KW fallback (14.9301ms)
+✔ WY daily configuration, detail and import use personal connection over HTTP without changing source routing (354.4798ms)
+✔ large shared playlist imports every batch without per-song quality requests (146.098ms)
+✔ failed detail batch rejects the import instead of saving an incomplete playlist (9.2592ms)
+✔ small and empty playlists preserve the existing import contract (12.6281ms)
+Using source: xinghai (星海音源)
+Found plugin: am.js (Apple Music v0.1.0)
+Found plugin: bilibili.js (bilibili v2.1.2)
+Found plugin: kg.js (酷狗音乐 v1.3.7)
+Found plugin: kw.js (酷我音乐 v1.2.1)
+Found plugin: mg.js (咪咕音乐 v1.3.5)
+Found plugin: qq.js (QQ音乐 v1.3.2)
+Found plugin: wy.js (网易云音乐 v1.1.8)
+Scanned 7 plugins
+Skipping am.js: not supported by source xinghai
+Subscription: source=xinghai, plugins=6, key=must-not..., ip=unknown
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\qq.js
+Serving plugin: qq.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kg.js
+Serving plugin: kg.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["flac"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\qq.js
+Serving plugin: qq.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["flac"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["flac"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["flac"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["flac"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+✔ xinghai subscriptions need no key and preserve bare free-plugin URLs (9.1905ms)
+✔ all four generated handlers use only the xinghai parser and validate playable PHP URLs (17.4253ms)
+✔ xinghai rejects unsupported input before network access and never falls back (2.2149ms)
+✔ xinghai rejects API business failures, missing links, and fake audio (9.2997ms)
+✔ xinghai caches server tokens for four minutes and keeps the device ID on refresh (2.9606ms)
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: cihedai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: cihedai, apiType: cihedai, key: (builtin), qualities: ["128k","320k","flac","hires","master"]
+Using source: cihedai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kg.js
+Serving plugin: kg.js, source: cihedai, apiType: cihedai, key: (builtin), qualities: ["128k","320k","flac","hires"]
+Using source: cihedai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: cihedai, apiType: cihedai, key: (builtin), qualities: ["128k","320k","flac"]
+Using source: quandouyao -> https://mcp.nianxinxz.com/share/ceshi/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: quandouyao, apiType: quandouyao, key: (builtin), qualities: ["128k","320k","flac","hires","master"]
+Using source: quandouyao -> https://mcp.nianxinxz.com/share/ceshi/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kg.js
+Serving plugin: kg.js, source: quandouyao, apiType: quandouyao, key: (builtin), qualities: ["128k","320k","flac","hires"]
+Using source: quandouyao -> https://mcp.nianxinxz.com/share/ceshi/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: quandouyao, apiType: quandouyao, key: (builtin), qualities: ["128k","320k","flac"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\wy.js
+Serving plugin: wy.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\qq.js
+Serving plugin: qq.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kg.js
+Serving plugin: kg.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["128k","320k","flac","hires","atmos","master"]
+Using source: xinghai -> https://yy.zddyr.top/lx/api/
+Attempting to read plugin from: D:\Github\Music\baka-plugins\plugins\kw.js
+Serving plugin: kw.js, source: xinghai, apiType: xinghai, key: (builtin), qualities: ["flac"]
+✔ xinghai shares concurrent token requests and recovers after token acquisition fails (4.5521ms)
+✔ xinghai refreshes on each upstream auth error, retries once, and bounds repeated rejection (16.3232ms)
+✔ xinghai refuses expired cached tokens if renewal fails (3.1646ms)
+✔ aggregate xinghai routes use server tokens without sending them to nianxin or audio hosts (26.3664ms)
+✔ xinghai frontend quality labels match generated plugin declarations (7.2636ms)
+ℹ tests 220
+ℹ suites 0
+ℹ pass 196
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 24
+ℹ todo 0
+ℹ duration_ms 4487.382
