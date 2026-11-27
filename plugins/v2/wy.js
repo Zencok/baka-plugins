@@ -10,9 +10,10 @@ const manifest = {
   sourceId: "wy.v1",
   id: "cc.baka.wy",
   name: "网易云音乐",
-  version: "1.0.0",
+  version: "1.0.1",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
+  cacheControl: "no-store",
   primaryKey: ["id"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: ["128k", "320k", "flac", "hires", "atmos", "master"],
@@ -51,6 +52,10 @@ const manifest = {
   },
 };
 
+function entityKind(entity) {
+  const kind = entity.type || entity.kind;
+  return kind === "playlist" ? "sheet" : kind === "track" ? "music" : kind;
+}
 function pageState(cursor) {
   if (cursor == null) return { upstreamPage: 1, offset: 0 };
   let value;
@@ -1628,19 +1633,103 @@ function createOperations(sdk) {
     };
   }
 
+  // The public provider discovers chart categories from this HTML page. Keep
+  // that source and its h2/ul grouping; the JSON toplist API loses categories.
+  function parseTopListGroups(html) {
+    const opening =
+      /<([a-z][\w:-]*)\b[^>]*\bclass\s*=\s*(["'])[^"']*\bn-minelst\b[^"']*\2[^>]*>/i.exec(
+        String(html),
+      );
+    if (!opening) throw new Error("Provider chart page has no chart navigation");
+    const root = { tag: opening[1].toLowerCase(), children: [] };
+    const stack = [root];
+    const source = String(html).slice(opening.index + opening[0].length);
+    const tokens = /<!--[\s\S]*?-->|<\/?[a-z][^>]*>|[^<]+/gi;
+    const voidTags = new Set(["img", "br", "hr", "input", "meta", "link", "source", "wbr"]);
+    const attr = (text, name) => {
+      const match = new RegExp(
+        "\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))",
+        "i",
+      ).exec(text);
+      return match ? sdk.text.decodeHtml(match[1] ?? match[2] ?? match[3] ?? "") : "";
+    };
+    let token;
+    while ((token = tokens.exec(source)) && stack.length) {
+      const value = token[0];
+      if (value.startsWith("<!--")) continue;
+      if (value.startsWith("</")) {
+        const tag = value
+          .slice(2)
+          .match(/^[\w:-]+/)[0]
+          .toLowerCase();
+        const index = stack.map((node) => node.tag).lastIndexOf(tag);
+        if (index >= 0) stack.length = index;
+      } else if (value.startsWith("<")) {
+        const tag = value
+          .slice(1)
+          .match(/^[\w:-]+/)[0]
+          .toLowerCase();
+        const node = { tag, raw: value, children: [] };
+        stack[stack.length - 1].children.push(node);
+        if (!voidTags.has(tag) && !value.endsWith("/>")) stack.push(node);
+      } else stack[stack.length - 1].children.push({ text: value });
+    }
+    const text = (node) =>
+      node.text != null ? sdk.text.decodeHtml(node.text) : (node.children || []).map(text).join("");
+    const find = (node, predicate) => {
+      for (const child of node.children || []) {
+        if (predicate(child)) return child;
+        const found = find(child, predicate);
+        if (found) return found;
+      }
+      return null;
+    };
+    const hasClass = (node, name) =>
+      attr(node.raw || "", "class")
+        .split(/\s+/)
+        .includes(name);
+    const groups = [];
+    let group;
+    for (const node of root.children) {
+      if (node.tag === "h2") {
+        if (group?.title) groups.push(group);
+        group = { title: text(node), data: [] };
+      } else if (node.tag === "ul" && group) {
+        group.data = node.children
+          .filter((child) => child.tag)
+          .map((item) => {
+            const image = find(item, (child) => child.tag === "img");
+            const coverImg = attr(image?.raw || "", "src").replace(
+              /(\.jpg\?).*/,
+              ".jpg?param=800y800",
+            );
+            return {
+              id: attr(item.raw, "data-res-id"),
+              coverImg,
+              artwork: coverImg,
+              title: text(
+                find(item, (child) => child.tag === "p" && hasClass(child, "name")) || {},
+              ),
+              description: text(
+                find(item, (child) => child.tag === "p" && hasClass(child, "s-fc4")) || {},
+              ),
+            };
+          });
+      }
+    }
+    if (group?.title) groups.push(group);
+    return groups;
+  }
   async function getTopLists() {
-    const response = await httpGet("https://music.163.com/api/toplist", { headers });
-    return [
-      {
-        title: "排行榜",
-        data: (response.data.list || []).map((item) => ({
-          id: item.id,
-          title: item.name,
-          artwork: item.coverImgUrl,
-          description: item.description,
-        })),
+    const response = await httpGet("https://music.163.com/discover/toplist", {
+      headers: {
+        referer: "https://music.163.com/",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36 Edg/108.0.1462.54",
       },
-    ];
+      responseType: "text",
+    });
+    return parseTopListGroups(response.data);
   }
 
   async function getTopListDetail(topListItem, page = 1) {
@@ -1942,6 +2031,22 @@ function createOperations(sdk) {
       return await searchLyric(query, page);
     }
   }
+  async function getMediaSource(musicItem, quality) {
+    if (typeof requestMusicUrl !== "function") {
+      throw Object.assign(new Error("Configure a music URL source"), {
+        code: "authentication_required",
+      });
+    }
+    if (
+      musicItem.qualities &&
+      Object.keys(musicItem.qualities).length &&
+      !musicItem.qualities[quality]
+    ) {
+      throw new Error(`该歌曲不支持 ${quality} 音质`);
+    }
+    const result = await requestMusicUrl(musicItem, quality, sdk);
+    return typeof result === "string" ? { url: result, quality } : result;
+  }
   let activeImport = null;
   function importedSnapshot(entity) {
     if (!entity._bakaImportToken) return null;
@@ -1983,15 +2088,20 @@ function createOperations(sdk) {
   }
   return {
     search,
-    entity: (entity) => (entity.type === "artist" ? getArtistInfo(entity) : getMusicInfo(entity)),
+    entity: (entity) =>
+      entityKind(entity) === "artist" ? getArtistInfo(entity) : getMusicInfo(entity),
     collection: async (entity) => {
       const snapshot = importedSnapshot(entity);
       if (snapshot) return snapshot.entity;
-      if (entity.type === "artist") return getArtistInfo(entity);
-      const result = await (entity.type === "album"
-        ? getAlbumInfo(entity)
-        : getMusicSheetInfo(entity, 1));
-      return { ...entity, ...(result.albumItem || result.sheetItem || {}) };
+      if (entityKind(entity) === "artist") return getArtistInfo(entity);
+      const result = await (entityKind(entity) === "chart"
+        ? getTopListDetail(entity, 1)
+        : entityKind(entity) === "album"
+          ? getAlbumInfo(entity)
+          : getMusicSheetInfo(entity, 1));
+      const metadata = result.albumItem || result.sheetItem || result;
+      const { musicList, data, isEnd, ...details } = metadata;
+      return { ...entity, ...details };
     },
     members: (entity, page, kind) => {
       const snapshot = importedSnapshot(entity);
@@ -2002,11 +2112,11 @@ function createOperations(sdk) {
           sheetItem: snapshot.entity,
           total: snapshot.items.length,
         };
-      return entity.type === "artist"
+      return entityKind(entity) === "artist"
         ? getArtistWorks(entity, page, kind)
-        : entity.type === "chart"
+        : entityKind(entity) === "chart"
           ? getTopListDetail(entity, page)
-          : entity.type === "album"
+          : entityKind(entity) === "album"
             ? getAlbumInfo(entity, page)
             : getMusicSheetInfo(entity, page);
     },
@@ -2016,6 +2126,7 @@ function createOperations(sdk) {
     hotSearch: getHotSearch,
     daily: getDailyRecommendations,
 
+    resolve: getMediaSource,
     video: getMvSource,
     lyric: getLyric,
     comments: getMusicComments,
@@ -2057,19 +2168,8 @@ const handlers = {
       },
       quality,
     }),
-    resolve: async ({ entity, quality }, sdk) => {
-      if (typeof requestMusicUrl === "function") {
-        const result = await requestMusicUrl(
-          entity,
-          quality || manifest.supportedQualities[0],
-          sdk,
-        );
-        return typeof result === "string" ? { url: result, quality } : result;
-      }
-      throw Object.assign(new Error("Configure a music URL source"), {
-        code: "authentication_required",
-      });
-    },
+    resolve: async ({ entity, quality }, sdk) =>
+      operations(sdk).resolve(entity, quality || manifest.supportedQualities[0]),
     video: async ({ entity, quality }, sdk) => operations(sdk).video(entity, quality || "1080p"),
   },
   lyrics: { get: async ({ entity }, sdk) => operations(sdk).lyric(entity) },
@@ -2117,7 +2217,7 @@ function bindPageHandlers() {
         source: manifest.srcUrl,
         capability,
         entity: entity
-          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          ? { id: entity.id, type: entityKind(entity), token: entity._bakaImportToken }
           : null,
         query: request.query,
         kind: request.kind,

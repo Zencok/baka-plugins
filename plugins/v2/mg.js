@@ -10,9 +10,10 @@ const manifest = {
   sourceId: "mg.v1",
   id: "cc.baka.mg",
   name: "咪咕音乐",
-  version: "1.0.0",
+  version: "1.0.1",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
+  cacheControl: "no-cache",
   primaryKey: ["copyrightId"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: ["mgg", "128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus"],
@@ -43,6 +44,10 @@ const manifest = {
   },
 };
 
+function entityKind(entity) {
+  const kind = entity.type || entity.kind;
+  return kind === "playlist" ? "sheet" : kind === "track" ? "music" : kind;
+}
 function pageState(cursor) {
   if (cursor == null) return { upstreamPage: 1, offset: 0 };
   let value;
@@ -2520,6 +2525,24 @@ function createOperations(sdk) {
     }
   }
 
+  function playlistHtmlSongIds(html) {
+    // Match the public .row.J_CopySong selector, excluding unrelated data-cid
+    // attributes in recommendations, comments and embedded scripts.
+    const source = String(html).replace(
+      /<!--[\s\S]*?-->|<script\b[^>]*>[\s\S]*?<\/script\s*>/gi,
+      "",
+    );
+    const tags = source.match(/<[a-z][^>]*>/gi) || [];
+    const result = [];
+    for (const tag of tags) {
+      const classes = htmlAttributes(tag, "class")[0]?.split(/\s+/) || [];
+      if (classes.includes("row") && classes.includes("J_CopySong")) {
+        const id = htmlAttributes(tag, "data-cid")[0];
+        if (id) result.push(id);
+      }
+    }
+    return result;
+  }
   async function importMusicSheet(urlLike) {
     var _a, _b, _c, _d;
     let id;
@@ -2593,7 +2616,7 @@ function createOperations(sdk) {
       const listPage = (
         await httpGet(`https://music.migu.cn/v3/music/playlist/${id}?page=${pageNo}`)
       ).data;
-      const pageRows = htmlAttributes(listPage, "data-cid");
+      const pageRows = playlistHtmlSongIds(listPage);
       const pageIds = [];
       pageIds.push(...pageRows);
       const signature = JSON.stringify(pageIds);
@@ -3260,11 +3283,15 @@ function createOperations(sdk) {
     collection: async (entity) => {
       const snapshot = importedSnapshot(entity);
       if (snapshot) return snapshot.entity;
-      if (entity.type === "artist") return entity;
-      const result = await (entity.type === "album"
-        ? getAlbumInfo(entity)
-        : getMusicSheetInfo(entity, 1));
-      return { ...entity, ...(result.albumItem || result.sheetItem || {}) };
+      if (entityKind(entity) === "artist") return entity;
+      const result = await (entityKind(entity) === "chart"
+        ? getTopListDetail(entity, 1)
+        : entityKind(entity) === "album"
+          ? getAlbumInfo(entity)
+          : getMusicSheetInfo(entity, 1));
+      const metadata = result.albumItem || result.sheetItem || result;
+      const { musicList, data, isEnd, ...details } = metadata;
+      return { ...entity, ...details };
     },
     members: (entity, page, kind) => {
       const snapshot = importedSnapshot(entity);
@@ -3275,11 +3302,11 @@ function createOperations(sdk) {
           sheetItem: snapshot.entity,
           total: snapshot.items.length,
         };
-      return entity.type === "artist"
+      return entityKind(entity) === "artist"
         ? getArtistWorks(entity, page, kind)
-        : entity.type === "chart"
+        : entityKind(entity) === "chart"
           ? getTopListDetail(entity, page)
-          : entity.type === "album"
+          : entityKind(entity) === "album"
             ? getAlbumInfo(entity, page)
             : getMusicSheetInfo(entity, page);
     },
@@ -3387,7 +3414,7 @@ function bindPageHandlers() {
         source: manifest.srcUrl,
         capability,
         entity: entity
-          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          ? { id: entity.id, type: entityKind(entity), token: entity._bakaImportToken }
           : null,
         query: request.query,
         kind: request.kind,

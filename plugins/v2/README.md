@@ -4,8 +4,10 @@ These seven templates are adapted from this repository's public V1 providers at
 `20bfcc9`. LyraMesh's internal QQ playlist, Kugou and other upstream APIs are a
 separate implementation and must not be copied into this family.
 
-Packages initially started at `1.0.0`; Kuwo is now `1.0.1` after switching its
-search, album and artist catalog requests to HTTPS. Stable package IDs are:
+Packages initially started at `1.0.0`; Kuwo is now `1.0.2` and the other six
+providers are `1.0.1`. This revision restores public-baseline dispatch, chart
+groups, import selection and media quality policy; Kuwo also retains its earlier
+search, album and artist catalog HTTPS fixes. Stable package IDs are:
 `cc.baka.am`, `cc.baka.wy`, `cc.baka.qq`,
 `cc.baka.kg`, `cc.baka.kw`, `cc.baka.mg`, `cc.baka.bilibili`. Their source protocol
 IDs are `{platform}.v1`; that suffix versions the catalog protocol, not the plugin
@@ -68,7 +70,7 @@ pages. Apple album browsing fetches one upstream page per request.
 Set `BAKA_V2_PROBE` to the built client's `v2_probe` executable, then run:
 
 ```sh
-node --test tests/v2-native.test.cjs
+node --test tests/v2-native.test.cjs tests/v2-public-parity.test.cjs
 python tests/v2-native-import.py PATH_TO_BAKA_FFI_DLL
 ```
 

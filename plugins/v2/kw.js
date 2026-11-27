@@ -10,9 +10,10 @@ const manifest = {
   sourceId: "kw.v1",
   id: "cc.baka.kw",
   name: "酷我音乐",
-  version: "1.0.1",
+  version: "1.0.2",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
+  cacheControl: "no-cache",
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: ["128k", "320k", "flac"],
   supportedVideoQualities: ["240p", "360p", "480p", "720p", "1080p"],
@@ -51,6 +52,10 @@ const manifest = {
   },
 };
 
+function entityKind(entity) {
+  const kind = entity.type || entity.kind;
+  return kind === "playlist" ? "sheet" : kind === "track" ? "music" : kind;
+}
 function pageState(cursor) {
   if (cursor == null) return { upstreamPage: 1, offset: 0 };
   let value;
@@ -2341,6 +2346,33 @@ function createOperations(sdk) {
       return await searchLyric(query, page);
     }
   }
+  async function getMediaSource(musicItem, quality) {
+    if (typeof requestMusicUrl !== "function") {
+      throw Object.assign(new Error("Configure a music URL source"), {
+        code: "authentication_required",
+      });
+    }
+    if (typeof musicItem.id === "string") {
+      musicItem = { ...musicItem, id: musicItem.id.replace("MUSIC_", "") };
+    }
+    const songQualities = ensureQualities(musicItem.qualities);
+    if (!songQualities[quality]) {
+      const available = Object.keys(songQualities);
+      if (available.length)
+        quality = available.includes("flac")
+          ? "flac"
+          : available.includes("320k")
+            ? "320k"
+            : available[0];
+    }
+    try {
+      const result = await requestMusicUrl(musicItem, quality, sdk);
+      return typeof result === "string" ? { url: result, quality } : result;
+    } catch (error) {
+      sdk.log.error(`[酷我] API获取播放链接失败: ${error.message}`);
+      return null;
+    }
+  }
   let activeImport = null;
   function importedSnapshot(entity) {
     if (!entity._bakaImportToken) return null;
@@ -2386,11 +2418,15 @@ function createOperations(sdk) {
     collection: async (entity) => {
       const snapshot = importedSnapshot(entity);
       if (snapshot) return snapshot.entity;
-      if (entity.type === "artist") return entity;
-      const result = await (entity.type === "album"
-        ? getAlbumInfo(entity)
-        : getMusicSheetInfo(entity, 1));
-      return { ...entity, ...(result.albumItem || result.sheetItem || {}) };
+      if (entityKind(entity) === "artist") return entity;
+      const result = await (entityKind(entity) === "chart"
+        ? getTopListDetail(entity, 1)
+        : entityKind(entity) === "album"
+          ? getAlbumInfo(entity)
+          : getMusicSheetInfo(entity, 1));
+      const metadata = result.albumItem || result.sheetItem || result;
+      const { musicList, data, isEnd, ...details } = metadata;
+      return { ...entity, ...details };
     },
     members: (entity, page, kind) => {
       const snapshot = importedSnapshot(entity);
@@ -2401,11 +2437,11 @@ function createOperations(sdk) {
           sheetItem: snapshot.entity,
           total: snapshot.items.length,
         };
-      return entity.type === "artist"
+      return entityKind(entity) === "artist"
         ? getArtistWorks(entity, page, kind)
-        : entity.type === "chart"
+        : entityKind(entity) === "chart"
           ? getTopListDetail(entity, page)
-          : entity.type === "album"
+          : entityKind(entity) === "album"
             ? getAlbumInfo(entity, page)
             : getMusicSheetInfo(entity, page);
     },
@@ -2415,6 +2451,7 @@ function createOperations(sdk) {
     hotSearch: getHotSearch,
     daily: getDailyRecommendations,
 
+    resolve: getMediaSource,
     video: getMvSource,
     lyric: getLyric,
     comments: getMusicComments,
@@ -2456,19 +2493,8 @@ const handlers = {
       },
       quality,
     }),
-    resolve: async ({ entity, quality }, sdk) => {
-      if (typeof requestMusicUrl === "function") {
-        const result = await requestMusicUrl(
-          entity,
-          quality || manifest.supportedQualities[0],
-          sdk,
-        );
-        return typeof result === "string" ? { url: result, quality } : result;
-      }
-      throw Object.assign(new Error("Configure a music URL source"), {
-        code: "authentication_required",
-      });
-    },
+    resolve: async ({ entity, quality }, sdk) =>
+      operations(sdk).resolve(entity, quality || manifest.supportedQualities[0]),
     video: async ({ entity, quality }, sdk) => operations(sdk).video(entity, quality || "1080p"),
   },
   lyrics: { get: async ({ entity }, sdk) => operations(sdk).lyric(entity) },
@@ -2516,7 +2542,7 @@ function bindPageHandlers() {
         source: manifest.srcUrl,
         capability,
         entity: entity
-          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          ? { id: entity.id, type: entityKind(entity), token: entity._bakaImportToken }
           : null,
         query: request.query,
         kind: request.kind,

@@ -9,7 +9,7 @@ const manifest = {
   sourceId: "am.v1",
   id: "cc.baka.am",
   name: "Apple Music",
-  version: "1.0.0",
+  version: "1.0.1",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   description: "Apple Music 音源",
@@ -26,6 +26,10 @@ const manifest = {
     "lyrics.get",
   ],
 };
+function entityKind(entity) {
+  const kind = entity.type || entity.kind;
+  return kind === "playlist" ? "sheet" : kind === "track" ? "music" : kind;
+}
 function pageState(cursor) {
   if (cursor == null) return { upstreamPage: 1, offset: 0 };
   let value;
@@ -365,12 +369,12 @@ const handlers = {
     ),
   collections: {
     get: async ({ entity }, sdk) =>
-      entity.type === "artist"
+      entityKind(entity) === "artist"
         ? entity
         : { ...entity, ...(await operations(sdk).getAlbumInfo(entity)).albumItem },
     members: async (request, sdk) =>
       pageResult(
-        await (request.entity.type === "artist"
+        await (entityKind(request.entity) === "artist"
           ? operations(sdk).getArtistWorks(request.entity, pageNumber(request.cursor), request.kind)
           : operations(sdk).getAlbumInfo(request.entity, pageNumber(request.cursor))),
         request,
@@ -421,7 +425,7 @@ function bindPageHandlers() {
         source: manifest.srcUrl,
         capability,
         entity: entity
-          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          ? { id: entity.id, type: entityKind(entity), token: entity._bakaImportToken }
           : null,
         query: request.query,
         kind: request.kind,

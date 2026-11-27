@@ -10,9 +10,10 @@ const manifest = {
   sourceId: "bilibili.v1",
   id: "cc.baka.bilibili",
   name: "bilibili",
-  version: "1.0.0",
+  version: "1.0.1",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
+  cacheControl: "no-cache",
   primaryKey: ["id", "aid", "bvid", "cid"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: ["128k", "192k", "320k", "flac", "hires", "dolby"],
@@ -72,6 +73,10 @@ const manifest = {
   },
 };
 
+function entityKind(entity) {
+  const kind = entity.type || entity.kind;
+  return kind === "playlist" ? "sheet" : kind === "track" ? "music" : kind;
+}
 function pageState(cursor) {
   if (cursor == null) return { upstreamPage: 1, offset: 0 };
   let value;
@@ -1903,15 +1908,25 @@ function createOperations(sdk) {
   }
   return {
     search,
-    entity: (entity) => getMusicInfo(entity),
+    entity: (entity) => {
+      const input = String(entity.id || "");
+      return !/^BV[a-zA-Z0-9]{10}$/.test(input) &&
+        /\bBV[a-zA-Z0-9]{10}\b|(?:av|aid[=/])[0-9]+/i.test(input)
+        ? importMusicItem(input)
+        : getMusicInfo(entity);
+    },
     collection: async (entity) => {
       const snapshot = importedSnapshot(entity);
       if (snapshot) return snapshot.entity;
-      if (entity.type === "artist") return entity;
-      const result = await (entity.type === "album"
-        ? getAlbumInfo(entity)
-        : getMusicSheetInfo(entity, 1));
-      return { ...entity, ...(result.albumItem || result.sheetItem || {}) };
+      if (entityKind(entity) === "artist") return entity;
+      const result = await (entityKind(entity) === "chart"
+        ? getTopListDetail(entity, 1)
+        : entityKind(entity) === "album"
+          ? getAlbumInfo(entity)
+          : getMusicSheetInfo(entity, 1));
+      const metadata = result.albumItem || result.sheetItem || result;
+      const { musicList, data, isEnd, ...details } = metadata;
+      return { ...entity, ...details };
     },
     members: (entity, page, kind) => {
       const snapshot = importedSnapshot(entity);
@@ -1922,11 +1937,11 @@ function createOperations(sdk) {
           sheetItem: snapshot.entity,
           total: snapshot.items.length,
         };
-      return entity.type === "artist"
+      return entityKind(entity) === "artist"
         ? getArtistWorks(entity, page, kind)
-        : entity.type === "chart"
+        : entityKind(entity) === "chart"
           ? getTopListDetail(entity, page)
-          : entity.type === "album"
+          : entityKind(entity) === "album"
             ? getAlbumInfo(entity, page)
             : getMusicSheetInfo(entity, page);
     },
@@ -1940,6 +1955,16 @@ function createOperations(sdk) {
     lyric: getLyric,
     comments: getMusicComments,
     importSheet: importCollection,
+    resolveLink: async (request) => {
+      const kind = request.type || request.kind;
+      // Share links resolve collections unless the caller requests one track.
+      if (kind === "music" || kind === "track") {
+        const item = await importMusicItem(request.url);
+        if (!item) throw new Error("The share link did not return a valid track");
+        return { ...item, type: "music" };
+      }
+      return importCollection(request.url);
+    },
     share: getMusicDetailPageUrl,
   };
 }
@@ -1998,7 +2023,7 @@ const handlers = {
       ),
   },
   links: {
-    resolve: async ({ url }, sdk) => operations(sdk).importSheet(url),
+    resolve: async (request, sdk) => operations(sdk).resolveLink(request),
     share: async ({ entity }, sdk) => operations(sdk).share(entity),
   },
 };
@@ -2034,7 +2059,7 @@ function bindPageHandlers() {
         source: manifest.srcUrl,
         capability,
         entity: entity
-          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          ? { id: entity.id, type: entityKind(entity), token: entity._bakaImportToken }
           : null,
         query: request.query,
         kind: request.kind,
