@@ -77,3 +77,6 @@ python tests/v2-native-import.py PATH_TO_BAKA_FFI_DLL
 These execute the real lean QuickJS SDK and native import enumerator against local
 HTTP fixtures. They do not establish remote service uptime, account authorization
 or device playback. See [DESIGN.md](DESIGN.md).
+
+
+Plugin version increments follow the maintained decimal carry convention: after 1.0.9 comes 1.1.0, not 1.0.10. Bump every modified package and synchronize distribution versions.

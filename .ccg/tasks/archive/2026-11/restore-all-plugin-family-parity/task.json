@@ -1,0 +1,13 @@
+{
+  "currentPhase": "completed",
+  "domain": "plugins",
+  "nextAction": "Archived; implementation pushed and LyraMesh shared templates verified",
+  "id": "restore-all-plugin-family-parity",
+  "title": "Audit all own-baseline plugin behaviors and restore V2 parity",
+  "branch": "main",
+  "createdAt": "2026-11-27T17:30:41.8028012Z",
+  "risk": "high",
+  "complexity": "L",
+  "status": "completed",
+  "completedAt": "2026-11-27T18:33:03.043340+00:00"
+}
