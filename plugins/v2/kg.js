@@ -12,7 +12,7 @@ const manifest = {
   name: "酷狗音乐",
   version: "1.0.0",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
-  author: "Toskysun",
+  author: "BakaMusic",
   primaryKey: ["id", "album_id", "album_audio_id"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: ["128k", "320k", "flac", "flac24bit", "hires", "atmos", "master"],

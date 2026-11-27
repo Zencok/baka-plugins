@@ -12,7 +12,7 @@ const manifest = {
   name: "咪咕音乐",
   version: "1.0.0",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
-  author: "Toskysun",
+  author: "BakaMusic",
   primaryKey: ["copyrightId"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: ["mgg", "128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus"],

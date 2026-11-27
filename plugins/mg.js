@@ -2669,7 +2669,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "咪咕音乐",
-  author: "Toskysun",
+  author: "BakaMusic",
   version: "1.3.5",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/mg.js",

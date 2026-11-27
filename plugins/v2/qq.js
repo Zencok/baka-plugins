@@ -12,7 +12,7 @@ const manifest = {
   name: "QQ音乐",
   version: "1.0.0",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
-  author: "Toskysun",
+  author: "BakaMusic",
   primaryKey: ["id", "songmid"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: [

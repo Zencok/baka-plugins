@@ -151,6 +151,8 @@ test('distribution serves suffixless and js routes with manifest-derived subscri
       assert.equal(context.module.exports.manifest.id, entry.id);
       assert.equal(context.module.exports.manifest.name, entry.name);
       assert.equal(context.module.exports.manifest.version, entry.version);
+      assert.equal(context.module.exports.manifest.author, 'BakaMusic');
+      assert.equal(entry.author, 'BakaMusic');
     }
   }
 });

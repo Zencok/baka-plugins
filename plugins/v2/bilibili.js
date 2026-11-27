@@ -12,7 +12,7 @@ const manifest = {
   name: "bilibili",
   version: "1.0.0",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
-  author: "Toskysun",
+  author: "BakaMusic",
   primaryKey: ["id", "aid", "bvid", "cid"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
   supportedQualities: ["128k", "192k", "320k", "flac", "hires", "dolby"],

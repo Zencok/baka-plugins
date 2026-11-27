@@ -1450,7 +1450,7 @@ module.exports = {
   getDailyRecommendations,
   getHotSearch,
   platform: "QQ音乐",
-  author: "Toskysun",
+  author: "BakaMusic",
   version: "1.3.2",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",

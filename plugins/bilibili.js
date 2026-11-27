@@ -1065,7 +1065,7 @@ async function getHotSearch() {
 module.exports = {
   getHotSearch,
   platform: "bilibili",
-  author: "Toskysun",
+  author: "BakaMusic",
   version: "2.1.2",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",

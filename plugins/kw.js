@@ -1969,7 +1969,7 @@ module.exports = {
   getDailyRecommendations,
   getHotSearch,
   platform: "酷我音乐",
-  author: "Toskysun",
+  author: "BakaMusic",
   version: "1.2.1",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

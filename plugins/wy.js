@@ -1594,7 +1594,7 @@ module.exports = {
   userVariables: [{ key: "wy_user_id", name: "网易云连接码", hint: "在 https://mc.vsaa.cn/connect?platform=wy 登录后，将 wy_ 开头的连接码填入此处，用于个人每日推荐。" }],
   getHotSearch,
   platform: "网易云音乐",
-  author: "Toskysun",
+  author: "BakaMusic",
   version: "1.1.8",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

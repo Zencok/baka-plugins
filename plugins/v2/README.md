@@ -9,7 +9,8 @@ search, album and artist catalog requests to HTTPS. Stable package IDs are:
 `cc.baka.am`, `cc.baka.wy`, `cc.baka.qq`,
 `cc.baka.kg`, `cc.baka.kw`, `cc.baka.mg`, `cc.baka.bilibili`. Their source protocol
 IDs are `{platform}.v1`; that suffix versions the catalog protocol, not the plugin
-API. The manifest API version is 2. Original authors and settings are preserved.
+API. The manifest API version is 2. The public display author is `BakaMusic`;
+upstream credits remain in [ATTRIBUTION.md](ATTRIBUTION.md). Settings are preserved.
 
 ## Distribution and authoring
 

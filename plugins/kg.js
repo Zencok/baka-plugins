@@ -2465,7 +2465,7 @@ module.exports = {
   getHotSearch,
   platform: "酷狗音乐",
   version: "1.3.7",
-  author: "Toskysun",
+  author: "BakaMusic",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
