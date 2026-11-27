@@ -10,6 +10,7 @@ const manifest = {
   id: "cc.baka.am",
   name: "Apple Music",
   version: "1.0.0",
+  srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   description: "Apple Music 音源",
   primaryKey: ["id"],
@@ -263,18 +264,18 @@ function operations(sdk) {
     return amResult(root, type === "lyric" ? "music" : type);
   }
 
-  async function getAlbumInfo(item) {
-    const id = amId(item);
-    const musicList = [];
-    let info;
-    // Host album API is unpaged. Never silently return a truncated album.
-    for (let page = 1; page <= 50; page++) {
-      const root = await amPost("/music/album", { source: "am", musicId: id, page, limit: 100 });
-      info = info || (root.info && amCollection(root.info, "album"));
-      musicList.push(...amRows(root, "music"));
-      if (root.hasNext !== true) return { albumItem: info || item, musicList };
-    }
-    throw new Error("Apple Music：专辑曲目过多，暂时无法完整读取");
+  async function getAlbumInfo(item, page = 1) {
+    const root = await amPost("/music/album", {
+      source: "am",
+      musicId: amId(item),
+      page: amPage(page),
+      limit: 100,
+    });
+    return {
+      isEnd: root.hasNext !== true,
+      albumItem: (root.info && amCollection(root.info, "album")) || item,
+      musicList: amRows(root, "music"),
+    };
   }
 
   async function getArtistWorks(item, page = 1, type = "music") {
@@ -371,7 +372,7 @@ const handlers = {
       pageResult(
         await (request.entity.type === "artist"
           ? operations(sdk).getArtistWorks(request.entity, pageNumber(request.cursor), request.kind)
-          : operations(sdk).getAlbumInfo(request.entity)),
+          : operations(sdk).getAlbumInfo(request.entity, pageNumber(request.cursor))),
         request,
       ),
   },
@@ -388,4 +389,81 @@ const handlers = {
   },
   lyrics: { get: async ({ entity }, sdk) => operations(sdk).getLyric(entity) },
 };
+// Bind every public page cursor to its catalog/account request. Only digests and
+// bounded paging state cross the boundary; credentials and entity metadata do not.
+function bindPageHandlers() {
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === "object") {
+      const result = {};
+      for (const key of Object.keys(value).sort()) result[key] = stable(value[key]);
+      return result;
+    }
+    return value;
+  }
+  for (const capability of manifest.capabilities) {
+    if (
+      capability !== "search" &&
+      capability !== "collections.members" &&
+      capability !== "comments.list" &&
+      !capability.startsWith("discovery.")
+    )
+      continue;
+    const keys = capability.split(".");
+    const key = keys.pop();
+    const group = keys.reduce((value, name) => value[name], handlers);
+    const handler = group[key];
+    group[key] = async (request, sdk) => {
+      const entity = request.entity;
+      const context = {
+        provider: manifest.id,
+        version: manifest.version,
+        source: manifest.srcUrl,
+        capability,
+        entity: entity
+          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          : null,
+        query: request.query,
+        kind: request.kind,
+        tag:
+          request.tag && typeof request.tag === "object" && request.tag.id != null
+            ? { id: request.tag.id, digest: request.tag.digest }
+            : request.tag,
+        sort: request.sort,
+        context: request.context,
+        revision: request.revision,
+        sourceRevision: request.sourceRevision,
+        accountRevision: request.accountRevision,
+        account: sdk.settings || {},
+        day: capability === "discovery.daily" ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const binding = sdk.crypto.hash("sha256", sdk.bytes.encode(JSON.stringify(stable(context))));
+      let cursor = null;
+      if (request.cursor != null) {
+        let value;
+        try {
+          if (
+            typeof request.cursor !== "string" ||
+            request.cursor.length > 2048 ||
+            !request.cursor.startsWith("v2c:")
+          )
+            throw new Error();
+          value = JSON.parse(request.cursor.slice(4));
+          if (!value || value.binding !== binding || typeof value.cursor !== "string")
+            throw new Error();
+          pageState(value.cursor);
+        } catch (_) {
+          throw new Error("Provider cursor does not match this request or account");
+        }
+        cursor = value.cursor;
+      }
+      const page = await handler({ ...request, cursor }, sdk);
+      if (page.nextCursor != null) {
+        page.nextCursor = "v2c:" + JSON.stringify({ binding, cursor: page.nextCursor });
+      }
+      return page;
+    };
+  }
+}
+bindPageHandlers();
 module.exports = { manifest, handlers };

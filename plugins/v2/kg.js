@@ -11,6 +11,7 @@ const manifest = {
   id: "cc.baka.kg",
   name: "酷狗音乐",
   version: "1.0.0",
+  srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "Toskysun",
   primaryKey: ["id", "album_id", "album_audio_id"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
@@ -1217,7 +1218,7 @@ function createOperations(sdk) {
     }
   }
 
-  async function getMusicInfoRaw(hash) {
+  async function getMusicInfoRaw(hash, options = {}) {
     try {
       const data = {
         area_code: "1",
@@ -1245,6 +1246,9 @@ function createOperations(sdk) {
         },
       });
 
+      if (options.strict && res.data?.status != null && res.data.status !== 1) {
+        throw new Error("Provider song request failed");
+      }
       if (res.data && res.data.data && res.data.data.length > 0) {
         return res.data.data[0][0]; // 返回第一条音乐信息
       }
@@ -1252,6 +1256,7 @@ function createOperations(sdk) {
       return null;
     } catch (error) {
       sdk.log.error("[酷狗] 获取音乐详细信息失败:", error);
+      if (options.strict) throw error;
       return null;
     }
   }
@@ -2063,43 +2068,71 @@ function createOperations(sdk) {
         return await getSpecialMusicList(sheetId, page);
       }
 
-      const importedSheet = await importMusicSheet(sheetId);
-      const musicList = Array.isArray(importedSheet)
-        ? importedSheet
-        : importedSheet?.musicList || [];
-
-      if (!musicList || musicList.length === 0) {
-        sdk.log.debug("[酷狗] 歌单为空，尝试解析其他格式");
-
-        if (typeof sheetId === "string" && sheetId.includes("http")) {
-          return {
-            isEnd: true,
-            musicList: [],
-          };
-        }
+      const input = String(sheetId).trim();
+      const gcid = input.match(/\bgcid_[a-z0-9]+\b/i)?.[0];
+      const globalId = gcid ? await decodeKugouGcid(gcid) : input;
+      if (!/^(?:collection_\d+_\d+_\d+_\d+|\d+)$/.test(globalId)) {
+        throw new Error("Unsupported collection identity; resolve its share link first");
       }
-
-      const pageSize = 100;
-      const startIndex = (page - 1) * pageSize;
-      const endIndex = page * pageSize;
-      const pagedList = musicList ? musicList.slice(startIndex, endIndex) : [];
-
-      return {
-        isEnd: !musicList || musicList.length <= endIndex,
-        sheetItem: playlistSheetItem(
-          { ...sheet, ...(!Array.isArray(importedSheet) ? importedSheet : {}) },
-          importedSheet?.worksNum,
-          musicList.length,
-        ),
-        musicList: pagedList,
-      };
+      return await getKugouCollectionPage(globalId, sheet, page);
     } catch (error) {
       sdk.log.error("[酷狗] 获取歌单详情失败:", error);
-      return {
-        isEnd: true,
-        musicList: [],
-      };
+      throw error;
     }
+  }
+
+  // Ordinary browsing reads one bounded source page. Explicit link imports keep
+  // their complete traversal and validated snapshot in importMusicSheet.
+  async function getKugouCollectionPage(globalId, sheet, page = 1) {
+    const pageSize = 100;
+    const begin = (page - 1) * pageSize;
+    const timestamp = Math.floor(Date.now() / 1000);
+    const params =
+      `area_code=1&appid=1005&begin_idx=${begin}&clienttime=${timestamp}` +
+      `&clientver=20489&extend_fields=abtags,hot_cmt,popularization&global_collection_id=${globalId}` +
+      `&mode=1&pagesize=${pageSize}&personal_switch=1&plat=1&type=1&uuid=-`;
+    const response = await httpGet(
+      `https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt?${params}&signature=${signatureParams(params, "android")}`,
+      {
+        headers: {
+          "User-Agent": "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi",
+          "kg-rc": "1",
+          "kg-thash": "5d816a0",
+          "kg-rec": "1",
+          "kg-rf": "B9EDA08A64250DEFFBCADDEE00F8F25F",
+        },
+      },
+    );
+    const data = response.data?.data;
+    if (
+      response.data?.status !== 1 ||
+      !Array.isArray(data?.songs) ||
+      data.songs.length > pageSize
+    ) {
+      throw new Error("Provider playlist page request failed");
+    }
+    const count = data.count == null || data.count === "" ? null : Number(data.count);
+    const total = Number.isSafeInteger(count) && count >= 0 ? count : null;
+    if (!data.songs.length && total !== null && begin < total) {
+      throw new Error("Provider playlist page ended before its reported total");
+    }
+    let qualities = {};
+    if (data.songs.length) {
+      // Optional quality enrichment stays bounded to this page; its existing
+      // helper retains source metadata when the enrichment service is down.
+      qualities = await getBatchMusicQualityInfo(
+        data.songs.map((song) => song.hash).filter(Boolean),
+      );
+    }
+    const metadata = buildImportedKugouSheet(sheet.id, data.list_info, []);
+    delete metadata.musicList;
+    delete metadata.worksNum;
+    return {
+      isEnd: total === null ? data.songs.length < pageSize : begin + data.songs.length >= total,
+      sheetItem: playlistSheetItem({ ...sheet, ...metadata, id: sheet.id }, total),
+      ...(total === null ? {} : { total }),
+      musicList: data.songs.map((song) => formatGatewayImportMusicItem(song, qualities)),
+    };
   }
 
   async function getSpecialMusicList(specialId, page) {
@@ -2121,10 +2154,7 @@ function createOperations(sdk) {
 
       if (!infoRes.data || infoRes.data.status !== 1 || !infoRes.data.data) {
         sdk.log.error("[酷狗] 获取歌单信息失败");
-        return {
-          isEnd: true,
-          musicList: [],
-        };
+        throw new Error("Provider playlist request failed");
       }
 
       const data = infoRes.data.data;
@@ -2191,10 +2221,7 @@ function createOperations(sdk) {
       };
     } catch (error) {
       sdk.log.error("[酷狗] 获取歌单详情异常:", error.message);
-      return {
-        isEnd: true,
-        musicList: [],
-      };
+      throw error;
     }
   }
 
@@ -2563,6 +2590,7 @@ function createOperations(sdk) {
       }
     } catch (error) {
       sdk.log.error("[酷狗] 获取歌单标签失败:", error);
+      throw error;
     }
 
     return {
@@ -2587,7 +2615,7 @@ function createOperations(sdk) {
 
     try {
       if (sortId === "5" && !categoryId && page === 1) {
-        let [recRes, listRes] = await Promise.all([
+        const responses = await Promise.allSettled([
           http({
             url: "http://everydayrec.service.kugou.com/guess_special_recommend",
             method: "POST",
@@ -2605,12 +2633,18 @@ function createOperations(sdk) {
             headers: {
               "User-Agent": "KuGou2012-8275-web_browser_event_handler",
             },
-          }).catch(() => ({ data: {} })),
+          }),
           httpGet(
             `http://www2.kugou.kugou.com/yueku/v9/special/getSpecial?is_ajax=1&cdn=cdn&t=${sortId}&c=${categoryId}&p=${page}&pagesize=${pageSize}`,
-          ).catch(() => ({ data: {} })),
+          ),
         ]);
 
+        if (responses.every((result) => result.status === "rejected")) {
+          throw responses[1].reason;
+        }
+        const [recRes, listRes] = responses.map((result) =>
+          result.status === "fulfilled" ? result.value : { data: {} },
+        );
         let recList = recRes.data?.data?.special_list || [];
         let normalList = listRes.data?.special_db || [];
         list = [...recList, ...normalList];
@@ -2624,6 +2658,7 @@ function createOperations(sdk) {
       }
     } catch (error) {
       sdk.log.error("[酷狗] 获取推荐歌单失败:", error);
+      throw error;
     }
 
     return {
@@ -2777,7 +2812,7 @@ function createOperations(sdk) {
     const hash = musicItem.id || musicItem.hash;
 
     try {
-      const musicInfo = await getMusicInfoRaw(hash);
+      const musicInfo = await getMusicInfoRaw(hash, { strict: true });
       const res_id = musicInfo?.classification?.[0]?.res_id;
 
       if (!res_id) {
@@ -2813,7 +2848,7 @@ function createOperations(sdk) {
 
       if (res.status !== 200 || !res.data || !res.data.list) {
         sdk.log.error("[酷狗] 评论API返回异常:", res.data);
-        return { isEnd: true, data: [] };
+        throw new Error("Provider comments request failed");
       }
 
       const comments = (res.data.list || []).map((item) => {
@@ -2852,7 +2887,7 @@ function createOperations(sdk) {
         sdk.log.error("[酷狗] 响应状态:", error.response.status);
         sdk.log.error("[酷狗] 响应数据:", error.response.data);
       }
-      return { isEnd: true, data: [] };
+      throw error;
     }
   }
 
@@ -3058,4 +3093,81 @@ const handlers = {
     share: async ({ entity }, sdk) => operations(sdk).share(entity),
   },
 };
+// Bind every public page cursor to its catalog/account request. Only digests and
+// bounded paging state cross the boundary; credentials and entity metadata do not.
+function bindPageHandlers() {
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === "object") {
+      const result = {};
+      for (const key of Object.keys(value).sort()) result[key] = stable(value[key]);
+      return result;
+    }
+    return value;
+  }
+  for (const capability of manifest.capabilities) {
+    if (
+      capability !== "search" &&
+      capability !== "collections.members" &&
+      capability !== "comments.list" &&
+      !capability.startsWith("discovery.")
+    )
+      continue;
+    const keys = capability.split(".");
+    const key = keys.pop();
+    const group = keys.reduce((value, name) => value[name], handlers);
+    const handler = group[key];
+    group[key] = async (request, sdk) => {
+      const entity = request.entity;
+      const context = {
+        provider: manifest.id,
+        version: manifest.version,
+        source: manifest.srcUrl,
+        capability,
+        entity: entity
+          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          : null,
+        query: request.query,
+        kind: request.kind,
+        tag:
+          request.tag && typeof request.tag === "object" && request.tag.id != null
+            ? { id: request.tag.id, digest: request.tag.digest }
+            : request.tag,
+        sort: request.sort,
+        context: request.context,
+        revision: request.revision,
+        sourceRevision: request.sourceRevision,
+        accountRevision: request.accountRevision,
+        account: sdk.settings || {},
+        day: capability === "discovery.daily" ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const binding = sdk.crypto.hash("sha256", sdk.bytes.encode(JSON.stringify(stable(context))));
+      let cursor = null;
+      if (request.cursor != null) {
+        let value;
+        try {
+          if (
+            typeof request.cursor !== "string" ||
+            request.cursor.length > 2048 ||
+            !request.cursor.startsWith("v2c:")
+          )
+            throw new Error();
+          value = JSON.parse(request.cursor.slice(4));
+          if (!value || value.binding !== binding || typeof value.cursor !== "string")
+            throw new Error();
+          pageState(value.cursor);
+        } catch (_) {
+          throw new Error("Provider cursor does not match this request or account");
+        }
+        cursor = value.cursor;
+      }
+      const page = await handler({ ...request, cursor }, sdk);
+      if (page.nextCursor != null) {
+        page.nextCursor = "v2c:" + JSON.stringify({ binding, cursor: page.nextCursor });
+      }
+      return page;
+    };
+  }
+}
+bindPageHandlers();
 module.exports = { manifest, handlers };

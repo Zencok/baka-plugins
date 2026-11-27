@@ -1,6 +1,7 @@
 /* Development-only static port of the public V1 protocol implementations.
  * Distributed files contain direct V2 handlers and SDK calls, never a V1 module.
- * Run node plugins/v2/build.cjs after reviewing upstream protocol changes.
+ * Draft migration only. Maintained V2 providers are the source of truth.
+ * Set BAKA_V2_DRAFT_DIR to a separate directory; never overwrite live templates.
  */
 const fs = require("node:fs");
 const vm = require("node:vm");
@@ -49,6 +50,15 @@ async function writeProvider(filename, source) {
   fs.writeFileSync(filename, source);
 }
 async function build() {
+  const draftDir = process.env.BAKA_V2_DRAFT_DIR;
+  if (!draftDir)
+    throw new Error(
+      "Set BAKA_V2_DRAFT_DIR: V1 migration emits drafts only; maintained V2 providers must not be overwritten",
+    );
+  const outputDir = path.resolve(draftDir);
+  if (outputDir.toLowerCase() === __dirname.toLowerCase())
+    throw new Error("Draft output must not overwrite maintained V2 providers");
+  fs.mkdirSync(outputDir, { recursive: true });
   const ids = process.argv.slice(2).length
     ? process.argv.slice(2)
     : ["am", "wy", "qq", "kg", "kw", "mg", "bilibili"];
@@ -125,7 +135,7 @@ const handlers = {
 module.exports = { manifest, handlers };
 `;
       new vm.Script(output);
-      await writeProvider(path.join(__dirname, "am.js"), output);
+      await writeProvider(path.join(outputDir, "am.js"), output);
       continue;
     }
     vmFunctions = {};
@@ -495,7 +505,7 @@ return {
         );
       throw new Error(id + " unported dependencies: " + leftovers.join("\n"));
     }
-    await writeProvider(path.join(__dirname, id + ".js"), output);
+    await writeProvider(path.join(outputDir, id + ".js"), output);
   }
 }
 build().catch((error) => {

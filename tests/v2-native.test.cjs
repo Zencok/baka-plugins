@@ -9,6 +9,34 @@ const { promisify } = require('node:util');
 const run = promisify(execFile);
 const probe = process.env.BAKA_V2_PROBE;
 
+test('every distributed source/provider passes native V2 inspection and loading', { skip: !probe }, async () => {
+  const { SOURCE_CONFIG } = require('../functions/source-config');
+  const subscription = require('../functions/v2-subscription');
+  const plugin = require('../functions/v2-plugin');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'baka-v2-distribution-'));
+  try {
+    for (const source of Object.keys(SOURCE_CONFIG)) {
+      const key = source === 'oi' ? '0123456789abcdef0123456789abcdef' : 'key&value.json';
+      const sub = await subscription.handler({ httpMethod: 'GET', queryStringParameters: { source, key } });
+      assert.equal(sub.statusCode, 200, source);
+      for (const entry of JSON.parse(sub.body).plugins) {
+        const platform = entry.id.split('.').at(-1);
+        const response = await plugin.handler({ httpMethod: 'GET', queryStringParameters: { plugin: platform, source, key } });
+        assert.equal(response.statusCode, 200, source + '/' + platform);
+        const file = path.join(directory, platform + '.js');
+        fs.writeFileSync(file, response.body);
+        const result = await run(probe, [file]);
+        const summary = JSON.parse(result.stdout.trim());
+        assert.equal(summary.providerId, entry.id);
+        assert.equal(summary.version, entry.version);
+        assert.equal(summary.lean, true);
+      }
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('public providers load and paginate through the actual QuickJS HTTP SDK', { skip: !probe }, async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'baka-public-v2-native-'));
   const requests = [];

@@ -11,6 +11,7 @@ const manifest = {
   id: "cc.baka.qq",
   name: "QQ音乐",
   version: "1.0.0",
+  srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "Toskysun",
   primaryKey: ["id", "songmid"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
@@ -887,6 +888,9 @@ function createOperations(sdk) {
         },
       );
 
+      if (res.data?.code !== 0 || res.data?.req?.code !== 0) {
+        throw new Error("Provider song request failed");
+      }
       if (
         res.data &&
         res.data.req &&
@@ -897,10 +901,10 @@ function createOperations(sdk) {
         return res.data.req.data.tracks[0].id;
       }
 
-      return typeof musicItem.id === "number" ? musicItem.id : null;
+      return null;
     } catch (error) {
       sdk.log.error("[QQ音乐] 获取歌曲信息失败:", error);
-      return typeof musicItem.id === "number" ? musicItem.id : null;
+      throw error;
     }
   }
 
@@ -1663,7 +1667,7 @@ function createOperations(sdk) {
       );
 
       if (res.data.code !== 0 || !res.data.req || res.data.req.code !== 0) {
-        return { isEnd: true, data: [] };
+        throw new Error("Provider comments request failed");
       }
 
       const commentList = res.data.req.data?.CommentList?.Comments || [];
@@ -1698,7 +1702,7 @@ function createOperations(sdk) {
       };
     } catch (error) {
       sdk.log.error("[QQ音乐] 获取热评论失败:", error);
-      return { isEnd: true, data: [] };
+      throw error;
     }
   }
 
@@ -1963,4 +1967,81 @@ const handlers = {
     share: async ({ entity }, sdk) => operations(sdk).share(entity),
   },
 };
+// Bind every public page cursor to its catalog/account request. Only digests and
+// bounded paging state cross the boundary; credentials and entity metadata do not.
+function bindPageHandlers() {
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === "object") {
+      const result = {};
+      for (const key of Object.keys(value).sort()) result[key] = stable(value[key]);
+      return result;
+    }
+    return value;
+  }
+  for (const capability of manifest.capabilities) {
+    if (
+      capability !== "search" &&
+      capability !== "collections.members" &&
+      capability !== "comments.list" &&
+      !capability.startsWith("discovery.")
+    )
+      continue;
+    const keys = capability.split(".");
+    const key = keys.pop();
+    const group = keys.reduce((value, name) => value[name], handlers);
+    const handler = group[key];
+    group[key] = async (request, sdk) => {
+      const entity = request.entity;
+      const context = {
+        provider: manifest.id,
+        version: manifest.version,
+        source: manifest.srcUrl,
+        capability,
+        entity: entity
+          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          : null,
+        query: request.query,
+        kind: request.kind,
+        tag:
+          request.tag && typeof request.tag === "object" && request.tag.id != null
+            ? { id: request.tag.id, digest: request.tag.digest }
+            : request.tag,
+        sort: request.sort,
+        context: request.context,
+        revision: request.revision,
+        sourceRevision: request.sourceRevision,
+        accountRevision: request.accountRevision,
+        account: sdk.settings || {},
+        day: capability === "discovery.daily" ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const binding = sdk.crypto.hash("sha256", sdk.bytes.encode(JSON.stringify(stable(context))));
+      let cursor = null;
+      if (request.cursor != null) {
+        let value;
+        try {
+          if (
+            typeof request.cursor !== "string" ||
+            request.cursor.length > 2048 ||
+            !request.cursor.startsWith("v2c:")
+          )
+            throw new Error();
+          value = JSON.parse(request.cursor.slice(4));
+          if (!value || value.binding !== binding || typeof value.cursor !== "string")
+            throw new Error();
+          pageState(value.cursor);
+        } catch (_) {
+          throw new Error("Provider cursor does not match this request or account");
+        }
+        cursor = value.cursor;
+      }
+      const page = await handler({ ...request, cursor }, sdk);
+      if (page.nextCursor != null) {
+        page.nextCursor = "v2c:" + JSON.stringify({ binding, cursor: page.nextCursor });
+      }
+      return page;
+    };
+  }
+}
+bindPageHandlers();
 module.exports = { manifest, handlers };

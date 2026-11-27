@@ -11,6 +11,7 @@ const manifest = {
   id: "cc.baka.wy",
   name: "网易云音乐",
   version: "1.0.0",
+  srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "Toskysun",
   primaryKey: ["id"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
@@ -1503,13 +1504,16 @@ function createOperations(sdk) {
             headers,
           })
         ).data;
-        total = sheetDetail?.playlist?.trackCount;
+        if (sheetDetail?.code !== 200 || !Array.isArray(sheetDetail?.playlist?.trackIds)) {
+          throw new Error("Provider playlist request failed");
+        }
+        total = sheetDetail.playlist.trackCount;
         trackIds = (sheetDetail?.playlist?.trackIds || [])
           .map((_) => _.id)
           .filter((tid) => tid != null);
       } catch (e) {
         sdk.log.error("[网易云] 获取歌单详情失败:", e?.message || e);
-        return { isEnd: true, musicList: [] };
+        throw e;
       }
     }
 
@@ -1538,7 +1542,7 @@ function createOperations(sdk) {
       };
     }
 
-    const res = await getValidMusicItems(currentPageIds, { withQuality: true });
+    const res = await getValidMusicItems(currentPageIds, { withQuality: true, strict: true });
 
     return {
       isEnd,
@@ -1639,9 +1643,8 @@ function createOperations(sdk) {
     ];
   }
 
-  async function getTopListDetail(topListItem) {
-    const musicList = await getSheetMusicById(topListItem.id);
-    return { ...topListItem, musicList };
+  async function getTopListDetail(topListItem, page = 1) {
+    return getMusicSheetInfo(topListItem, page);
   }
   // YRC 逐字歌词转 QRC 格式
 
@@ -1674,8 +1677,8 @@ function createOperations(sdk) {
         },
       );
 
-      if (res.status !== 200) {
-        return { isEnd: true, data: [] };
+      if (res.status !== 200 || res.data?.code !== 200) {
+        throw new Error("Provider comments request failed");
       }
 
       const hotComments = (res.data.hotComments || []).map((item) => ({
@@ -1705,7 +1708,7 @@ function createOperations(sdk) {
       };
     } catch (error) {
       sdk.log.error("[网易云] 获取热评失败:", error);
-      return { isEnd: true, data: [] };
+      throw error;
     }
   }
 
@@ -2082,4 +2085,81 @@ const handlers = {
     share: async ({ entity }, sdk) => operations(sdk).share(entity),
   },
 };
+// Bind every public page cursor to its catalog/account request. Only digests and
+// bounded paging state cross the boundary; credentials and entity metadata do not.
+function bindPageHandlers() {
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === "object") {
+      const result = {};
+      for (const key of Object.keys(value).sort()) result[key] = stable(value[key]);
+      return result;
+    }
+    return value;
+  }
+  for (const capability of manifest.capabilities) {
+    if (
+      capability !== "search" &&
+      capability !== "collections.members" &&
+      capability !== "comments.list" &&
+      !capability.startsWith("discovery.")
+    )
+      continue;
+    const keys = capability.split(".");
+    const key = keys.pop();
+    const group = keys.reduce((value, name) => value[name], handlers);
+    const handler = group[key];
+    group[key] = async (request, sdk) => {
+      const entity = request.entity;
+      const context = {
+        provider: manifest.id,
+        version: manifest.version,
+        source: manifest.srcUrl,
+        capability,
+        entity: entity
+          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          : null,
+        query: request.query,
+        kind: request.kind,
+        tag:
+          request.tag && typeof request.tag === "object" && request.tag.id != null
+            ? { id: request.tag.id, digest: request.tag.digest }
+            : request.tag,
+        sort: request.sort,
+        context: request.context,
+        revision: request.revision,
+        sourceRevision: request.sourceRevision,
+        accountRevision: request.accountRevision,
+        account: sdk.settings || {},
+        day: capability === "discovery.daily" ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const binding = sdk.crypto.hash("sha256", sdk.bytes.encode(JSON.stringify(stable(context))));
+      let cursor = null;
+      if (request.cursor != null) {
+        let value;
+        try {
+          if (
+            typeof request.cursor !== "string" ||
+            request.cursor.length > 2048 ||
+            !request.cursor.startsWith("v2c:")
+          )
+            throw new Error();
+          value = JSON.parse(request.cursor.slice(4));
+          if (!value || value.binding !== binding || typeof value.cursor !== "string")
+            throw new Error();
+          pageState(value.cursor);
+        } catch (_) {
+          throw new Error("Provider cursor does not match this request or account");
+        }
+        cursor = value.cursor;
+      }
+      const page = await handler({ ...request, cursor }, sdk);
+      if (page.nextCursor != null) {
+        page.nextCursor = "v2c:" + JSON.stringify({ binding, cursor: page.nextCursor });
+      }
+      return page;
+    };
+  }
+}
+bindPageHandlers();
 module.exports = { manifest, handlers };

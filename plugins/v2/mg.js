@@ -11,6 +11,7 @@ const manifest = {
   id: "cc.baka.mg",
   name: "咪咕音乐",
   version: "1.0.0",
+  srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "Toskysun",
   primaryKey: ["copyrightId"],
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
@@ -1720,6 +1721,7 @@ function createOperations(sdk) {
       };
     } catch (error) {
       sdk.log.error("[咪咕] 旧歌词搜索失败:", error);
+      throw error;
     }
 
     return {
@@ -2109,6 +2111,7 @@ function createOperations(sdk) {
       }
     } catch (error) {
       sdk.log.error("[咪咕] 获取歌手专辑失败:", error.message);
+      throw error;
     }
 
     return {
@@ -2175,17 +2178,34 @@ function createOperations(sdk) {
           },
         );
 
-        if (res.data && res.data.code === "000000" && res.data.data?.contentItemList) {
-          const itemsArray = res.data.data.contentItemList[0]?.itemList || [];
+        if (res.data?.code === "000000" && Array.isArray(res.data.data?.contentItemList)) {
+          const content = res.data.data;
+          const itemsArray = content.contentItemList.length
+            ? content.contentItemList[0]?.itemList
+            : [];
+          if (!Array.isArray(itemsArray)) throw new Error("Provider artist page is malformed");
           const items = itemsArray.map((item) => item.song || item).filter(Boolean);
-
+          const metadata = artistWorksItem(
+            artistItem,
+            "music",
+            content.totalCount,
+            res.data.totalCount,
+          );
+          // Prefer explicit upstream continuation. Without a page size or page
+          // count, a nonempty page cannot prove completion; fetch the next page
+          // on demand rather than truncating the artist at its first response.
+          const hasMore = typeof content.hasNext === "boolean" ? content.hasNext : content.hasMore;
+          const pages = Number(content.pageCount || content.totalPages);
+          const isEnd =
+            typeof hasMore === "boolean"
+              ? !hasMore
+              : Number.isSafeInteger(pages) && pages > 0
+                ? page >= pages
+                : items.length === 0;
           return {
-            artistItem: artistWorksItem(
-              artistItem,
-              "music",
-              res.data.data.totalCount,
-              res.data.totalCount,
-            ),
+            isEnd,
+            ...(metadata.songCount == null ? {} : { total: metadata.songCount }),
+            artistItem: metadata,
             data: items.map((item) => {
               const qualities = {};
 
@@ -2233,9 +2253,10 @@ function createOperations(sdk) {
         }
       } catch (error) {
         sdk.log.error("[咪咕] 获取歌手作品失败:", error.message);
+        throw error;
       }
 
-      return { data: [] };
+      throw new Error("Provider artist songs request failed");
     } else if (type === "album") {
       return getArtistAlbumWorks(artistItem, page);
     }
@@ -2434,10 +2455,7 @@ function createOperations(sdk) {
       ).data.data;
 
       if (!res) {
-        return {
-          isEnd: true,
-          musicList: [],
-        };
+        throw new Error("Provider playlist request failed");
       }
 
       const isEnd = res.total < 30;
@@ -2498,10 +2516,7 @@ function createOperations(sdk) {
       };
     } catch (error) {
       sdk.log.error("[咪咕] 获取歌单信息失败:", error);
-      return {
-        isEnd: true,
-        musicList: [],
-      };
+      throw error;
     }
   }
 
@@ -2722,7 +2737,7 @@ function createOperations(sdk) {
         data,
       };
     } catch (e) {
-      return { pinned: [], data: [] };
+      throw e;
     }
   }
 
@@ -3000,7 +3015,7 @@ function createOperations(sdk) {
       });
 
       if (res.status !== 200 || res.data.returnCode !== "000000") {
-        return { isEnd: true, data: [] };
+        throw new Error("Provider comments request failed");
       }
 
       const comments = (res.data.data?.items || []).map((item) => ({
@@ -3030,7 +3045,7 @@ function createOperations(sdk) {
       };
     } catch (error) {
       sdk.log.error("[咪咕] 获取评论失败:", error);
-      return { isEnd: true, data: [] };
+      throw error;
     }
   }
 
@@ -3078,6 +3093,7 @@ function createOperations(sdk) {
   }
 
   async function getAlbumInfo(albumItem) {
+    let lastError = null;
     async function findCorrectAlbumId(albumName, artistName) {
       try {
         const time = Date.now().toString();
@@ -3116,6 +3132,7 @@ function createOperations(sdk) {
           }
         }
       } catch (e) {
+        lastError = e;
         sdk.log.error("[咪咕] 搜索专辑ID失败:", e.message);
       }
       return null;
@@ -3129,6 +3146,7 @@ function createOperations(sdk) {
 
         return res.data?.data || res.data;
       } catch (error) {
+        lastError = error;
         sdk.log.error("[咪咕] 获取专辑歌曲失败:", error.message);
         return null;
       }
@@ -3138,7 +3156,7 @@ function createOperations(sdk) {
     let musicListData = null;
 
     const data = await getAlbumSongs(albumId);
-    if (data && data.songList && data.songList.length > 0) {
+    if (data && Array.isArray(data.songList)) {
       musicListData = data;
     }
 
@@ -3147,17 +3165,14 @@ function createOperations(sdk) {
       if (correctId) {
         albumId = correctId;
         const data2 = await getAlbumSongs(albumId);
-        if (data2 && data2.songList && data2.songList.length > 0) {
+        if (data2 && Array.isArray(data2.songList)) {
           musicListData = data2;
         }
       }
     }
 
-    if (!musicListData || !musicListData.songList) {
-      return {
-        albumItem: { description: albumItem.description || "" },
-        musicList: [],
-      };
+    if (!musicListData || !Array.isArray(musicListData.songList)) {
+      throw lastError || new Error("Provider album request failed");
     }
 
     return {
@@ -3340,4 +3355,81 @@ const handlers = {
     share: async ({ entity }, sdk) => operations(sdk).share(entity),
   },
 };
+// Bind every public page cursor to its catalog/account request. Only digests and
+// bounded paging state cross the boundary; credentials and entity metadata do not.
+function bindPageHandlers() {
+  function stable(value) {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === "object") {
+      const result = {};
+      for (const key of Object.keys(value).sort()) result[key] = stable(value[key]);
+      return result;
+    }
+    return value;
+  }
+  for (const capability of manifest.capabilities) {
+    if (
+      capability !== "search" &&
+      capability !== "collections.members" &&
+      capability !== "comments.list" &&
+      !capability.startsWith("discovery.")
+    )
+      continue;
+    const keys = capability.split(".");
+    const key = keys.pop();
+    const group = keys.reduce((value, name) => value[name], handlers);
+    const handler = group[key];
+    group[key] = async (request, sdk) => {
+      const entity = request.entity;
+      const context = {
+        provider: manifest.id,
+        version: manifest.version,
+        source: manifest.srcUrl,
+        capability,
+        entity: entity
+          ? { id: entity.id, type: entity.type, token: entity._bakaImportToken }
+          : null,
+        query: request.query,
+        kind: request.kind,
+        tag:
+          request.tag && typeof request.tag === "object" && request.tag.id != null
+            ? { id: request.tag.id, digest: request.tag.digest }
+            : request.tag,
+        sort: request.sort,
+        context: request.context,
+        revision: request.revision,
+        sourceRevision: request.sourceRevision,
+        accountRevision: request.accountRevision,
+        account: sdk.settings || {},
+        day: capability === "discovery.daily" ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const binding = sdk.crypto.hash("sha256", sdk.bytes.encode(JSON.stringify(stable(context))));
+      let cursor = null;
+      if (request.cursor != null) {
+        let value;
+        try {
+          if (
+            typeof request.cursor !== "string" ||
+            request.cursor.length > 2048 ||
+            !request.cursor.startsWith("v2c:")
+          )
+            throw new Error();
+          value = JSON.parse(request.cursor.slice(4));
+          if (!value || value.binding !== binding || typeof value.cursor !== "string")
+            throw new Error();
+          pageState(value.cursor);
+        } catch (_) {
+          throw new Error("Provider cursor does not match this request or account");
+        }
+        cursor = value.cursor;
+      }
+      const page = await handler({ ...request, cursor }, sdk);
+      if (page.nextCursor != null) {
+        page.nextCursor = "v2c:" + JSON.stringify({ binding, cursor: page.nextCursor });
+      }
+      return page;
+    };
+  }
+}
+bindPageHandlers();
 module.exports = { manifest, handlers };

@@ -3,7 +3,27 @@
   publish = "."
 
 [functions]
-  included_files = ["plugins/**"]
+  node_bundler = "zisi"
+  included_files = ["plugins/**", "functions/**"]
+
+# V2 APIs generate source/key-specific responses; never serve raw templates.
+[[redirects]]
+  from = "/api/v2/subscription"
+  to = "/.netlify/functions/v2-subscription"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/v2/subscription.json"
+  to = "/.netlify/functions/v2-subscription"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/v2/plugins/:plugin"
+  to = "/.netlify/functions/v2-plugin?plugin=:plugin"
+  status = 200
+  force = true
 
 # Subscription API
 [[redirects]]

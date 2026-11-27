@@ -6,6 +6,39 @@ const { generateSourceHandler } = require('../functions/v2-source-handler');
 const { SOURCE_CONFIG } = require('../functions/source-config');
 const plugin = require('../functions/v2-plugin');
 const subscription = require('../functions/v2-subscription');
+
+test('Netlify routes force dynamic V2 responses and package runtime-read dependencies', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const config = fs.readFileSync(path.join(__dirname, '../netlify.toml'), 'utf8');
+  const redirects = [...config.matchAll(/\[\[redirects\]\]([\s\S]*?)(?=\[\[redirects\]\]|$)/g)].map(match => match[1]);
+  for (const [from, to] of [
+    ['/api/v2/subscription', '/.netlify/functions/v2-subscription'],
+    ['/api/v2/subscription.json', '/.netlify/functions/v2-subscription'],
+    ['/v2/plugins/:plugin', '/.netlify/functions/v2-plugin?plugin=:plugin'],
+  ]) {
+    const rule = redirects.find(value => value.includes('from = "' + from + '"'));
+    assert.ok(rule, from);
+    assert.ok(rule.includes('to = "' + to + '"'));
+    assert.match(rule, /status\s*=\s*200/);
+    assert.match(rule, /force\s*=\s*true/);
+  }
+  assert.match(config, /node_bundler\s*=\s*"zisi"/);
+  assert.match(config, /included_files\s*=\s*\["plugins\/\*\*",\s*"functions\/\*\*"\]/);
+});
+
+test('credential-specific V2 documents forbid shared caching and source transformation', async () => {
+  const query = { source: 'ikun', key: 'key&value.json' };
+  for (const response of [
+    await subscription.handler({ httpMethod: 'GET', queryStringParameters: query }),
+    await plugin.handler({ httpMethod: 'GET', queryStringParameters: { ...query, plugin: 'am' } }),
+  ]) {
+    assert.equal(response.statusCode, 200);
+    for (const directive of ['private', 'no-store', 'no-transform']) assert.ok(response.headers['Cache-Control'].includes(directive));
+    assert.equal(response.headers['X-Content-Type-Options'], 'nosniff');
+  }
+  assert.equal((await subscription.handler({ httpMethod: 'GET', queryStringParameters: null })).statusCode, 400);
+});
 function fixture(config, platform, responses, key = 'test-key') {
   const calls = [];
   const sdk = {
@@ -95,8 +128,9 @@ test('V2 source/key validation never applies V1 json suffix rewriting', async ()
   }
 });
 test('V2 subscription metadata is extracted without host modules or network', () => {
-  const source = 'const manifest={apiVersion:2,kind:"provider",id:"cc.baka.qq",sourceId:"qq.v1",name:"QQ",author:"Public",version:"1.0.0"};module.exports={manifest,handlers:{}}';
+  const source = '// @baka-provider 2\nconst manifest={apiVersion:2,kind:"provider",id:"cc.baka.qq",sourceId:"qq.v1",name:"QQ",author:"Public",version:"1.0.0"};module.exports={manifest,handlers:{}}';
   assert.equal(subscription.manifestOf(source, 'qq').author, 'Public');
+  assert.throws(() => subscription.manifestOf(source.replace('// @baka-provider 2\n', ''), 'qq'), /Exact V2 source marker/);
   assert.throws(() => subscription.manifestOf(source.replace('cc.baka.qq', 'lyra.mesh.qq'), 'qq'));
 });
 test('distribution serves suffixless and js routes with manifest-derived subscription metadata', async () => {

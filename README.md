@@ -19,6 +19,10 @@ V2 七个平台 ID 为 `cc.baka.{am,wy,qq,kg,kw,mg,bilibili}`，发布版本全�
 
 网页默认生成 V2 链接，可选择 V1。V2 导入依据响应内容，不依赖文件名、URL 后缀或 MIME；Key 和 source 不需要追加 `.json`。示例：`/api/v2/subscription?source=ikun&key=YOUR_KEY`。含 Key 的链接请勿公开分享。
 
+V2 动态响应禁止共享缓存和内容变换，下载内容必须保留首行协议标记。Netlify 使用 `zisi` 打包器并包含运行时生成器，订阅和下载都走函数路由。
+
+开发验证：`npm test`；设置 `BAKA_V2_PROBE` 为客户端 `v2_probe` 可执行文件路径后，测试会逐个检查全部音源生成的插件。`python tests/v2-native-distribution.py PATH_TO_BAKA_FFI SUBSCRIPTION_URL` 可通过真实客户端 Rust 下载、校验并恢复整份订阅。`BAKA_NETLIFY_BUNDLES` 指向已解压的官方 Netlify 函数包时，会额外验证脱离仓库的函数运行结果。
+
 ## 🚀 开始使用
 
 1. 打开[订阅页面](https://music.cwo.cc.cd/)，选择音源。
@@ -150,7 +154,7 @@ npm start
 
 打开 `http://localhost:3000`，无需构建。可通过 `PORT` 修改端口，通过 `BASE_URL` 设置订阅与更新链接使用的服务地址。
 
-项目包含 Vercel 和 Netlify 配置。音源配置见 [functions/source-config.js](./functions/source-config.js)，Apple Music 客户端接入说明见 [集成文档](docs/APPLE_MUSIC.md)。
+项目包含 Vercel 和 Netlify 配置，两者均提供上述 V1/V2 路由。Netlify 的 V2 订阅与插件下载必须重写到对应函数，并打包 `plugins/**` 和 `functions/**`；后者包含运行时读取的音源生成器。音源配置见 [functions/source-config.js](./functions/source-config.js)，Apple Music 客户端接入说明见 [集成文档](docs/APPLE_MUSIC.md)。
 
 ---
 

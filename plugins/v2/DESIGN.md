@@ -28,3 +28,12 @@ Regression checks include strict SDK response parsing, lyric byte-shadowing,
 bounded cursor journeys, import snapshot ownership, source wire packets,
 all-source distribution, author metadata and actual native HTTP/QuickJS imports.
 Production publication and device/account verification remain separate.
+
+2026-11-27 distribution repair: Netlify explicitly rewrites V2 endpoints and
+packages runtime-read generator/templates using zisi. Personalized responses use
+private/no-store/no-transform. All manifests retain author and injected update
+URLs. Cursor scopes include query/entity/source/account revisions; upstream
+failures reject rather than producing empty success. Ordinary Apple albums,
+NetEase charts and Kugou global collections fetch bounded pages. Complete
+explicit imports remain separate. The initial V1 migration tool now writes only
+to an explicitly selected draft directory, protecting maintained V2 fixes.

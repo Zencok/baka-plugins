@@ -3,6 +3,7 @@ const vm = require('node:vm');
 const { FREE_PLUGINS } = require('./source-config');
 const { PLATFORMS, selectedSource, pluginUrl, readTemplate } = require('./v2-plugin');
 function manifestOf(source, platform) {
+  if (source.split(/\r?\n/, 1)[0] !== '// @baka-provider 2') throw new Error('Exact V2 source marker required');
   const context = { module: { exports: {} }, UPDATE_URL: '' };
   vm.runInNewContext(source, context, { timeout: 1000 });
   const manifest = context.module.exports.manifest;
@@ -11,12 +12,12 @@ function manifestOf(source, platform) {
   return manifest;
 }
 exports.handler = async event => {
-  const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' };
+  const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store, no-transform', 'X-Content-Type-Options': 'nosniff' };
   const reply = (statusCode, body) => ({ statusCode, headers, body: JSON.stringify(body) });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   if (event.httpMethod !== 'GET') return reply(405, { error: 'Method Not Allowed' });
   let selected;
-  try { selected = selectedSource(event.queryStringParameters); }
+  try { selected = selectedSource(event.queryStringParameters || {}); }
   catch (error) { return reply(400, { error: error.message }); }
   const plugins = [];
   try {

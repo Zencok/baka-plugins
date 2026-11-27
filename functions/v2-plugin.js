@@ -4,7 +4,7 @@ const path = require('node:path');
 const { SOURCE_CONFIG, FREE_PLUGINS, DEFAULT_SOURCE } = require('./source-config');
 const { generateSourceHandler } = require('./v2-source-handler');
 const PLATFORMS = ['am', 'wy', 'qq', 'kg', 'kw', 'mg', 'bilibili'];
-const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, OPTIONS' };
+const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Cache-Control': 'private, no-store, no-transform', 'X-Content-Type-Options': 'nosniff' };
 function selectedSource(query = {}) {
   const source = query.source === undefined ? DEFAULT_SOURCE : query.source;
   if (typeof source !== 'string' || !Object.hasOwn(SOURCE_CONFIG, source)) throw new Error('Invalid source');
@@ -46,11 +46,11 @@ exports.handler = async event => {
   catch { return reply(404, JSON.stringify({ error: 'V2 provider unavailable' })); }
   const url = pluginUrl(platform, selected);
   const injection = free ? 'const UPDATE_URL = ' + JSON.stringify(url) + ';' : generateSourceHandler(selected.config, platform, selected.key, url);
-  if (!template.includes('// {{REQUEST_HANDLER}}')) return reply(500, JSON.stringify({ error: 'Invalid V2 template' }));
+  if (template.split(/\r?\n/, 1)[0] !== '// @baka-provider 2' || !template.includes('// {{REQUEST_HANDLER}}')) return reply(500, JSON.stringify({ error: 'Invalid V2 template' }));
   let body = template.replace('// {{REQUEST_HANDLER}}', () => injection);
   const qualities = selected?.config.plugins[platform + '.js'];
   if (qualities) body = body.replace(/("?supportedQualities"?\s*:\s*)\[[^\]]*\]/, (_, prefix) => prefix + JSON.stringify(qualities));
-  return reply(200, body, { 'Content-Type': 'application/javascript; charset=utf-8', 'Content-Disposition': 'inline; filename=' + platform + '.js', 'Cache-Control': 'no-cache' });
+  return reply(200, body, { 'Content-Type': 'application/javascript; charset=utf-8', 'Content-Disposition': 'inline; filename=' + platform + '.js' });
 };
 exports.PLATFORMS = PLATFORMS;
 exports.selectedSource = selectedSource;

@@ -28,11 +28,14 @@ Manifests and handlers follow catalog/search, collection, discovery, media,
 lyrics, comments and links order. Format with two spaces, double quotes, 100
 columns and LF. `build.cjs` is a development-only static migration tool: it reads
 the preserved public V1 business functions, emits direct V2 handlers and SDK
-calls, and is never loaded by a distributed plugin. Review generated changes.
+calls, and is never loaded by a distributed plugin. The maintained V2 files are
+authoritative: migration output predates V2 fixes and must only be used as drafts.
+Set `BAKA_V2_DRAFT_DIR` to a separate directory; overwriting this directory is rejected.
+Review and manually port upstream protocol changes, preserving V2 handlers and tests.
 Set `BAKA_PRETTIER_MODULE` to the installed Prettier module when regenerating:
 
 ```sh
-node plugins/v2/build.cjs
+BAKA_V2_DRAFT_DIR=/tmp/baka-v2-drafts node plugins/v2/build.cjs
 node --test tests/v2-providers.test.cjs tests/v2-distribution.test.cjs
 ```
 
@@ -50,6 +53,12 @@ expiry) lets the native importer enumerate bounded pages without refetching the
 collection, changing a Kugou command code into a curated playlist ID, or dropping
 Kuwo share URL authorization. Expired/superseded references require a fresh import.
 Ordinary collection browsing continues to use upstream pages.
+
+Page cursors are bound to the provider, capability, query, typed entity,
+source URL, revisions and account settings. Reusing a cursor after these change
+fails explicitly; account values are hashed rather than embedded in cursors.
+Upstream network and authorization errors remain errors, never successful empty
+pages. Apple album browsing fetches one upstream page per request.
 
 ## Native validation
 

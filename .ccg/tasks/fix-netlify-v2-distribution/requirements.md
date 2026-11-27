@@ -1,0 +1,1 @@
+Restore V2 subscription and dynamic provider downloads on Netlify. Preserve V1 routes. Package runtime-read generator dependencies. Diagnose exact marker rejection against live subscription entries. No external Claude calls.
