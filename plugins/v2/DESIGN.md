@@ -37,3 +37,10 @@ failures reject rather than producing empty success. Ordinary Apple albums,
 NetEase charts and Kugou global collections fetch bounded pages. Complete
 explicit imports remain separate. The initial V1 migration tool now writes only
 to an explicitly selected draft directory, protecting maintained V2 fixes.
+
+2026-11-28 Kuwo 1.0.1: the actual lean host reproduced HTTP catalog request
+failure while the identical HTTPS request succeeded. All seven search.kuwo.cn
+catalog call sites now use HTTPS, covering five search kinds, album metadata and
+artist songs/albums. Query parameters, typed IDs and cursor behavior are unchanged.
+V1 remains separate. Regression tests assert transport and returned records;
+remote smoke checks are host observations, not device playback evidence.

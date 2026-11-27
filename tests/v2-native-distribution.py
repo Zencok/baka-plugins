@@ -62,7 +62,7 @@ try:
         seen.add(manifest["id"])
         for field in ["name", "author", "version"]:
             assert manifest[field] == entry[field], f"Subscription {field} mismatch"
-        assert manifest["version"] == "1.0.0"
+        assert manifest["version"] == ("1.0.1" if manifest["id"] == "cc.baka.kw" else "1.0.0")
         packages.append({"id": manifest["id"], "source": source, "enabled": True, "variables": {}})
     take(library.baka_restore_plugins(engine, json.dumps({"plugins": packages, "bindings": []}).encode()))
     print(json.dumps({"nativeFetchInspectAndRestore": True, "providers": sorted(seen)}))

@@ -169,7 +169,7 @@ test('every configured V2 source emits loadable SDK-only providers and correct q
       vm.runInNewContext(served.body, scope, { timeout: 1000 });
       const manifest = scope.module.exports.manifest;
       assert.equal(manifest.sourceId, platform + '.v1');
-      assert.equal(manifest.version, '1.0.0');
+      assert.equal(manifest.version, platform === 'kw' ? '1.0.1' : '1.0.0');
       if (config.plugins[platform + '.js']) assert.deepEqual(Array.from(manifest.supportedQualities), config.plugins[platform + '.js']);
       assert.doesNotMatch(served.body, /axios(?:_1)?\s*[.(]|crypto-js|require\(/);
     }

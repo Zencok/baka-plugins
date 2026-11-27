@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "kw.v1",
   id: "cc.baka.kw",
   name: "酷我音乐",
-  version: "1.0.0",
+  version: "1.0.1",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "Toskysun",
   supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
@@ -1026,7 +1026,7 @@ function createOperations(sdk) {
     const res = (
       await http({
         method: "get",
-        url: `http://search.kuwo.cn/r.s`,
+        url: `https://search.kuwo.cn/r.s`,
         params: {
           client: "kt",
           all: query,
@@ -1056,7 +1056,7 @@ function createOperations(sdk) {
     const res = (
       await http({
         method: "get",
-        url: `http://search.kuwo.cn/r.s`,
+        url: `https://search.kuwo.cn/r.s`,
         params: {
           all: query,
           ft: "album",
@@ -1081,7 +1081,7 @@ function createOperations(sdk) {
     const res = (
       await http({
         method: "get",
-        url: `http://search.kuwo.cn/r.s`,
+        url: `https://search.kuwo.cn/r.s`,
         params: {
           all: query,
           ft: "artist",
@@ -1106,7 +1106,7 @@ function createOperations(sdk) {
     const res = (
       await http({
         method: "get",
-        url: `http://search.kuwo.cn/r.s`,
+        url: `https://search.kuwo.cn/r.s`,
         params: {
           all: query,
           ft: "playlist",
@@ -1467,7 +1467,7 @@ function createOperations(sdk) {
     const res = (
       await http({
         method: "get",
-        url: `http://search.kuwo.cn/r.s`,
+        url: `https://search.kuwo.cn/r.s`,
         params: {
           pn: 0,
           rn: 100,
@@ -1552,7 +1552,7 @@ function createOperations(sdk) {
     const res = (
       await http({
         method: "get",
-        url: `http://search.kuwo.cn/r.s`,
+        url: `https://search.kuwo.cn/r.s`,
         params: {
           pn: page - 1,
           rn: pageSize,
@@ -1605,7 +1605,7 @@ function createOperations(sdk) {
     const res = (
       await http({
         method: "get",
-        url: `http://search.kuwo.cn/r.s`,
+        url: `https://search.kuwo.cn/r.s`,
         params: {
           pn: page - 1,
           rn: pageSize,

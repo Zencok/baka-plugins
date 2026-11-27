@@ -4,7 +4,9 @@ These seven templates are adapted from this repository's public V1 providers at
 `20bfcc9`. LyraMesh's internal QQ playlist, Kugou and other upstream APIs are a
 separate implementation and must not be copied into this family.
 
-All packages start at `1.0.0`: `cc.baka.am`, `cc.baka.wy`, `cc.baka.qq`,
+Packages initially started at `1.0.0`; Kuwo is now `1.0.1` after switching its
+search, album and artist catalog requests to HTTPS. Stable package IDs are:
+`cc.baka.am`, `cc.baka.wy`, `cc.baka.qq`,
 `cc.baka.kg`, `cc.baka.kw`, `cc.baka.mg`, `cc.baka.bilibili`. Their source protocol
 IDs are `{platform}.v1`; that suffix versions the catalog protocol, not the plugin
 API. The manifest API version is 2. Original authors and settings are preserved.
