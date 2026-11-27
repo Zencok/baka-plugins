@@ -1,0 +1,1 @@
+Repair reproduced public V2 plugin failures without copying internal LyraMesh providers or changing preserved V1 protocols. Verify latest client native host, update public versions/docs/frontend together, commit and push only coherent scoped files.
