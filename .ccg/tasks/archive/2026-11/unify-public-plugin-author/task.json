@@ -1,0 +1,14 @@
+{
+  "id": "unify-public-plugin-author",
+  "title": "Unify public V1/V2 plugin display authors as BakaMusic",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "plugins",
+  "currentPhase": "completed",
+  "nextAction": "Archived; metadata update committed and pushed",
+  "createdAt": "2026-11-28",
+  "branch": "main",
+  "commit": "d85dbca",
+  "pushed": true
+}
