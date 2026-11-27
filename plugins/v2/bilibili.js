@@ -1,0 +1,2001 @@
+// @baka-provider 2
+// {{REQUEST_HANDLER}}
+
+"use strict";
+
+// Public BakaMusic protocols, statically migrated to the QuickJS V2 SDK.
+const manifest = {
+  apiVersion: 2,
+  kind: "provider",
+  sourceId: "bilibili.v1",
+  id: "cc.baka.bilibili",
+  name: "bilibili",
+  version: "1.0.0",
+  author: "Toskysun",
+  primaryKey: ["id", "aid", "bvid", "cid"],
+  supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
+  supportedQualities: ["128k", "192k", "320k", "flac", "hires", "dolby"],
+  supportedVideoQualities: [
+    "360p",
+    "480p",
+    "720p",
+    "720p60",
+    "1080p",
+    "1080p+",
+    "1080p60",
+    "4k",
+    "hdr",
+    "dolby_vision",
+    "8k",
+  ],
+  capabilities: [
+    "search",
+    "entities.get",
+    "collections.get",
+    "collections.members",
+    "discovery.charts",
+    "discovery.playlistTags",
+    "discovery.playlists",
+    "discovery.hotSearch",
+    "media.prepare",
+    "media.resolve",
+    "media.video",
+    "lyrics.get",
+    "comments.list",
+    "links.resolve",
+    "links.share",
+  ],
+  userVariables: [
+    {
+      key: "SESSDATA",
+      name: "Bilibili Cookie / SESSDATA",
+      hint: "可填写浏览器完整 Cookie，或只填写 SESSDATA；登录后会重新探测会员、杜比和 Hi-Res 音质。",
+    },
+    {
+      key: "BILI_COOKIE",
+      name: "Bilibili 完整 Cookie（可选）",
+      hint: "优先使用此字段。支持 buvid3、bili_jct、DedeUserID 等登录字段。",
+    },
+    {
+      key: "CK",
+      name: "CK（Cookie 别名，可选）",
+      hint: "兼容旧版客户端的 CK 字段；可填写完整浏览器 Cookie。",
+    },
+  ],
+  hints: {
+    importMusicSheet: [
+      "支持收藏夹 URL、fid/media_id、/medialist/detail/ml数字，也支持直接粘贴 BV 视频链接（多分P会展开为歌单）",
+      "私有收藏夹需要在用户变量中填写完整 Cookie；公开收藏夹可直接导入",
+    ],
+    importMusicItem: ["支持 BV/av 视频链接或直接输入 BV 号、AV 号"],
+  },
+};
+
+function pageState(cursor) {
+  if (cursor == null) return { upstreamPage: 1, offset: 0 };
+  let value;
+  try {
+    if (typeof cursor !== "string" || !cursor.startsWith("v2:")) throw new Error();
+    value = JSON.parse(decodeURIComponent(cursor.slice(3)));
+  } catch (_) {
+    throw new Error("Invalid provider page cursor");
+  }
+  if (
+    !value ||
+    !Number.isSafeInteger(value.upstreamPage) ||
+    value.upstreamPage < 1 ||
+    value.upstreamPage > 10000 ||
+    !Number.isSafeInteger(value.offset) ||
+    value.offset < 0 ||
+    value.offset > 1000000
+  ) {
+    throw new Error("Invalid provider page cursor");
+  }
+  return value;
+}
+function pageNumber(cursor) {
+  return pageState(cursor).upstreamPage;
+}
+function pageCursor(upstreamPage, offset) {
+  return "v2:" + encodeURIComponent(JSON.stringify({ upstreamPage, offset }));
+}
+function pageLimit(request) {
+  return Math.max(1, Math.min(100, Math.trunc(Number(request.limit) || 30)));
+}
+function flattenGroups(value) {
+  const result = [];
+  for (const group of Array.isArray(value) ? value : []) {
+    const children = Array.isArray(group.data)
+      ? group.data
+      : Array.isArray(group.list)
+        ? group.list
+        : null;
+    if (children) {
+      result.push(
+        ...children.map((item) =>
+          item && typeof item === "object" && group.title && !item.group && !item.category
+            ? { ...item, group: group.title }
+            : item,
+        ),
+      );
+    } else result.push(group);
+  }
+  return result;
+}
+function pageResult(result, request) {
+  result = result || {};
+  const candidates = Array.isArray(result)
+    ? result
+    : result.data || result.musicList || result.comments || [];
+  const items = Array.isArray(candidates) ? candidates : [];
+  const state = pageState(request.cursor);
+  if (
+    (!items.length && result.isEnd === false) ||
+    (state.offset > 0 && state.offset >= items.length)
+  ) {
+    throw Object.assign(new Error("Provider pagination did not advance; retry this collection"), {
+      code: "temporary_unavailable",
+    });
+  }
+  const end = Math.min(items.length, state.offset + pageLimit(request));
+  const output = {
+    items: items.slice(state.offset, end),
+    nextCursor:
+      end < items.length
+        ? pageCursor(state.upstreamPage, end)
+        : result.isEnd === false
+          ? pageCursor(state.upstreamPage + 1, 0)
+          : null,
+  };
+  const entity = result.sheetItem || result.albumItem || result.artistItem;
+  if (entity) output.entity = { ...(request.entity || {}), ...entity };
+  if (Number.isFinite(result.total)) output.total = result.total;
+  return output;
+}
+function sliceResult(result, request) {
+  const items = flattenGroups((result && (result.data || result.tags)) || result);
+  if (result && Array.isArray(result.pinned)) {
+    const existing = new Set(items.map((item) => String(item && item.id)));
+    items.unshift(...result.pinned.filter((item) => !existing.has(String(item && item.id))));
+  }
+  return pageResult({ data: items, total: items.length, isEnd: true }, request);
+}
+function dailyResult(result, request) {
+  result = result || {};
+  return {
+    ...result,
+    ...pageResult({ ...result, data: result.musicList || result.data || [] }, request),
+    state: ["ready", "login_required", "unconfigured", "blocked", "updating"].includes(result.state)
+      ? result.state
+      : "blocked",
+  };
+}
+
+const operationCache = new WeakMap();
+function operations(sdk) {
+  if (operationCache.has(sdk)) return operationCache.get(sdk);
+  const result = createOperations(sdk);
+  operationCache.set(sdk, result);
+  return result;
+}
+function createOperations(sdk) {
+  // SDK transport and byte operations; no package or host-global dependency.
+  function formEncode(params) {
+    return Object.entries(params || {})
+      .filter(([, value]) => value !== undefined)
+      .map(
+        ([key, value]) =>
+          encodeURIComponent(key) + "=" + encodeURIComponent(value == null ? "" : String(value)),
+      )
+      .join("&");
+  }
+  function replaceQuery(url, values) {
+    const parts = String(url).split("#"),
+      pair = parts[0].split("?"),
+      params = {};
+    for (const segment of (pair[1] || "").split("&")) {
+      if (!segment) continue;
+      const equals = segment.indexOf("=");
+      params[decodeURIComponent(equals < 0 ? segment : segment.slice(0, equals))] =
+        decodeURIComponent(equals < 0 ? "" : segment.slice(equals + 1));
+    }
+    return (
+      pair[0] +
+      "?" +
+      formEncode({ ...params, ...values }) +
+      (parts.length > 1 ? "#" + parts.slice(1).join("#") : "")
+    );
+  }
+  async function http(options) {
+    if (typeof options === "string") options = { url: options };
+    const request = {
+      url: options.params ? replaceQuery(options.url, options.params) : options.url,
+      method: String(options.method || "GET").toUpperCase(),
+      headers: { ...(options.headers || {}) },
+      responseType:
+        options.responseType === "arraybuffer" ? "bytes" : options.responseType || "text",
+    };
+    if (options.timeout != null) request.timeoutMs = options.timeout;
+    if (options.maxRedirects != null) request.maxRedirects = options.maxRedirects;
+    if (options.data != null) {
+      request.body = typeof options.data === "string" ? options.data : JSON.stringify(options.data);
+      if (
+        typeof options.data !== "string" &&
+        !Object.keys(request.headers).some((key) => key.toLowerCase() === "content-type")
+      ) {
+        request.headers["Content-Type"] = "application/json";
+      }
+    }
+    const response = await sdk.http.request(request);
+    if (response.status < 200 || response.status >= 300) {
+      const error = Object.assign(new Error("Provider request failed (" + response.status + ")"), {
+        code:
+          response.status === 429
+            ? "rate_limited"
+            : response.status === 401
+              ? "authentication_required"
+              : "temporary_unavailable",
+        response: { status: response.status, headers: response.headers, data: response.body },
+      });
+      if (!options.validateStatus || !options.validateStatus(response.status)) throw error;
+    }
+    let data = response.body;
+    if (request.responseType === "bytes") {
+      data = sdkBytes(
+        typeof data === "string" ? data : (data && (data.dataHex || data.hex)) || "",
+        "hex",
+      );
+    } else if (typeof data === "string" && options.responseType !== "text") {
+      try {
+        data = JSON.parse(data);
+      } catch (_) {
+        /* HTML/text endpoints retain text. */
+      }
+    }
+    return { status: response.status, headers: response.headers || {}, data };
+  }
+  function httpGet(url, options) {
+    return http({ ...options, url, method: "GET" });
+  }
+  function httpPost(url, data, options) {
+    return http({ ...options, url, data, method: "POST" });
+  }
+  function httpHead(url, options) {
+    return http({ ...options, url, method: "HEAD" });
+  }
+  function hash(algorithm, value) {
+    return sdk.crypto.hash(algorithm, sdk.bytes.encode(String(value)));
+  }
+  function hex(value) {
+    return Array.from(value || [], (byte) => Number(byte).toString(16).padStart(2, "0")).join("");
+  }
+  function isBytes(value) {
+    return value instanceof Uint8Array;
+  }
+  function sdkBytes(value, encoding) {
+    let result;
+    if (typeof value === "string") {
+      const encoded = sdk.bytes.encode(value, encoding || "utf8");
+      result = Uint8Array.from(encoded.match(/../g) || [], (byte) => parseInt(byte, 16));
+    } else if (value instanceof ArrayBuffer) result = new Uint8Array(value);
+    else result = Uint8Array.from(value || []);
+    result.toString = function (format) {
+      return sdk.bytes.decode(hex(this), format === "utf16le" ? "utf-16le" : format || "utf8");
+    };
+    return result;
+  }
+  function zeroBytes(size) {
+    return sdkBytes(new Uint8Array(size));
+  }
+  function inflate(value, options) {
+    const dataHex = sdk.bytes.decompress(hex(value), "zlib");
+    return options && options.to === "string"
+      ? sdk.bytes.decode(dataHex)
+      : sdkBytes(dataHex, "hex");
+  }
+  function stripHtml(value) {
+    return sdk.text.decodeHtml(String(value || "").replace(/<[^>]*>/g, ""));
+  }
+  function htmlAttributes(value, attribute) {
+    const result = [],
+      expression = new RegExp("\\b" + attribute + "\\s*=\\s*([\"'])(.*?)\\1", "gi");
+    let match;
+    while ((match = expression.exec(String(value)))) result.push(sdk.text.decodeHtml(match[2]));
+    return result;
+  }
+
+  ("use strict");
+
+  /**
+   * BakaMusic Bilibili plugin
+   * WBI/player flow based on bilibili-video-downloader.
+   * Uses the QuickJS SDK transport, bytes and cryptography primitives.
+   */
+
+  const API_BASE = "https://api.bilibili.com";
+  const PAGE_SIZE = 20;
+  const USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
+  const REFERER = "https://www.bilibili.com/";
+  const AUDIO_QUALITY = { low: 30216, medium: 30232, high: 30280, dolby: 30250, hires: 30251 };
+  const QUALITY_ID = {
+    "64k": 30216,
+    "96k": 30216,
+    "128k": 30216,
+    "132k": 30232,
+    "192k": 30232,
+    "320k": 30280,
+  };
+  const QUALITY_LABEL = { 30216: "128k", 30232: "192k", 30280: "320k" };
+  const WBI_MIXIN_TABLE = [
+    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29,
+    28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25,
+    54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
+  ];
+  const HTTP_HEADERS = {
+    "User-Agent": USER_AGENT,
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    Referer: REFERER,
+  };
+  const SEARCH_HEADERS = {
+    ...HTTP_HEADERS,
+    Origin: "https://search.bilibili.com",
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+  };
+
+  let fingerprint;
+  let wbiKeys;
+  let wbiKeysAt = 0;
+  let biliTicket;
+  let biliTicketExpires = 0;
+  const videoViewCache = new Map();
+  const VIDEO_VIEW_TTL = 10 * 60 * 1000;
+  const VIDEO_VIEW_CACHE_LIMIT = 256;
+
+  function getUserVariables() {
+    try {
+      if (true) {
+        return sdk.settings || {};
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  function getCookieInput() {
+    const vars = getUserVariables();
+    // Keep all aliases instead of selecting the first non-empty field.  The
+    // settings panel may retain an old BILI_COOKIE while the user has just
+    // entered a fresh SESSDATA; selecting only one of them silently drops the
+    // login cookie and makes premium DASH tracks look unavailable.
+    return [
+      vars.BILI_COOKIE,
+      vars.bili_cookie,
+      vars.BILI_CK,
+      vars.bili_ck,
+      vars.CK,
+      vars.ck,
+      vars.COOKIE,
+      vars.cookie,
+      vars.Cookie,
+      vars.SESSDATA,
+      vars.sessdata,
+    ]
+      .filter((value) => value !== undefined && value !== null && String(value).trim())
+      .join("; ");
+  }
+
+  function parseCookieString(value) {
+    const jar = {};
+    String(value || "")
+      .split(";")
+      .forEach((part) => {
+        const index = part.indexOf("=");
+        if (index <= 0) return;
+        const key = part.slice(0, index).trim();
+        const val = part
+          .slice(index + 1)
+          .trim()
+          .replace(/^['\"]|['\"]$/g, "");
+        if (key && val) jar[key] = val;
+      });
+    return jar;
+  }
+
+  function getUserCookieJar() {
+    const raw = String(getCookieInput() || "").trim();
+    if (!raw) return {};
+    // A raw SESSDATA token may contain a trailing `=` (base64 padding), so
+    // detect cookie assignments by their key shape rather than any equals sign.
+    return /(?:^|;\s*)[A-Za-z_][\w-]*\s*=/.test(raw) ? parseCookieString(raw) : { SESSDATA: raw };
+  }
+
+  function hasLoginCookie() {
+    const jar = getUserCookieJar();
+    return Boolean(jar.SESSDATA || jar.DedeUserID || jar.bili_jct || jar.CSRFKEY);
+  }
+
+  async function loadFingerprint() {
+    if (fingerprint && (fingerprint.b_3 || fingerprint.b_4)) return fingerprint;
+    try {
+      const response = await httpGet(`${API_BASE}/x/frontend/finger/spi`, {
+        headers: { "User-Agent": USER_AGENT },
+        timeout: 10000,
+      });
+      fingerprint = response.data?.data || {};
+    } catch (_) {
+      fingerprint = {};
+    }
+    return fingerprint;
+  }
+
+  function buildCookieHeader() {
+    const jar = { ...getUserCookieJar() };
+    if (fingerprint?.b_3 && !jar.buvid3) jar.buvid3 = fingerprint.b_3;
+    if (fingerprint?.b_4 && !jar.buvid4) jar.buvid4 = fingerprint.b_4;
+    if (biliTicket && Date.now() < biliTicketExpires && !jar.bili_ticket) {
+      jar.bili_ticket = biliTicket;
+      jar.bili_ticket_expires = String(Math.floor(biliTicketExpires / 1000));
+    }
+    return Object.keys(jar)
+      .filter((key) => jar[key] !== undefined && jar[key] !== "")
+      .map((key) => `${key}=${jar[key]}`)
+      .join("; ");
+  }
+
+  function cookieValue(name) {
+    return getUserCookieJar()[name] || "";
+  }
+  function csrfToken() {
+    return cookieValue("bili_jct") || cookieValue("csrf");
+  }
+
+  // Bilibili's image CDN appends an `@...` transform to many API responses
+  // (for example `@320w_180h_1c_!web-search-common-cover.avif`).  Those URLs are
+  // intentionally small thumbnails and become visibly soft when BakaMusic uses
+  // them for the now-playing artwork or immersive background.  Keep the CDN
+  // host/path and remove only its image-processing suffix so the original asset
+  // is requested.  The same normalization is used for video covers, favorites,
+  // and user avatars.
+  function stripBilibiliImageTransform(value) {
+    return /^https?:\/\/(?:[^/]+\.)?(?:hdslb|biliimg)\.com\/bfs\//i.test(value)
+      ? value.replace(/@[^/?#]*(?=[?#]|$)/, "")
+      : value;
+  }
+
+  function normalizeImage(url) {
+    if (!url) return "";
+    let value = String(url).trim();
+    if (value.startsWith("//")) value = `https:${value}`;
+    value = value.replace(/^http:\/\//i, "https://");
+    return stripBilibiliImageTransform(value);
+  }
+
+  function decodeHtml(value) {
+    return String(value || "")
+      .replace(/<em[^>]*>/gi, "")
+      .replace(/<\/em>/gi, "")
+      .replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (raw, code) => {
+        const radix = String(code).toLowerCase().startsWith("x") ? 16 : 10;
+        const number = parseInt(String(code).replace(/^x/i, ""), radix);
+        return Number.isFinite(number) ? String.fromCodePoint(number) : raw;
+      })
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&#39;|&apos;/g, "'");
+  }
+
+  function durationToSec(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.round(value));
+    if (typeof value !== "string") return 0;
+    if (/^\d+(?:\.\d+)?$/.test(value.trim())) return Math.round(Number(value));
+    const parts = value.trim().split(":").map(Number);
+    if (!parts.length || parts.some((part) => !Number.isFinite(part))) return 0;
+    return Math.round(parts.reduce((total, part) => total * 60 + part, 0));
+  }
+
+  function formatFileSize(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) return undefined;
+    const units = ["B", "KB", "MB", "GB"];
+    let size = value,
+      index = 0;
+    while (size >= 1024 && index < units.length - 1) {
+      size /= 1024;
+      index += 1;
+    }
+    return `${size.toFixed(1)}${units[index]}`;
+  }
+
+  function formatDate(timestamp) {
+    const number = Number(timestamp);
+    if (!Number.isFinite(number) || number <= 0) return undefined;
+    const date = new Date(number < 10000000000 ? number * 1000 : number);
+    return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
+  }
+
+  function getMixinKey(value) {
+    return WBI_MIXIN_TABLE.map((index) => String(value || "").charAt(index))
+      .join("")
+      .slice(0, 32);
+  }
+  function encodeWbi(value) {
+    return encodeURIComponent(String(value)).replace(/[!'()*]/g, "");
+  }
+  function parseQueryString(query) {
+    const params = {};
+    String(query || "")
+      .split("&")
+      .forEach((pair) => {
+        if (!pair) return;
+        const index = pair.indexOf("=");
+        const key = index >= 0 ? pair.slice(0, index) : pair;
+        const value = index >= 0 ? pair.slice(index + 1) : "";
+        try {
+          params[decodeURIComponent(key)] = decodeURIComponent(value);
+        } catch (_) {
+          params[key] = value;
+        }
+      });
+    return params;
+  }
+
+  function md5Hex(value) {
+    return hash("md5", String(value));
+  }
+
+  function hmacSha256Hex(key, value) {
+    return sdk.crypto.hmacSha256(sdk.bytes.encode(String(key)), sdk.bytes.encode(String(value)));
+  }
+
+  function signWbi(params, imgKey, subKey) {
+    const values = { ...params, wts: Math.floor(Date.now() / 1000) };
+    const query = Object.keys(values)
+      .sort()
+      .filter((key) => values[key] !== undefined && values[key] !== null && values[key] !== "")
+      .map((key) => `${encodeWbi(key)}=${encodeWbi(String(values[key]).replace(/[!'()*]/g, ""))}`)
+      .join("&");
+    const wRid = md5Hex(query + getMixinKey(`${imgKey}${subKey}`));
+    return { ...values, w_rid: wRid };
+  }
+
+  function fileStem(url) {
+    const match = String(url || "").match(/\/([^/?#]+?)(?:\.[^./?#]+)?(?:[?#].*)?$/);
+    return match ? match[1] : "";
+  }
+
+  async function getBiliTicket() {
+    const ts = Math.floor(Date.now() / 1000);
+    const hexsign = hmacSha256Hex("XgwSnGZ1p", `ts${ts}`);
+    try {
+      const response = await httpPost(
+        `${API_BASE}/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket`,
+        null,
+        {
+          params: { key_id: "ec02", hexsign, "context[ts]": ts, csrf: csrfToken() },
+          headers: HTTP_HEADERS,
+          timeout: 10000,
+        },
+      );
+      const data = response.data?.data || {};
+      if (data.ticket) {
+        biliTicket = data.ticket;
+        const created = Number(data.created_at || ts) * 1000;
+        biliTicketExpires = created + Math.max(3600, Number(data.ttl || 259200) - 3600) * 1000;
+      }
+      return data;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  async function getWbiKeys(force = false) {
+    if (!force && wbiKeys && Date.now() - wbiKeysAt < 12 * 60 * 60 * 1000) return wbiKeys;
+    const nav = await rawApiGet("/x/web-interface/nav", {}, { useCookie: true });
+    const navData = nav?.data;
+    let imgUrl = navData?.wbi_img?.img_url;
+    let subUrl = navData?.wbi_img?.sub_url;
+    if (!imgUrl || !subUrl) {
+      const ticket = await getBiliTicket();
+      imgUrl = imgUrl || ticket.nav?.wbi_img?.img_url || ticket.nav?.img;
+      subUrl = subUrl || ticket.nav?.wbi_img?.sub_url || ticket.nav?.sub;
+    }
+    const img = fileStem(imgUrl),
+      sub = fileStem(subUrl);
+    if (img && sub) {
+      wbiKeys = { img, sub };
+      wbiKeysAt = Date.now();
+    }
+    return wbiKeys || { img: "", sub: "" };
+  }
+
+  async function rawApiGet(path, params = {}, options = {}) {
+    const requestParams = { ...params };
+    let headers = { ...HTTP_HEADERS, ...(options.headers || {}) };
+    if (options.useCookie !== false) {
+      await loadFingerprint();
+      const cookie = buildCookieHeader();
+      if (cookie) headers.Cookie = cookie;
+    }
+    if (options.wbi) {
+      const keys = await getWbiKeys();
+      Object.assign(requestParams, signWbi(requestParams, keys.img, keys.sub));
+    }
+    try {
+      const response = await httpGet(path.startsWith("http") ? path : `${API_BASE}${path}`, {
+        params: requestParams,
+        headers,
+        timeout: options.timeout || 20000,
+        validateStatus: () => true,
+      });
+      return response.data;
+    } catch (error) {
+      if (options.throwOnError === false) return null;
+      throw error;
+    }
+  }
+
+  async function apiGet(path, params = {}, options = {}) {
+    const body = await rawApiGet(path, params, options);
+    if (!body || (body.code !== undefined && body.code !== 0)) {
+      const error = new Error(
+        `Bilibili API error: ${body && (body.message || body.msg || body.code)}`,
+      );
+      error.response = body;
+      throw error;
+    }
+    return body;
+  }
+
+  async function getVideoView(identifier) {
+    const params = {};
+    const bvid =
+      identifier &&
+      (identifier.bvid ||
+        (typeof identifier === "string" && /^BV/i.test(identifier) ? identifier : ""));
+    const aid =
+      identifier &&
+      (identifier.aid ||
+        (typeof identifier === "number" || /^\d+$/.test(String(identifier || ""))
+          ? identifier
+          : ""));
+    if (bvid) params.bvid = bvid;
+    else if (aid) params.aid = aid;
+    else throw new Error("A BVID or AID is required");
+    const cacheKey = bvid ? `bvid:${String(bvid).toUpperCase()}` : `aid:${String(aid)}`;
+    const cached = videoViewCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (cached) videoViewCache.delete(cacheKey);
+    const body = await apiGet("/x/web-interface/view", params, { useCookie: true });
+    if (!body.data) throw new Error("Video metadata is empty");
+    if (videoViewCache.size >= VIDEO_VIEW_CACHE_LIMIT) {
+      const firstKey = videoViewCache.keys().next().value;
+      if (firstKey) videoViewCache.delete(firstKey);
+    }
+    videoViewCache.set(cacheKey, { value: body.data, expiresAt: Date.now() + VIDEO_VIEW_TTL });
+    return body.data;
+  }
+
+  async function getCid(bvid, aid) {
+    return getVideoView({ bvid, aid });
+  }
+
+  async function getPlayurlData(bvid, aid, cid) {
+    const params = {
+      ...(bvid ? { bvid } : { aid }),
+      cid: Number(cid),
+      qn: 127,
+      fnval: 4048,
+      fnver: 0,
+      fourk: 1,
+    };
+    let body = null;
+    try {
+      body = await rawApiGet("/x/player/wbi/playurl", params, { wbi: true, useCookie: true });
+    } catch (_) {
+      body = null;
+    }
+    const hasMedia = (value) =>
+      value && value.code === 0 && value.data && (value.data.dash || value.data.durl);
+    const hasPremiumAudio = (value) => {
+      const dash = value?.data?.dash;
+      return Boolean(dash?.flac?.audio || dash?.dolby?.audio);
+    };
+    // Some WBI responses contain only the three standard audio tracks even with
+    // a valid cookie. Query the legacy player endpoint as a capability fallback;
+    // it still honours SESSDATA and often exposes FLAC/Dolby/Hi-Res.
+    if (!hasMedia(body) || !hasPremiumAudio(body)) {
+      try {
+        const legacy = await rawApiGet("/x/player/playurl", params, { useCookie: true });
+        if (hasMedia(legacy) && (!hasMedia(body) || hasPremiumAudio(legacy))) body = legacy;
+      } catch (_) {}
+    }
+    if (!hasMedia(body))
+      throw new Error(
+        `Playback metadata request failed: ${(body && (body.message || body.msg || body.code)) || "empty response"}`,
+      );
+    return body;
+  }
+
+  async function getProgressiveVideoData(bvid, aid, cid, videoQuality) {
+    const wanted = String(videoQuality || "1080p")
+      .toLowerCase()
+      .replace(/\s+/g, "");
+    const qn = VIDEO_QUALITY_ID[wanted] || Number(wanted.replace(/p$/, "")) || 80;
+    const params = {
+      ...(bvid ? { bvid } : { aid }),
+      cid: Number(cid),
+      qn,
+      fnval: 0,
+      fnver: 0,
+      fourk: 1,
+    };
+    let body = null;
+    const hasSingleFile = (value) =>
+      value?.code === 0 &&
+      asArray(value.data?.durl).filter((entry) => mediaUrl(entry)).length === 1;
+    try {
+      body = await rawApiGet("/x/player/wbi/playurl", params, { wbi: true, useCookie: true });
+    } catch (_) {
+      body = null;
+    }
+    if (!hasSingleFile(body)) {
+      try {
+        body = await rawApiGet("/x/player/playurl", params, { useCookie: true });
+      } catch (_) {
+        body = null;
+      }
+    }
+    return hasSingleFile(body) ? { ...body, data: { ...body.data, dash: undefined } } : null;
+  }
+
+  function mediaUrl(media) {
+    return media && (media.baseUrl || media.base_url || media.url || media.play_url || "");
+  }
+  function mediaSize(media, duration) {
+    if (media && Number(media.size) > 0) return formatFileSize(media.size);
+    if (media && Number(media.bandwidth) > 0 && Number(duration) > 0)
+      return formatFileSize((Number(media.bandwidth) * Number(duration)) / 8);
+    return undefined;
+  }
+  function asArray(value) {
+    return !value ? [] : Array.isArray(value) ? value : [value];
+  }
+
+  function collectQualities(playData) {
+    const dash = playData?.dash;
+    const qualities = {},
+      videoQualities = [];
+    if (!dash) return { qualities: { "128k": {} }, videoQualities };
+    const duration = Number(
+      dash.duration || (playData.timelength && playData.timelength / 1000) || 0,
+    );
+    asArray(dash.audio).forEach((audio) => {
+      const id = Number(audio.id);
+      const label =
+        QUALITY_LABEL[id] ||
+        (Number(audio.bandwidth) >= 180000
+          ? "320k"
+          : Number(audio.bandwidth) >= 100000
+            ? "192k"
+            : "128k");
+      qualities[label] = {
+        size: mediaSize(audio, duration),
+        bitrate: Number(audio.bandwidth) || undefined,
+        id,
+      };
+    });
+    const flac = asArray(dash.flac?.audio)[0];
+    if (flac) {
+      const flacId = Number(flac.id) || AUDIO_QUALITY.hires;
+      const entry = {
+        size: mediaSize(flac, duration),
+        bitrate: Number(flac.bandwidth) || undefined,
+        id: flacId,
+      };
+      // `dash.flac` is the 30251 Hi-Res stream on Bilibili.  Expose exactly one
+      // quality key for it; publishing flac + flac24bit + hires here makes the
+      // player display the same URL three times.  Keep a generic FLAC label only
+      // for a future non-30251 stream returned by the API.
+      qualities[flacId === AUDIO_QUALITY.hires ? "hires" : "flac"] = entry;
+    }
+    const dolby = asArray(dash.dolby?.audio)[0];
+    if (dolby)
+      qualities.dolby = {
+        size: mediaSize(dolby, duration),
+        bitrate: Number(dolby.bandwidth) || undefined,
+        id: Number(dolby.id) || AUDIO_QUALITY.dolby,
+      };
+    asArray(dash.video).forEach((video) => {
+      if (!video || video.id === undefined) return;
+      videoQualities.push({
+        id: Number(video.id),
+        quality: Number(video.id),
+        codec: video.codecs || video.codec || "",
+        width: Number(video.width) || undefined,
+        height: Number(video.height) || undefined,
+        bitrate: Number(video.bandwidth) || undefined,
+        size: mediaSize(video, duration),
+      });
+    });
+    if (!Object.keys(qualities).length) qualities["128k"] = {};
+    return { qualities, videoQualities };
+  }
+
+  function pickAudio(playData, requestedQuality) {
+    const dash = playData?.dash;
+    if (!dash) return asArray(playData?.durl)[0] || null;
+    const wanted = String(requestedQuality || "320k").toLowerCase();
+    if (wanted === "dolby") {
+      const dolby = asArray(dash.dolby?.audio);
+      if (dolby.length) return dolby[0];
+      const flac = asArray(dash.flac?.audio);
+      if (flac.length) return flac[0];
+    }
+    if (
+      wanted === "flac" ||
+      wanted === "flac24bit" ||
+      wanted === "hires" ||
+      wanted === "lossless"
+    ) {
+      const flac = asArray(dash.flac?.audio);
+      if (flac.length) return flac[0];
+    }
+    const audios = asArray(dash.audio).filter((audio) => mediaUrl(audio));
+    if (!audios.length)
+      return (
+        asArray(dash.dolby?.audio)[0] ||
+        asArray(dash.flac?.audio)[0] ||
+        asArray(playData.durl)[0] ||
+        null
+      );
+    audios.sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+    const target = QUALITY_ID[wanted] || AUDIO_QUALITY.high;
+    return (
+      audios.find((audio) => Number(audio.id) === target) ||
+      audios.filter((audio) => Number(audio.id) <= target).pop() ||
+      audios[0] ||
+      null
+    );
+  }
+
+  function resolvedAudioQuality(playData, media) {
+    const id = Number(media?.id);
+    if (id === AUDIO_QUALITY.dolby) return "dolby";
+    if (id === AUDIO_QUALITY.hires) return "hires";
+    if (QUALITY_LABEL[id]) return QUALITY_LABEL[id];
+    const dash = playData?.dash;
+    const mediaUrlValue = mediaUrl(media);
+    if (
+      mediaUrlValue &&
+      asArray(dash?.dolby?.audio).some((item) => mediaUrl(item) === mediaUrlValue)
+    )
+      return "dolby";
+    if (
+      mediaUrlValue &&
+      asArray(dash?.flac?.audio).some((item) => mediaUrl(item) === mediaUrlValue)
+    )
+      return "hires";
+    const bitrate = Number(media?.bandwidth);
+    if (bitrate >= 180000) return "320k";
+    if (bitrate >= 100000) return "192k";
+    if (bitrate > 0) return "128k";
+    return "128k";
+  }
+
+  const VIDEO_QUALITY_ID = {
+    "360p": 16,
+    "480p": 32,
+    "720p": 64,
+    "720p60": 74,
+    "1080p": 80,
+    "1080p+": 112,
+    "1080p60": 116,
+    "4k": 120,
+    hdr: 125,
+    dolby_vision: 126,
+    "8k": 127,
+  };
+  const VIDEO_QUALITY_LABEL = {
+    16: "360p",
+    32: "480p",
+    64: "720p",
+    74: "720p60",
+    80: "1080p",
+    112: "1080p+",
+    116: "1080p60",
+    120: "4k",
+    125: "hdr",
+    126: "dolby_vision",
+    127: "8k",
+  };
+
+  function pickVideo(playData, requestedQuality = "1080p") {
+    const videos = asArray(playData?.dash?.video).filter((video) => mediaUrl(video));
+    if (!videos.length) return asArray(playData?.durl)[0] || null;
+    // Chromium's built-in MP4 pipeline is broadly compatible with AVC. Prefer
+    // AVC over HEVC/AV1 when DASH exposes several codecs at the same height;
+    // the latter can report a valid URL yet fail with MEDIA_ERR_DECODE.
+    const compatible = videos.filter((video) => {
+      const codec = String(video.codecs || video.codec || "").toLowerCase();
+      return !codec || /(?:avc1|avc3|h264)/i.test(codec);
+    });
+    const candidates = compatible.length ? compatible : videos;
+    const wanted = String(requestedQuality).toLowerCase().replace(/\s+/g, "");
+    const target = VIDEO_QUALITY_ID[wanted] || Number(wanted.replace(/p$/, "")) || 80;
+    const ordered = candidates.slice().sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+    return (
+      ordered.find((video) => Number(video.id) === target) ||
+      ordered.filter((video) => Number(video.id) <= target).pop() ||
+      ordered[0]
+    );
+  }
+
+  function getMediaHeaders(musicItem) {
+    const id = musicItem?.bvid || musicItem?.aid || musicItem?.id || "";
+    const headers = {
+      "User-Agent": USER_AGENT,
+      Accept: "*/*",
+      Referer: id ? `${REFERER}video/${id}` : REFERER,
+      Origin: "https://www.bilibili.com",
+      "Accept-Encoding": "identity",
+    };
+    const cookie = buildCookieHeader();
+    if (cookie) headers.Cookie = cookie;
+    return headers;
+  }
+
+  function formatMedia(result = {}) {
+    const owner = result.owner || result.upper || {};
+    const title = decodeHtml(result.title || result.part || result.name || "");
+    const mid = owner.mid || result.mid || result.author_mid;
+    const artist = result.artist || result.author || owner.name || "";
+    const singerList =
+      mid || artist
+        ? [{ id: mid, name: artist, avatar: normalizeImage(owner.face || result.face) }]
+        : [];
+    const bvid = result.bvid || result.bv_id;
+    const aid = result.aid || result.id;
+    const cid = result.cid;
+    const artwork = normalizeImage(result.pic || result.cover || result.arcurl || result.upic);
+    const item = {
+      id: cid || bvid || aid,
+      aid,
+      bvid,
+      cid,
+      title,
+      artist,
+      singerList,
+      album: bvid || aid,
+      // BakaMusic accepts artwork; coverImg is kept in sync because the music
+      // bar and immersive background prefer that field when both are present.
+      artwork,
+      coverImg: artwork,
+      duration: durationToSec(result.duration !== undefined ? result.duration : result.length),
+      tags: Array.isArray(result.tag)
+        ? result.tag
+        : typeof result.tag === "string"
+          ? result.tag.split(",").filter(Boolean)
+          : [],
+      date: formatDate(result.pubdate || result.created),
+      // Search/view responses do not carry DASH capability information.  An
+      // empty map deliberately lets BakaMusic call getMusicInfo(), instead of
+      // treating synthetic 128/192/320 entries as the complete quality list
+      // and hiding premium tracks from the quality picker.
+      qualities: result.qualities || {},
+    };
+    if (result.videoQualities) item.videoQualities = result.videoQualities;
+    if (result.description || result.desc) item.description = result.description || result.desc;
+    return item;
+  }
+
+  async function getMusicInfo(musicBase = {}) {
+    const bvid =
+      musicBase.bvid ||
+      (typeof musicBase.id === "string" && /^BV/i.test(musicBase.id) ? musicBase.id : "");
+    const aid =
+      musicBase.aid || (!bvid && /^\d+$/.test(String(musicBase.id || "")) ? musicBase.id : "");
+    if (!bvid && !aid) return null;
+    const hasRealQualities =
+      musicBase.qualities &&
+      Object.values(musicBase.qualities).some((entry) => entry && Object.keys(entry).length > 0);
+    // Never reuse a pre-login quality snapshot.  Search results and items
+    // cached before SESSDATA was entered commonly contain only 128/192/320K;
+    // refreshing the player metadata after login is what reveals FLAC/Hi-Res
+    // and Dolby tracks.
+    if (musicBase.artwork && hasRealQualities && !hasLoginCookie()) {
+      return { ...musicBase, bvid, aid, platform: "bilibili" };
+    }
+    try {
+      const video = await getVideoView({ bvid, aid });
+      const page = video.pages?.[0];
+      const cid = musicBase.cid || page?.cid || video.cid;
+      let playback = null;
+      try {
+        playback = await getPlayurlData(video.bvid, video.aid, cid);
+      } catch (_) {}
+      const metadata = collectQualities(playback?.data);
+      const item = formatMedia({
+        ...video,
+        cid,
+        qualities: metadata.qualities,
+        videoQualities: metadata.videoQualities,
+      });
+      item.platform = "bilibili";
+      item.duration = durationToSec(video.duration);
+      item.pages = (video.pages || []).map((part) => ({
+        cid: part.cid,
+        title: part.part,
+        duration: durationToSec(part.duration),
+      }));
+      return item;
+    } catch (error) {
+      sdk.log.error(`[bilibili] getMusicInfo: ${error.message}`);
+      return null;
+    }
+  }
+
+  async function getMediaSource(musicItem = {}, quality = "320k") {
+    const bvid =
+      musicItem.bvid ||
+      (typeof musicItem.id === "string" && /^BV/i.test(musicItem.id) ? musicItem.id : "");
+    const aid =
+      musicItem.aid || (!bvid && /^\d+$/.test(String(musicItem.id || "")) ? musicItem.id : "");
+    if (!bvid && !aid) throw new Error("A BVID or AID is required for playback");
+    // Let BakaMusic's quality fallback order handle quality levels that
+    // Bilibili does not expose.  Returning a 320K URL for an unsupported
+    // request (for example `master`, `atmos` or `atmos_plus`) makes the host
+    // believe the requested level succeeded and stops the fallback chain.
+    const requestedQuality = String(quality || "320k")
+      .trim()
+      .toLowerCase();
+    const supportedQuality = new Set([
+      "128k",
+      "192k",
+      "320k",
+      "flac",
+      "flac24bit",
+      "hires",
+      "lossless",
+      "dolby",
+    ]);
+    if (!supportedQuality.has(requestedQuality)) {
+      throw new Error(`Unsupported Bilibili audio quality: ${requestedQuality}`);
+    }
+    // Search results already carry cid on some endpoints; imported/detail
+    // items may keep it under pages or _bilibiliData. Reuse it before issuing a
+    // view request so playing the same search result does not refetch metadata.
+    let cid = musicItem.cid || musicItem._bilibiliData?.cid || musicItem.pages?.[0]?.cid;
+    if (!cid) {
+      const view = await getVideoView({ bvid, aid });
+      cid = view.cid || view.pages?.[0]?.cid;
+    }
+    const response = await getPlayurlData(bvid, aid, cid);
+    const selected = pickAudio(response.data, requestedQuality);
+    const url = mediaUrl(selected);
+    if (!url) throw new Error("No playable audio URL returned");
+    const backup =
+      selected && (selected.backupUrl || selected.backup_url || selected.backup_url_list || []);
+    return {
+      // BakaMusic treats this field as an IQualityKey and calls `.trim()` on
+      // it while building download names.  Returning Bilibili's numeric stream
+      // id (30280, 30251, …) makes downloads fail and also reports Master even
+      // when the actual fallback stream is 320K.
+      url,
+      headers: getMediaHeaders({ ...musicItem, bvid, aid }),
+      quality: resolvedAudioQuality(response.data, selected),
+      duration:
+        Number(response.data?.timelength) > 0
+          ? Math.round(response.data.timelength / 1000)
+          : undefined,
+      backupUrl: Array.isArray(backup) ? backup.slice(0, 2) : [],
+    };
+  }
+
+  async function getMvSource(musicItem = {}, videoQuality = "1080p") {
+    const bvid =
+      musicItem.bvid ||
+      (typeof musicItem.id === "string" && /^BV/i.test(musicItem.id) ? musicItem.id : "");
+    const aid =
+      musicItem.aid || (!bvid && /^\d+$/.test(String(musicItem.id || "")) ? musicItem.id : "");
+    if (!bvid && !aid) return null;
+    let cid = musicItem.cid || musicItem._bilibiliData?.cid || musicItem.pages?.[0]?.cid;
+    if (!cid) {
+      const view = await getVideoView({ bvid, aid });
+      cid = view.cid || view.pages?.[0]?.cid;
+    }
+    // Progressive MP4 contains both video and audio. Prefer it so playback,
+    // volume control and downloads operate on one complete media file.
+    const response =
+      (await getProgressiveVideoData(bvid, aid, cid, videoQuality)) ||
+      (await getPlayurlData(bvid, aid, cid));
+    const selected = pickVideo(response.data, videoQuality);
+    const url = mediaUrl(selected);
+    if (!url) return null;
+    const actualId =
+      Number(selected?.id) ||
+      Number(response.data?.quality) ||
+      VIDEO_QUALITY_ID[String(videoQuality).toLowerCase()] ||
+      80;
+    const backup = selected?.backupUrl || selected?.backup_url || [];
+    const availableVideoQualities = response.data?.dash?.video
+      ? collectQualities(response.data)
+          .videoQualities.filter((item) => item?.quality !== undefined)
+          .map((item) => ({
+            key: VIDEO_QUALITY_LABEL[Number(item.id)] || `${Number(item.id)}q`,
+            label: VIDEO_QUALITY_LABEL[Number(item.id)] || `${Number(item.height || item.id)}p`,
+            width: item.width,
+            height: item.height,
+            bitrate: item.bitrate,
+            size: item.size,
+            codec: item.codec,
+            mimeType: "video/mp4",
+          }))
+      : [];
+    if (!availableVideoQualities.length) {
+      availableVideoQualities.push({
+        key: VIDEO_QUALITY_LABEL[actualId] || `${actualId}q`,
+        label: VIDEO_QUALITY_LABEL[actualId] || `${actualId}q`,
+        width: Number(selected?.width) || undefined,
+        height: Number(selected?.height) || undefined,
+        size: mediaSize(
+          selected,
+          Number(response.data?.timelength) > 0
+            ? Number(response.data.timelength) / 1000
+            : undefined,
+        ),
+        codec: selected?.codecs || selected?.codec || undefined,
+        mimeType: "video/mp4",
+      });
+    }
+    return {
+      url,
+      headers: getMediaHeaders({ ...musicItem, bvid, aid }),
+      userAgent: USER_AGENT,
+      videoQuality: VIDEO_QUALITY_LABEL[actualId] || `${actualId}q`,
+      mimeType: selected?.mimeType || "video/mp4",
+      duration:
+        Number(response.data?.timelength) > 0
+          ? Math.round(response.data.timelength / 1000)
+          : undefined,
+      width: Number(selected?.width) || undefined,
+      height: Number(selected?.height) || undefined,
+      codec: selected?.codecs || selected?.codec || undefined,
+      size: mediaSize(
+        selected,
+        Number(response.data?.timelength) > 0 ? Number(response.data.timelength) / 1000 : undefined,
+      ),
+      availableVideoQualities,
+      backupUrls: Array.isArray(backup) ? backup.slice(0, 3) : [],
+    };
+  }
+
+  async function searchBase(keyword, page, searchType = "video") {
+    await loadFingerprint();
+    const params = {
+      context: "",
+      page: Number(page) || 1,
+      order: "",
+      page_size: PAGE_SIZE,
+      keyword: String(keyword || ""),
+      duration: "",
+      tids_1: "",
+      tids_2: "",
+      __refresh__: true,
+      _extra: "",
+      highlight: 1,
+      single_column: 0,
+      platform: "pc",
+      from_source: "",
+      search_type: searchType,
+      dynamic_offset: 0,
+    };
+    let body = await rawApiGet("/x/web-interface/search/type", params, {
+      headers: SEARCH_HEADERS,
+      useCookie: true,
+    });
+    if (!body || body.code !== 0 || !body.data) {
+      body = await rawApiGet(
+        "/x/web-interface/search/all/v2",
+        { keyword: keyword || "", page: page || 1, page_size: PAGE_SIZE },
+        { headers: SEARCH_HEADERS, useCookie: true },
+      );
+    }
+    return body?.data || {};
+  }
+
+  function pageEnd(data, page) {
+    const total = Number(data && (data.numResults || data.num_results || data.total));
+    return total > 0 ? Number(page || 1) * PAGE_SIZE >= total : true;
+  }
+
+  async function searchVideos(keyword, page) {
+    const resultData = await searchBase(keyword, page, "video");
+    let list = resultData.result || resultData.items || resultData.video || [];
+    if (!Array.isArray(list) && Array.isArray(resultData.result)) list = resultData.result;
+    // search/all/v2 groups results by result_type.
+    if (Array.isArray(list) && list.length && list[0]?.data)
+      list = list.find((group) => group.result_type === "video")?.data || [];
+    return {
+      isEnd: pageEnd(resultData, page) || list.length < PAGE_SIZE,
+      data: list.map(formatMedia),
+    };
+  }
+
+  async function searchArtists(keyword, page) {
+    const resultData = await searchBase(keyword, page, "bili_user");
+    let list = resultData.result || resultData.items || [];
+    if (Array.isArray(list) && list.length && list[0]?.data)
+      list =
+        list.find((group) => group.result_type === "bili_user" || group.result_type === "user")
+          ?.data || [];
+    return {
+      isEnd: pageEnd(resultData, page) || list.length < PAGE_SIZE,
+      data: list.map((result) => ({
+        id: result.mid,
+        name: decodeHtml(result.uname || result.name),
+        fans: Number(result.fans) || undefined,
+        description: result.usign || result.sign,
+        avatar: normalizeImage(result.upic || result.face),
+        worksNum: Number(result.videos) || undefined,
+        songCount: result.videos,
+      })),
+    };
+  }
+
+  async function getCookieMid() {
+    const value = cookieValue("DedeUserID");
+    if (value && /^\d+$/.test(value)) return value;
+    try {
+      const nav = await rawApiGet("/x/web-interface/nav", {}, { useCookie: true });
+      const mid = nav?.data?.mid;
+      return mid && /^\d+$/.test(String(mid)) ? String(mid) : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function getFavoriteFolders(mid) {
+    const userMid = mid || (await getCookieMid());
+    if (!userMid) return [];
+    const body = await rawApiGet(
+      "/x/v3/fav/folder/created/list",
+      { up_mid: userMid, ps: 50, pn: 1 },
+      { useCookie: true },
+    );
+    const list = body?.data?.list || body?.data?.folders;
+    return Array.isArray(list) ? list : [];
+  }
+
+  async function searchSheets(keyword, page) {
+    const folders = await getFavoriteFolders();
+    const query = String(keyword || "").toLowerCase();
+    const matched = folders.filter(
+      (folder) =>
+        !query ||
+        String(folder.title || "")
+          .toLowerCase()
+          .includes(query),
+    );
+    if (matched.length) {
+      const start = ((Number(page) || 1) - 1) * PAGE_SIZE;
+      return {
+        isEnd: start + PAGE_SIZE >= matched.length,
+        data: matched.slice(start, start + PAGE_SIZE).map((folder) => ({
+          id: String(folder.id || folder.fid),
+          title: folder.title || "",
+          artwork: normalizeImage(folder.cover),
+          description: folder.intro || "",
+          worksNum: Number(folder.media_count || folder.cnt) || 0,
+          artist: folder.upper?.name || "",
+          _bilibiliType: "favorite",
+        })),
+      };
+    }
+    const videos = await searchVideos(keyword, page);
+    return {
+      isEnd: videos.isEnd,
+      data: videos.data.map((item) => ({
+        ...item,
+        id: item.bvid || item.aid,
+        worksNum: 1,
+        _bilibiliType: "video",
+      })),
+    };
+  }
+
+  function randomDmString() {
+    return sdkBytes(Array.from({ length: 36 }, () => Math.floor(32 + Math.random() * 96)))
+      .toString("base64")
+      .replace(/=+$/, "");
+  }
+
+  // Song and album totals have separate meanings; never reuse a generic worksNum.
+  function artistWorksItem(artist, type, ...totals) {
+    const item = { ...artist };
+    delete item.songCount;
+    delete item.albumCount;
+    const songs = playlistSheetItem(
+      {},
+      artist?.songCount,
+      artist?.musicSize,
+      artist?.trackCount,
+      artist?.musicCount,
+      artist?.song_count,
+      artist?.worksNums,
+    ).worksNum;
+    const albums = playlistSheetItem(
+      {},
+      artist?.albumCount,
+      artist?.albumSize,
+      artist?.albumNum,
+      artist?.album_count,
+    ).worksNum;
+    if (songs != null) item.songCount = songs;
+    if (albums != null) item.albumCount = albums;
+    const key = type === "album" ? "albumCount" : "songCount";
+    const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+    if (total != null) item[key] = total;
+    return item;
+  }
+
+  async function getArtistWorks(artistItem = {}, page = 1, type = "music") {
+    const mid = String(artistItem.id || artistItem.mid || "");
+    if (!mid || (type && type !== "music" && type !== "album")) return { isEnd: true, data: [] };
+    if (type === "album")
+      return { isEnd: true, artistItem: artistWorksItem(artistItem, "album"), data: [] };
+    const params = {
+      mid,
+      pn: String(page || 1),
+      ps: "30",
+      index: "1",
+      order: "pubdate",
+      order_avoided: "true",
+      platform: "web",
+      web_location: "333.1387",
+      dm_img_list: "[]",
+      dm_img_str: randomDmString(),
+      dm_cover_img_str: randomDmString(),
+      dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
+    };
+    try {
+      const body = await apiGet("/x/space/wbi/arc/search", params, {
+        wbi: true,
+        useCookie: true,
+        timeout: 25000,
+      });
+      const list = body.data?.list?.vlist || [];
+      const pageInfo = body.data?.page || {};
+      return {
+        isEnd:
+          list.length < Number(pageInfo.ps || 30) ||
+          Number(pageInfo.pn || page) * Number(pageInfo.ps || 30) >= Number(pageInfo.count || 0),
+        // This endpoint counts uploaded videos, not artist albums.
+        artistItem: artistWorksItem(
+          artistItem,
+          type,
+          ...(type === "album" ? [] : [pageInfo.count]),
+        ),
+        data: list.map(formatMedia),
+      };
+    } catch (error) {
+      sdk.log.error(`[bilibili] getArtistWorks: ${error.message}`);
+      return { isEnd: true, data: [] };
+    }
+  }
+
+  async function getFavoriteList(id, page = 1, all = false) {
+    const result = [];
+    let info = null,
+      hasMore = false,
+      pn = Number(page) || 1;
+    const maxPages = all ? 10000 : 1;
+    const pageSignatures = new Set();
+    for (let count = 0; count < maxPages; count += 1) {
+      const body = await rawApiGet(
+        "/x/v3/fav/resource/list",
+        { media_id: id, platform: "web", ps: 36, pn },
+        { useCookie: true },
+      );
+      const data = body?.data;
+      if (!data || body.code !== 0) throw new Error("[bilibili] 收藏夹分页请求失败");
+      info = info || data.info || null;
+      if (!Array.isArray(data.medias) && data.info?.mid && count === 0) {
+        // Older links expose `fid`; the resource endpoint now expects the
+        // composite folder id returned by created/list.
+        const folders = await getFavoriteFolders(String(data.info.mid));
+        const folder = folders.find(
+          (entry) => String(entry.id) === String(id) || String(entry.fid) === String(id),
+        );
+        if (folder && String(folder.id) !== String(id))
+          return getFavoriteList(String(folder.id), page, all);
+      }
+      if (!Array.isArray(data.medias)) {
+        if (result.length || data.has_more || Number(info?.media_count) > 0) {
+          throw new Error("[bilibili] 收藏夹分页数据异常");
+        }
+        hasMore = false;
+        break;
+      }
+      const signature = JSON.stringify(data.medias.map((item) => item.id ?? item.bvid ?? item.aid));
+      if (data.medias.length && pageSignatures.has(signature))
+        throw new Error("[bilibili] 收藏夹分页重复");
+      pageSignatures.add(signature);
+      result.push(...data.medias);
+      hasMore = data.has_more === true || data.has_more === 1 || data.has_more === "1";
+      if (hasMore && !data.medias.length) throw new Error("[bilibili] 收藏夹分页提前结束");
+      if (!hasMore || !all) break;
+      pn += 1;
+    }
+    if (all && hasMore) throw new Error("[bilibili] 收藏夹分页超出合理范围，请重试");
+    return { info, medias: result, hasMore };
+  }
+
+  function favoriteMediaToItem(media) {
+    const item = formatMedia({
+      ...media,
+      pic: media.cover,
+      owner: media.upper,
+      aid: media.aid,
+      bvid: media.bvid,
+    });
+    item.id = media.cid || media.bvid || media.aid || media.id;
+    item.album = media.bvid || media.aid;
+    return item;
+  }
+
+  function extractFavoriteId(value) {
+    const input = String(value || "").trim();
+    if (/^\d+$/.test(input)) return input;
+    const patterns = [
+      /[?&](?:fid|media_id)=(\d+)/i,
+      /\/(?:ml|pl)(\d+)/i,
+      /\/fav(?:list|folder|resource)\/(\d+)/i,
+      /bilibili\.com\/medialist\/detail\/ml(\d+)/i,
+    ];
+    for (const pattern of patterns) {
+      const match = input.match(pattern);
+      if (match) return match[1];
+    }
+    return "";
+  }
+
+  async function importMusicSheet(urlLike) {
+    const text = String(urlLike || "").trim();
+    const bvid = (text.match(/\b(BV[a-zA-Z0-9]{10})\b/) || [])[1];
+    if (bvid) {
+      const view = await getVideoView({ bvid });
+      const pages = view.pages || [{ cid: view.cid, part: view.title, duration: view.duration }];
+      return {
+        id: bvid,
+        title: decodeHtml(view.title),
+        artwork: normalizeImage(view.pic),
+        artist: view.owner?.name || "",
+        description: view.desc || "",
+        worksNum: pages.length,
+        musicList: pages.map((part) =>
+          formatMedia({
+            ...view,
+            cid: part.cid,
+            title: part.part || view.title,
+            duration: part.duration,
+          }),
+        ),
+      };
+    }
+    let id = extractFavoriteId(text);
+    const mid = (text.match(/space\.bilibili\.com\/(\d+)/i) || [])[1];
+    if (mid && id) {
+      const folders = await getFavoriteFolders(mid);
+      const folder = folders.find(
+        (entry) => String(entry.id) === String(id) || String(entry.fid) === String(id),
+      );
+      if (folder?.id) id = String(folder.id);
+    }
+    if (!id) return undefined;
+    const favorite = await getFavoriteList(id, 1, true);
+    const musicList = favorite.medias.map(favoriteMediaToItem);
+    const info = favorite.info || {};
+    return {
+      id: String(info.id || info.fid || id),
+      title: info.title || "",
+      artwork: normalizeImage(info.cover),
+      artist: info.upper?.name || "",
+      description: info.intro || "",
+      worksNum: Number(info.media_count || info.cnt) || musicList.length,
+      createAt: Number(info.ctime) > 0 ? Number(info.ctime) * 1000 : undefined,
+      musicList,
+    };
+  }
+
+  // Playlist metadata is independent of the number of tracks loaded on this page.
+  // Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+  function playlistSheetItem(sheet, ...totals) {
+    const item = { ...sheet };
+    delete item.worksNum;
+    for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+      if (typeof value !== "number" && typeof value !== "string") continue;
+      if (String(value).trim() === "") continue;
+      const count = Number(value);
+      if (Number.isSafeInteger(count) && count >= 0) {
+        item.worksNum = count;
+        break;
+      }
+    }
+    return item;
+  }
+
+  async function getMusicSheetInfo(sheet = {}, page = 1) {
+    if (sheet._bilibiliType === "video" || /^BV/i.test(String(sheet.id || ""))) {
+      if (!sheet.bvid && sheet.aid) {
+        const item = await getMusicInfo({ id: sheet.aid, aid: sheet.aid, cid: sheet.cid });
+        return {
+          isEnd: true,
+          sheetItem: playlistSheetItem(sheet, item ? 1 : 0),
+          musicList: item ? [item] : [],
+        };
+      }
+      const detail = await importMusicSheet(String(sheet.bvid || sheet.id));
+      return {
+        isEnd: true,
+        sheetItem: playlistSheetItem(detail || sheet, detail?.worksNum, detail?.musicList?.length),
+        musicList: detail ? detail.musicList : [],
+      };
+    }
+    const id = sheet.id || sheet.fid || sheet.media_id;
+    if (!id) return { isEnd: true, musicList: [] };
+    const favorite = await getFavoriteList(id, page, false);
+    const musicList = favorite.medias.map(favoriteMediaToItem);
+    const total = favorite.info?.media_count ?? favorite.info?.cnt;
+    return {
+      isEnd: !favorite.hasMore,
+      sheetItem: playlistSheetItem(
+        favorite.info
+          ? {
+              ...sheet,
+              id: String(favorite.info.id || id),
+              title: favorite.info.title || sheet.title || "",
+              artwork: normalizeImage(favorite.info.cover || sheet.artwork),
+              description: favorite.info.intro || sheet.description || "",
+            }
+          : sheet,
+        total,
+      ),
+      musicList,
+    };
+  }
+
+  async function getAlbumInfo(albumItem = {}) {
+    const video = await getVideoView(albumItem.bvid || albumItem.aid || albumItem.id);
+    const pages = video.pages || [{ cid: video.cid, part: video.title, duration: video.duration }];
+    return {
+      albumItem: formatMedia(video),
+      musicList: pages.map((part) =>
+        formatMedia({
+          ...video,
+          cid: part.cid,
+          title: part.part || video.title,
+          duration: part.duration,
+        }),
+      ),
+    };
+  }
+
+  const BOARD_KEYS = [
+    [0, "全站"],
+    [3, "音乐"],
+    [1, "动画"],
+    [119, "鬼畜"],
+    [168, "国创相关"],
+    [129, "舞蹈"],
+    [4, "游戏"],
+    [36, "知识"],
+    [188, "科技"],
+    [234, "运动"],
+    [223, "汽车"],
+    [160, "生活"],
+    [211, "美食"],
+    [217, "动物圈"],
+    [155, "时尚"],
+    [5, "娱乐"],
+    [181, "影视"],
+  ];
+
+  async function getTopLists() {
+    const cover = "https://s1.hdslb.com/bfs/static/jinkela/popular/assets/icon_rank.png";
+    const weeklyCover = "https://s1.hdslb.com/bfs/static/jinkela/popular/assets/icon_weekly.png";
+    let weekly = [];
+    try {
+      const body = await rawApiGet("/x/web-interface/popular/series/list", {}, { useCookie: true });
+      weekly = (body?.data?.list || []).slice(0, 12).map((entry) => ({
+        id: `popular/series/one?number=${entry.number}`,
+        title: entry.subject || entry.name || `每周必看 ${entry.number}`,
+        description: entry.name || "",
+        coverImg: weeklyCover,
+      }));
+    } catch (_) {}
+    return [
+      { title: "每周必看", data: weekly },
+      {
+        title: "热门",
+        data: [
+          { id: "popular?ps=20&pn=1", title: "热门视频", coverImg: cover },
+          { id: "popular/precious?page_size=100&page=1", title: "入站必刷", coverImg: cover },
+        ],
+      },
+      {
+        title: "排行榜",
+        data: BOARD_KEYS.map(([rid, title]) => ({
+          id: `ranking/v2?rid=${rid}&type=all`,
+          title,
+          coverImg: cover,
+        })),
+      },
+    ];
+  }
+
+  async function getTopListDetail(topListItem = {}) {
+    const rawId = String(topListItem.id || "");
+    const question = rawId.indexOf("?");
+    const path = question >= 0 ? rawId.slice(0, question) : rawId;
+    const query = question >= 0 ? rawId.slice(question + 1) : "";
+    const params = parseQueryString(query);
+    const needsWbi =
+      path.includes("ranking") || path.includes("popular/series") || path === "popular";
+    let body = null;
+    try {
+      body = await rawApiGet(`/x/web-interface/${path}`, params, {
+        wbi: needsWbi,
+        useCookie: true,
+      });
+    } catch (_) {
+      body = null;
+    }
+    if (!body || body.code !== 0) {
+      try {
+        body = await rawApiGet(`/x/web-interface/${path}`, params, { useCookie: true });
+      } catch (_) {
+        body = null;
+      }
+    }
+    const data = body?.data;
+    const list = data?.list || data?.item || data?.archives || data?.result || [];
+    return { ...topListItem, musicList: (Array.isArray(list) ? list : []).map(formatMedia) };
+  }
+
+  async function getRecommendSheetTags() {
+    return {
+      pinned: [
+        { id: "popular", title: "热门" },
+        { id: "3", title: "音乐" },
+        { id: "1", title: "动画" },
+        { id: "4", title: "游戏" },
+        { id: "36", title: "知识" },
+        { id: "188", title: "科技" },
+      ],
+      data: [],
+    };
+  }
+
+  async function getRecommendSheetsByTag(tag = {}, page = 1) {
+    const rid = String(tag.id || "popular");
+    const asSheets = (items) =>
+      (items || []).map((item) => ({
+        id: String(item.bvid || item.aid || item.id),
+        title: item.title || "",
+        artist: item.artist || "",
+        artwork: item.artwork || "",
+        description: item.description || "Bilibili 视频歌单",
+        worksNum: 1,
+        playCount: item.playCount,
+        _bilibiliType: "video",
+        bvid: item.bvid,
+        aid: item.aid,
+        musicList: [item],
+      }));
+    if (rid === "popular") {
+      const detail = await getTopListDetail({ id: `popular?ps=20&pn=${page || 1}`, title: "热门" });
+      return {
+        isEnd: !detail.musicList || detail.musicList.length < PAGE_SIZE,
+        data: asSheets(detail.musicList),
+      };
+    }
+    const detail = await getTopListDetail({
+      id: `ranking/v2?rid=${encodeURIComponent(rid)}&type=all`,
+      title: tag.title || "排行榜",
+    });
+    return { isEnd: true, data: asSheets(detail.musicList) };
+  }
+
+  function formatComment(item = {}) {
+    const location = item.reply_control?.location;
+    return {
+      id: item.rpid,
+      nickName: item.member?.uname || "",
+      avatar: normalizeImage(item.member?.avatar),
+      comment: item.content?.message || "",
+      like: Number(item.like) || 0,
+      createAt: Number(item.ctime) > 0 ? Number(item.ctime) * 1000 : undefined,
+      location: location && String(location).replace(/^IP属地：/, ""),
+    };
+  }
+
+  async function getMusicComments(musicItem = {}, page = 1) {
+    const aid =
+      musicItem.aid ||
+      (typeof musicItem.id === "number" || /^\d+$/.test(String(musicItem.id || ""))
+        ? musicItem.id
+        : "");
+    if (!aid) return { isEnd: true, data: [] };
+    const params = {
+      type: 1,
+      mode: 3,
+      oid: aid,
+      plat: 1,
+      web_location: 1315875,
+      pagination_str: JSON.stringify({ offset: page > 1 ? String((page - 1) * PAGE_SIZE) : "" }),
+    };
+    try {
+      const body = await apiGet("/x/v2/reply/wbi/main", params, { wbi: true, useCookie: true });
+      const replies = body.data?.replies || [];
+      const data = replies.map((reply) => {
+        const comment = formatComment(reply);
+        if (reply.replies?.length) comment.replies = reply.replies.map(formatComment);
+        return comment;
+      });
+      return { isEnd: Boolean(body.data?.cursor?.is_end) || data.length < PAGE_SIZE, data };
+    } catch (error) {
+      sdk.log.error(`[bilibili] getMusicComments: ${error.message}`);
+      return { isEnd: true, data: [] };
+    }
+  }
+
+  function subtitleToLrc(payload) {
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch (_) {
+        return "";
+      }
+    }
+    const body = Array.isArray(payload) ? payload : payload?.body;
+    if (!Array.isArray(body)) return "";
+    return body
+      .map((line) => {
+        const from = Number(line.from);
+        if (!Number.isFinite(from)) return "";
+        const minutes = Math.floor(from / 60)
+          .toString()
+          .padStart(2, "0");
+        const seconds = (from % 60).toFixed(2).padStart(5, "0");
+        return `[${minutes}:${seconds}]${String(line.content || "")}`;
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  async function getLyric(musicItem = {}) {
+    const bvid =
+      musicItem.bvid ||
+      (typeof musicItem.id === "string" && /^BV/i.test(musicItem.id) ? musicItem.id : "");
+    const aid =
+      musicItem.aid || (!bvid && /^\d+$/.test(String(musicItem.id || "")) ? musicItem.id : "");
+    let cid = musicItem.cid;
+    try {
+      if (!cid) {
+        const view = await getVideoView({ bvid, aid });
+        cid = view.cid || view.pages?.[0]?.cid;
+      }
+      const body = await apiGet(
+        "/x/player/wbi/v2",
+        { ...(bvid ? { bvid } : { aid }), cid },
+        { wbi: true, useCookie: true },
+      );
+      const subtitles = body.data?.subtitle?.subtitle || body.data?.subtitle?.list || [];
+      const subtitle =
+        subtitles.find((item) => /zh|中文/i.test(item.lan || item.lan_doc || "")) || subtitles[0];
+      if (!subtitle) return { rawLrc: "" };
+      const url = normalizeImage(subtitle.subtitle_url || subtitle.url);
+      if (!url) return { rawLrc: "" };
+      const response = await httpGet(url, { headers: getMediaHeaders(musicItem), timeout: 15000 });
+      return { rawLrc: subtitleToLrc(response.data), artwork: musicItem.artwork };
+    } catch (error) {
+      sdk.log.error(`[bilibili] getLyric: ${error.message}`);
+      return { rawLrc: "", artwork: musicItem.artwork };
+    }
+  }
+
+  function getMusicDetailPageUrl(musicItem = {}) {
+    const bvid =
+      musicItem.bvid ||
+      musicItem._bilibiliData?.bvid ||
+      (typeof musicItem.id === "string" && /^BV/i.test(musicItem.id) ? musicItem.id : "");
+    if (bvid) return `https://www.bilibili.com/video/${bvid}`;
+    const aid =
+      musicItem.aid ||
+      musicItem._bilibiliData?.aid ||
+      (/^\d+$/.test(String(musicItem.id || "")) ? musicItem.id : "");
+    return aid ? `https://www.bilibili.com/video/av${aid}` : "";
+  }
+
+  async function importMusicItem(urlLike) {
+    const text = String(urlLike || "");
+    const bvid = (text.match(/\b(BV[a-zA-Z0-9]{10})\b/) || [])[1];
+    const aid =
+      (text.match(/(?:av|aid[=/])([0-9]+)/i) || [])[1] ||
+      (/^\d+$/.test(text.trim()) ? text.trim() : "");
+    if (!bvid && !aid) return undefined;
+    return getMusicInfo({ bvid, aid, id: bvid || aid });
+  }
+
+  async function getHotSearch() {
+    const response = await httpGet(`${API_BASE}/x/web-interface/wbi/search/square`, {
+      params: { limit: 30 },
+      headers: HTTP_HEADERS,
+      timeout: 10000,
+    });
+    const body = response.data;
+    const list = body?.data?.trending?.list;
+    if (body?.code !== 0 || !Array.isArray(list)) {
+      throw new Error("Bilibili热搜加载失败，请稍后重试");
+    }
+    return [
+      ...new Set(
+        list
+          .map((item) => item?.keyword)
+          .filter((word) => typeof word === "string" && word.trim())
+          .map((word) => word.trim()),
+      ),
+    ].slice(0, 30);
+  }
+
+  async function search(query, page = 1, type = "music") {
+    if (type === "artist") return searchArtists(query, page);
+    if (type === "sheet") return searchSheets(query, page);
+    return searchVideos(query, page);
+  }
+  let activeImport = null;
+  function importedSnapshot(entity) {
+    if (!entity._bakaImportToken) return null;
+    if (
+      !activeImport ||
+      activeImport.token !== entity._bakaImportToken ||
+      activeImport.entity.id !== entity.id ||
+      activeImport.expiresAt <= Date.now()
+    ) {
+      activeImport = null;
+      throw Object.assign(new Error("Imported collection expired; import its share link again"), {
+        code: "temporary_unavailable",
+      });
+    }
+    return activeImport;
+  }
+  async function importCollection(url) {
+    const imported = await importMusicSheet(url);
+    if (!imported || !Array.isArray(imported.musicList) || imported.id == null) {
+      throw Object.assign(new Error("The share link did not return a valid collection"), {
+        code: "track_unavailable",
+      });
+    }
+    if (imported.musicList.length > 100000) {
+      throw Object.assign(new Error("Imported collection exceeds the 100000-track limit"), {
+        code: "temporary_unavailable",
+      });
+    }
+    const token = sdk.crypto.randomBytes(16);
+    const entity = { ...imported, type: imported.type || "sheet", _bakaImportToken: token };
+    delete entity.musicList;
+    activeImport = {
+      token,
+      entity,
+      items: imported.musicList,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    };
+    return entity;
+  }
+  return {
+    search,
+    entity: (entity) => getMusicInfo(entity),
+    collection: async (entity) => {
+      const snapshot = importedSnapshot(entity);
+      if (snapshot) return snapshot.entity;
+      if (entity.type === "artist") return entity;
+      const result = await (entity.type === "album"
+        ? getAlbumInfo(entity)
+        : getMusicSheetInfo(entity, 1));
+      return { ...entity, ...(result.albumItem || result.sheetItem || {}) };
+    },
+    members: (entity, page, kind) => {
+      const snapshot = importedSnapshot(entity);
+      if (snapshot)
+        return {
+          isEnd: true,
+          musicList: snapshot.items,
+          sheetItem: snapshot.entity,
+          total: snapshot.items.length,
+        };
+      return entity.type === "artist"
+        ? getArtistWorks(entity, page, kind)
+        : entity.type === "chart"
+          ? getTopListDetail(entity, page)
+          : entity.type === "album"
+            ? getAlbumInfo(entity, page)
+            : getMusicSheetInfo(entity, page);
+    },
+    charts: getTopLists,
+    tags: getRecommendSheetTags,
+    playlists: getRecommendSheetsByTag,
+    hotSearch: getHotSearch,
+
+    resolve: getMediaSource,
+    video: getMvSource,
+    lyric: getLyric,
+    comments: getMusicComments,
+    importSheet: importCollection,
+    share: getMusicDetailPageUrl,
+  };
+}
+
+const handlers = {
+  search: async (request, sdk) =>
+    pageResult(
+      await operations(sdk).search(request.query, pageNumber(request.cursor), request.kind),
+      request,
+    ),
+  entities: { get: async ({ entity }, sdk) => operations(sdk).entity(entity) },
+  collections: {
+    get: async ({ entity }, sdk) => operations(sdk).collection(entity),
+    members: async (request, sdk) =>
+      pageResult(
+        await operations(sdk).members(request.entity, pageNumber(request.cursor), request.kind),
+        request,
+      ),
+  },
+  discovery: {
+    charts: async (request, sdk) => sliceResult(await operations(sdk).charts(), request),
+    playlistTags: async (request, sdk) => sliceResult(await operations(sdk).tags(), request),
+    playlists: async (request, sdk) =>
+      pageResult(await operations(sdk).playlists(request.tag, pageNumber(request.cursor)), request),
+    hotSearch: async (request, sdk) => sliceResult(await operations(sdk).hotSearch(), request),
+  },
+  media: {
+    prepare: async ({ entity, quality }) => ({
+      protocol: "lx",
+      source: "bilibili",
+      musicInfo: {
+        ...entity,
+        songmid: entity.songmid || entity.hash || entity.copyrightId || entity.id,
+      },
+      quality,
+    }),
+    resolve: async ({ entity, quality }, sdk) => {
+      if (typeof requestMusicUrl === "function") {
+        const result = await requestMusicUrl(
+          entity,
+          quality || manifest.supportedQualities[0],
+          sdk,
+        );
+        return typeof result === "string" ? { url: result, quality } : result;
+      }
+      return operations(sdk).resolve(entity, quality || manifest.supportedQualities[0]);
+    },
+    video: async ({ entity, quality }, sdk) => operations(sdk).video(entity, quality || "1080p"),
+  },
+  lyrics: { get: async ({ entity }, sdk) => operations(sdk).lyric(entity) },
+  comments: {
+    list: async (request, sdk) =>
+      pageResult(
+        await operations(sdk).comments(request.entity, pageNumber(request.cursor)),
+        request,
+      ),
+  },
+  links: {
+    resolve: async ({ url }, sdk) => operations(sdk).importSheet(url),
+    share: async ({ entity }, sdk) => operations(sdk).share(entity),
+  },
+};
+module.exports = { manifest, handlers };

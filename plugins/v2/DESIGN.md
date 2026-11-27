@@ -1,0 +1,30 @@
+# Independent public provider design
+
+V1 remains the preserved public upstream baseline. V2 is separately distributed
+and uses exact `cc.baka.*` identities, source protocols and named handlers. The
+client permits only this public family to bind external LX resolvers. Internal
+`lyra.mesh.*` packages use their own sources and different upstream protocols.
+
+The development compiler statically ports business functions, retaining public
+QQ uniform playlist requests, Kugou command/gcid imports, Kuwo lyric/key handling,
+NetEase cryptography, Migu binary decoding, Bilibili DASH and Apple native license
+envelopes. Generated HTTP adapters default to text with opportunistic JSON parsing
+so HTML/text endpoints remain usable with the strict SDK. Explicit JSON requests
+retain strict parsing. No runtime V1 module or npm shim is shipped.
+
+The source-handler generator shares trusted public source wire algorithms at
+server generation time, then emits direct SDK calls. Subscription metadata comes
+from the current templates, preserving author information. Provider updates keep
+their package ID and V2 update route; source/key selectors never change ownership.
+
+Page boundaries respect the current request limit. Complete import snapshots
+remain provider-local and bounded, with opaque reference tokens. Native imports
+enumerate that exact snapshot; they never reinterpret imported command IDs through
+ordinary browsing endpoints. Ordinary upstream page refetches can still observe
+remote changes; no provider claims a server revision where the upstream has none.
+
+2026-11-27: restored V1 baseline and added the separate public V2 family at 1.0.0.
+Regression checks include strict SDK response parsing, lyric byte-shadowing,
+bounded cursor journeys, import snapshot ownership, source wire packets,
+all-source distribution, author metadata and actual native HTTP/QuickJS imports.
+Production publication and device/account verification remain separate.

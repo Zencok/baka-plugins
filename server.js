@@ -71,6 +71,14 @@ app.use((req, res, next) => {
 });
 
 // ── 路由 ──
+app.get(['/api/v2/subscription', '/api/v2/subscription.json'], (req, res, next) =>
+  callHandler(require('./functions/v2-subscription').handler, req, res).catch(next)
+);
+
+app.get('/v2/plugins/:plugin', (req, res, next) =>
+  callHandler(require('./functions/v2-plugin').handler, req, res).catch(next)
+);
+
 app.get('/api/subscription.json', (req, res, next) =>
   callHandler(subscriptionHandler, req, res).catch(next)
 );

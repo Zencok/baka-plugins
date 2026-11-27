@@ -1,0 +1,121 @@
+// SDK transport and byte operations; no package or host-global dependency.
+function formEncode(params) {
+  return Object.entries(params || {})
+    .filter(([, value]) => value !== undefined)
+    .map(
+      ([key, value]) =>
+        encodeURIComponent(key) + "=" + encodeURIComponent(value == null ? "" : String(value)),
+    )
+    .join("&");
+}
+function replaceQuery(url, values) {
+  const parts = String(url).split("#"),
+    pair = parts[0].split("?"),
+    params = {};
+  for (const segment of (pair[1] || "").split("&")) {
+    if (!segment) continue;
+    const equals = segment.indexOf("=");
+    params[decodeURIComponent(equals < 0 ? segment : segment.slice(0, equals))] =
+      decodeURIComponent(equals < 0 ? "" : segment.slice(equals + 1));
+  }
+  return (
+    pair[0] +
+    "?" +
+    formEncode({ ...params, ...values }) +
+    (parts.length > 1 ? "#" + parts.slice(1).join("#") : "")
+  );
+}
+async function http(options) {
+  if (typeof options === "string") options = { url: options };
+  const request = {
+    url: options.params ? replaceQuery(options.url, options.params) : options.url,
+    method: String(options.method || "GET").toUpperCase(),
+    headers: { ...(options.headers || {}) },
+    responseType: options.responseType === "arraybuffer" ? "bytes" : options.responseType || "text",
+  };
+  if (options.timeout != null) request.timeoutMs = options.timeout;
+  if (options.maxRedirects != null) request.maxRedirects = options.maxRedirects;
+  if (options.data != null) {
+    request.body = typeof options.data === "string" ? options.data : JSON.stringify(options.data);
+    if (
+      typeof options.data !== "string" &&
+      !Object.keys(request.headers).some((key) => key.toLowerCase() === "content-type")
+    ) {
+      request.headers["Content-Type"] = "application/json";
+    }
+  }
+  const response = await sdk.http.request(request);
+  if (response.status < 200 || response.status >= 300) {
+    const error = Object.assign(new Error("Provider request failed (" + response.status + ")"), {
+      code:
+        response.status === 429
+          ? "rate_limited"
+          : response.status === 401
+            ? "authentication_required"
+            : "temporary_unavailable",
+      response: { status: response.status, headers: response.headers, data: response.body },
+    });
+    if (!options.validateStatus || !options.validateStatus(response.status)) throw error;
+  }
+  let data = response.body;
+  if (request.responseType === "bytes") {
+    data = sdkBytes(
+      typeof data === "string" ? data : (data && (data.dataHex || data.hex)) || "",
+      "hex",
+    );
+  } else if (typeof data === "string" && options.responseType !== "text") {
+    try {
+      data = JSON.parse(data);
+    } catch (_) {
+      /* HTML/text endpoints retain text. */
+    }
+  }
+  return { status: response.status, headers: response.headers || {}, data };
+}
+function httpGet(url, options) {
+  return http({ ...options, url, method: "GET" });
+}
+function httpPost(url, data, options) {
+  return http({ ...options, url, data, method: "POST" });
+}
+function httpHead(url, options) {
+  return http({ ...options, url, method: "HEAD" });
+}
+function hash(algorithm, value) {
+  return sdk.crypto.hash(algorithm, sdk.bytes.encode(String(value)));
+}
+function hex(value) {
+  return Array.from(value || [], (byte) => Number(byte).toString(16).padStart(2, "0")).join("");
+}
+function isBytes(value) {
+  return value instanceof Uint8Array;
+}
+function sdkBytes(value, encoding) {
+  let result;
+  if (typeof value === "string") {
+    const encoded = sdk.bytes.encode(value, encoding || "utf8");
+    result = Uint8Array.from(encoded.match(/../g) || [], (byte) => parseInt(byte, 16));
+  } else if (value instanceof ArrayBuffer) result = new Uint8Array(value);
+  else result = Uint8Array.from(value || []);
+  result.toString = function (format) {
+    return sdk.bytes.decode(hex(this), format === "utf16le" ? "utf-16le" : format || "utf8");
+  };
+  return result;
+}
+function zeroBytes(size) {
+  return sdkBytes(new Uint8Array(size));
+}
+function inflate(value, options) {
+  const dataHex = sdk.bytes.decompress(hex(value), "zlib");
+  return options && options.to === "string" ? sdk.bytes.decode(dataHex) : sdkBytes(dataHex, "hex");
+}
+function stripHtml(value) {
+  return sdk.text.decodeHtml(String(value || "").replace(/<[^>]*>/g, ""));
+}
+function htmlAttributes(value, attribute) {
+  const result = [],
+    expression = new RegExp("\\b" + attribute + "\\s*=\\s*([\"'])(.*?)\\1", "gi");
+  let match;
+  while ((match = expression.exec(String(value)))) result.push(sdk.text.decodeHtml(match[2]));
+  return result;
+}

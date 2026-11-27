@@ -1,0 +1,99 @@
+function pageState(cursor) {
+  if (cursor == null) return { upstreamPage: 1, offset: 0 };
+  let value;
+  try {
+    if (typeof cursor !== "string" || !cursor.startsWith("v2:")) throw new Error();
+    value = JSON.parse(decodeURIComponent(cursor.slice(3)));
+  } catch (_) {
+    throw new Error("Invalid provider page cursor");
+  }
+  if (
+    !value ||
+    !Number.isSafeInteger(value.upstreamPage) ||
+    value.upstreamPage < 1 ||
+    value.upstreamPage > 10000 ||
+    !Number.isSafeInteger(value.offset) ||
+    value.offset < 0 ||
+    value.offset > 1000000
+  ) {
+    throw new Error("Invalid provider page cursor");
+  }
+  return value;
+}
+function pageNumber(cursor) {
+  return pageState(cursor).upstreamPage;
+}
+function pageCursor(upstreamPage, offset) {
+  return "v2:" + encodeURIComponent(JSON.stringify({ upstreamPage, offset }));
+}
+function pageLimit(request) {
+  return Math.max(1, Math.min(100, Math.trunc(Number(request.limit) || 30)));
+}
+function flattenGroups(value) {
+  const result = [];
+  for (const group of Array.isArray(value) ? value : []) {
+    const children = Array.isArray(group.data)
+      ? group.data
+      : Array.isArray(group.list)
+        ? group.list
+        : null;
+    if (children) {
+      result.push(
+        ...children.map((item) =>
+          item && typeof item === "object" && group.title && !item.group && !item.category
+            ? { ...item, group: group.title }
+            : item,
+        ),
+      );
+    } else result.push(group);
+  }
+  return result;
+}
+function pageResult(result, request) {
+  result = result || {};
+  const candidates = Array.isArray(result)
+    ? result
+    : result.data || result.musicList || result.comments || [];
+  const items = Array.isArray(candidates) ? candidates : [];
+  const state = pageState(request.cursor);
+  if (
+    (!items.length && result.isEnd === false) ||
+    (state.offset > 0 && state.offset >= items.length)
+  ) {
+    throw Object.assign(new Error("Provider pagination did not advance; retry this collection"), {
+      code: "temporary_unavailable",
+    });
+  }
+  const end = Math.min(items.length, state.offset + pageLimit(request));
+  const output = {
+    items: items.slice(state.offset, end),
+    nextCursor:
+      end < items.length
+        ? pageCursor(state.upstreamPage, end)
+        : result.isEnd === false
+          ? pageCursor(state.upstreamPage + 1, 0)
+          : null,
+  };
+  const entity = result.sheetItem || result.albumItem || result.artistItem;
+  if (entity) output.entity = { ...(request.entity || {}), ...entity };
+  if (Number.isFinite(result.total)) output.total = result.total;
+  return output;
+}
+function sliceResult(result, request) {
+  const items = flattenGroups((result && (result.data || result.tags)) || result);
+  if (result && Array.isArray(result.pinned)) {
+    const existing = new Set(items.map((item) => String(item && item.id)));
+    items.unshift(...result.pinned.filter((item) => !existing.has(String(item && item.id))));
+  }
+  return pageResult({ data: items, total: items.length, isEnd: true }, request);
+}
+function dailyResult(result, request) {
+  result = result || {};
+  return {
+    ...result,
+    ...pageResult({ ...result, data: result.musicList || result.data || [] }, request),
+    state: ["ready", "login_required", "unconfigured", "blocked", "updating"].includes(result.state)
+      ? result.state
+      : "blocked",
+  };
+}

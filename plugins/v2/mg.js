@@ -1,0 +1,3343 @@
+// @baka-provider 2
+// {{REQUEST_HANDLER}}
+
+"use strict";
+
+// Public BakaMusic protocols, statically migrated to the QuickJS V2 SDK.
+const manifest = {
+  apiVersion: 2,
+  kind: "provider",
+  sourceId: "mg.v1",
+  id: "cc.baka.mg",
+  name: "咪咕音乐",
+  version: "1.0.0",
+  author: "Toskysun",
+  primaryKey: ["copyrightId"],
+  supportedSearchType: ["music", "album", "sheet", "artist", "lyric"],
+  supportedQualities: ["mgg", "128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus"],
+  supportedVideoQualities: ["480p", "720p", "1080p", "4k"],
+  capabilities: [
+    "search",
+    "entities.get",
+    "collections.get",
+    "collections.members",
+    "discovery.charts",
+    "discovery.playlistTags",
+    "discovery.playlists",
+    "discovery.hotSearch",
+    "media.prepare",
+    "media.resolve",
+    "media.video",
+    "lyrics.get",
+    "comments.list",
+    "links.resolve",
+    "links.share",
+  ],
+  hints: {
+    importMusicSheet: [
+      "咪咕APP：自建歌单-分享-复制链接，直接粘贴即可",
+      "H5/PC端：复制URL并粘贴，或者直接输入纯数字歌单ID即可",
+      "导入时间和歌单大小有关，请耐心等待",
+    ],
+  },
+};
+
+function pageState(cursor) {
+  if (cursor == null) return { upstreamPage: 1, offset: 0 };
+  let value;
+  try {
+    if (typeof cursor !== "string" || !cursor.startsWith("v2:")) throw new Error();
+    value = JSON.parse(decodeURIComponent(cursor.slice(3)));
+  } catch (_) {
+    throw new Error("Invalid provider page cursor");
+  }
+  if (
+    !value ||
+    !Number.isSafeInteger(value.upstreamPage) ||
+    value.upstreamPage < 1 ||
+    value.upstreamPage > 10000 ||
+    !Number.isSafeInteger(value.offset) ||
+    value.offset < 0 ||
+    value.offset > 1000000
+  ) {
+    throw new Error("Invalid provider page cursor");
+  }
+  return value;
+}
+function pageNumber(cursor) {
+  return pageState(cursor).upstreamPage;
+}
+function pageCursor(upstreamPage, offset) {
+  return "v2:" + encodeURIComponent(JSON.stringify({ upstreamPage, offset }));
+}
+function pageLimit(request) {
+  return Math.max(1, Math.min(100, Math.trunc(Number(request.limit) || 30)));
+}
+function flattenGroups(value) {
+  const result = [];
+  for (const group of Array.isArray(value) ? value : []) {
+    const children = Array.isArray(group.data)
+      ? group.data
+      : Array.isArray(group.list)
+        ? group.list
+        : null;
+    if (children) {
+      result.push(
+        ...children.map((item) =>
+          item && typeof item === "object" && group.title && !item.group && !item.category
+            ? { ...item, group: group.title }
+            : item,
+        ),
+      );
+    } else result.push(group);
+  }
+  return result;
+}
+function pageResult(result, request) {
+  result = result || {};
+  const candidates = Array.isArray(result)
+    ? result
+    : result.data || result.musicList || result.comments || [];
+  const items = Array.isArray(candidates) ? candidates : [];
+  const state = pageState(request.cursor);
+  if (
+    (!items.length && result.isEnd === false) ||
+    (state.offset > 0 && state.offset >= items.length)
+  ) {
+    throw Object.assign(new Error("Provider pagination did not advance; retry this collection"), {
+      code: "temporary_unavailable",
+    });
+  }
+  const end = Math.min(items.length, state.offset + pageLimit(request));
+  const output = {
+    items: items.slice(state.offset, end),
+    nextCursor:
+      end < items.length
+        ? pageCursor(state.upstreamPage, end)
+        : result.isEnd === false
+          ? pageCursor(state.upstreamPage + 1, 0)
+          : null,
+  };
+  const entity = result.sheetItem || result.albumItem || result.artistItem;
+  if (entity) output.entity = { ...(request.entity || {}), ...entity };
+  if (Number.isFinite(result.total)) output.total = result.total;
+  return output;
+}
+function sliceResult(result, request) {
+  const items = flattenGroups((result && (result.data || result.tags)) || result);
+  if (result && Array.isArray(result.pinned)) {
+    const existing = new Set(items.map((item) => String(item && item.id)));
+    items.unshift(...result.pinned.filter((item) => !existing.has(String(item && item.id))));
+  }
+  return pageResult({ data: items, total: items.length, isEnd: true }, request);
+}
+function dailyResult(result, request) {
+  result = result || {};
+  return {
+    ...result,
+    ...pageResult({ ...result, data: result.musicList || result.data || [] }, request),
+    state: ["ready", "login_required", "unconfigured", "blocked", "updating"].includes(result.state)
+      ? result.state
+      : "blocked",
+  };
+}
+
+const operationCache = new WeakMap();
+function operations(sdk) {
+  if (operationCache.has(sdk)) return operationCache.get(sdk);
+  const result = createOperations(sdk);
+  operationCache.set(sdk, result);
+  return result;
+}
+function createOperations(sdk) {
+  // SDK transport and byte operations; no package or host-global dependency.
+  function formEncode(params) {
+    return Object.entries(params || {})
+      .filter(([, value]) => value !== undefined)
+      .map(
+        ([key, value]) =>
+          encodeURIComponent(key) + "=" + encodeURIComponent(value == null ? "" : String(value)),
+      )
+      .join("&");
+  }
+  function replaceQuery(url, values) {
+    const parts = String(url).split("#"),
+      pair = parts[0].split("?"),
+      params = {};
+    for (const segment of (pair[1] || "").split("&")) {
+      if (!segment) continue;
+      const equals = segment.indexOf("=");
+      params[decodeURIComponent(equals < 0 ? segment : segment.slice(0, equals))] =
+        decodeURIComponent(equals < 0 ? "" : segment.slice(equals + 1));
+    }
+    return (
+      pair[0] +
+      "?" +
+      formEncode({ ...params, ...values }) +
+      (parts.length > 1 ? "#" + parts.slice(1).join("#") : "")
+    );
+  }
+  async function http(options) {
+    if (typeof options === "string") options = { url: options };
+    const request = {
+      url: options.params ? replaceQuery(options.url, options.params) : options.url,
+      method: String(options.method || "GET").toUpperCase(),
+      headers: { ...(options.headers || {}) },
+      responseType:
+        options.responseType === "arraybuffer" ? "bytes" : options.responseType || "text",
+    };
+    if (options.timeout != null) request.timeoutMs = options.timeout;
+    if (options.maxRedirects != null) request.maxRedirects = options.maxRedirects;
+    if (options.data != null) {
+      request.body = typeof options.data === "string" ? options.data : JSON.stringify(options.data);
+      if (
+        typeof options.data !== "string" &&
+        !Object.keys(request.headers).some((key) => key.toLowerCase() === "content-type")
+      ) {
+        request.headers["Content-Type"] = "application/json";
+      }
+    }
+    const response = await sdk.http.request(request);
+    if (response.status < 200 || response.status >= 300) {
+      const error = Object.assign(new Error("Provider request failed (" + response.status + ")"), {
+        code:
+          response.status === 429
+            ? "rate_limited"
+            : response.status === 401
+              ? "authentication_required"
+              : "temporary_unavailable",
+        response: { status: response.status, headers: response.headers, data: response.body },
+      });
+      if (!options.validateStatus || !options.validateStatus(response.status)) throw error;
+    }
+    let data = response.body;
+    if (request.responseType === "bytes") {
+      data = sdkBytes(
+        typeof data === "string" ? data : (data && (data.dataHex || data.hex)) || "",
+        "hex",
+      );
+    } else if (typeof data === "string" && options.responseType !== "text") {
+      try {
+        data = JSON.parse(data);
+      } catch (_) {
+        /* HTML/text endpoints retain text. */
+      }
+    }
+    return { status: response.status, headers: response.headers || {}, data };
+  }
+  function httpGet(url, options) {
+    return http({ ...options, url, method: "GET" });
+  }
+  function httpPost(url, data, options) {
+    return http({ ...options, url, data, method: "POST" });
+  }
+  function httpHead(url, options) {
+    return http({ ...options, url, method: "HEAD" });
+  }
+  function hash(algorithm, value) {
+    return sdk.crypto.hash(algorithm, sdk.bytes.encode(String(value)));
+  }
+  function hex(value) {
+    return Array.from(value || [], (byte) => Number(byte).toString(16).padStart(2, "0")).join("");
+  }
+  function isBytes(value) {
+    return value instanceof Uint8Array;
+  }
+  function sdkBytes(value, encoding) {
+    let result;
+    if (typeof value === "string") {
+      const encoded = sdk.bytes.encode(value, encoding || "utf8");
+      result = Uint8Array.from(encoded.match(/../g) || [], (byte) => parseInt(byte, 16));
+    } else if (value instanceof ArrayBuffer) result = new Uint8Array(value);
+    else result = Uint8Array.from(value || []);
+    result.toString = function (format) {
+      return sdk.bytes.decode(hex(this), format === "utf16le" ? "utf-16le" : format || "utf8");
+    };
+    return result;
+  }
+  function zeroBytes(size) {
+    return sdkBytes(new Uint8Array(size));
+  }
+  function inflate(value, options) {
+    const dataHex = sdk.bytes.decompress(hex(value), "zlib");
+    return options && options.to === "string"
+      ? sdk.bytes.decode(dataHex)
+      : sdkBytes(dataHex, "hex");
+  }
+  function stripHtml(value) {
+    return sdk.text.decodeHtml(String(value || "").replace(/<[^>]*>/g, ""));
+  }
+  function htmlAttributes(value, attribute) {
+    const result = [],
+      expression = new RegExp("\\b" + attribute + "\\s*=\\s*([\"'])(.*?)\\1", "gi");
+    let match;
+    while ((match = expression.exec(String(value)))) result.push(sdk.text.decodeHtml(match[2]));
+    return result;
+  }
+
+  /**
+   * 咪咕音乐 BakaMusic 免密插件
+   * 内置官方听歌线路，无需 source/key；支持咪咕全部 8 档音质
+   * @version 1.3.3
+   */
+  ("use strict");
+
+  const searchRows = 20;
+
+  const BASE_SUPPORTED_QUALITIES = [
+    "mgg",
+    "128k",
+    "320k",
+    "flac",
+    "flac24bit",
+    "hires",
+    "atmos",
+    "atmos_plus",
+  ];
+
+  /** BakaMusic 音质键 -> 咪咕 toneFlag */
+  const qualityLevels = {
+    mgg: "LQ",
+    "128k": "PQ",
+    "320k": "HQ",
+    flac: "SQ",
+    flac24bit: "ZQ24",
+    hires: "ZQ32",
+    atmos: "Z3D",
+    atmos_plus: "3D60",
+  };
+
+  const MIGU_QUALITY_FALLBACKS = {
+    mgg: ["mgg", "128k"],
+    "128k": ["128k", "mgg"],
+    "320k": ["320k", "128k", "mgg"],
+    flac: ["flac", "320k", "128k", "mgg"],
+    flac24bit: ["flac24bit", "flac", "320k", "128k", "mgg"],
+    hires: ["hires", "flac24bit", "flac", "320k", "128k", "mgg"],
+    atmos: ["atmos", "hires", "flac24bit", "flac", "320k", "128k", "mgg"],
+    atmos_plus: ["atmos_plus", "atmos", "hires", "flac24bit", "flac", "320k", "128k", "mgg"],
+  };
+
+  const MIGU_QUALITY_INFO = {
+    LQ: { key: "mgg", bitrate: 64000 },
+    PQ: { key: "128k", bitrate: 128000 },
+    HQ: { key: "320k", bitrate: 320000 },
+    SQ: { key: "flac", bitrate: 1411000 },
+    ZQ: { key: "flac24bit", bitrate: 2304000 },
+    ZQ24: { key: "flac24bit", bitrate: 2304000 },
+    ZQ32: { key: "hires", bitrate: 4608000 },
+    Z3D: { key: "atmos", bitrate: 4608000 },
+    "3D60": { key: "atmos_plus", bitrate: 4608000 },
+  };
+
+  const MIGU_TONE_PATHS = {
+    LQ: encodeURI("全曲试听/Mp3_64_22_16"),
+    PQ: encodeURI("标清高清/MP3_128_16_Stero"),
+    HQ: encodeURI("标清高清/MP3_320_16_Stero"),
+    SQ: encodeURI("歌曲下载/flac"),
+    ZQ24: encodeURI("歌曲下载/flac_24bit"),
+    ZQ32: encodeURI("歌曲下载/wav_32bit"),
+    Z3D: encodeURI("歌曲下载/wav_3d"),
+    "3D60": encodeURI("歌曲下载/wav_3d_60s"),
+  };
+
+  const MIGU_TONE_EXTENSIONS = {
+    LQ: ".mp3",
+    PQ: ".mp3",
+    HQ: ".mp3",
+    SQ: ".flac",
+    ZQ24: ".flac",
+    ZQ32: ".wav",
+    Z3D: ".wav",
+    "3D60": ".wav",
+  };
+
+  const MIGU_STRATEGY_KEY = "Jk8qzuePiJ1qE3mDYhLQ3T73DtDoAhLP";
+
+  function decodeMiguStrategyResponse(data) {
+    const encrypted = isBytes(data) ? data : sdkBytes(data);
+    if (
+      encrypted.length < 4 ||
+      encrypted[0] !== 0xab ||
+      encrypted[1] !== 0xcd ||
+      encrypted[2] !== 0x01
+    ) {
+      throw new Error("咪咕播放接口返回了未知数据格式");
+    }
+
+    const offset = encrypted[3];
+    const key = sdkBytes(MIGU_STRATEGY_KEY, "utf8");
+    const decrypted = zeroBytes(encrypted.length - 4);
+    for (let i = 4; i < encrypted.length; i++) {
+      decrypted[i - 4] = (encrypted[i] + offset - key[(i - 4) % key.length] + 256) % 256;
+    }
+
+    return JSON.parse(decrypted.toString("utf8"));
+  }
+
+  function detectMiguToneFlag(url) {
+    for (const [toneFlag, path] of Object.entries(MIGU_TONE_PATHS)) {
+      if (String(url).includes(path)) return toneFlag;
+    }
+    return "";
+  }
+
+  function replaceMiguTone(url, targetToneFlag, sourceToneFlag, stripQuery = true) {
+    let result = String(url || "");
+    if (stripQuery) result = result.split("?")[0];
+    const source = sourceToneFlag || detectMiguToneFlag(result);
+    if (!MIGU_TONE_PATHS[targetToneFlag] || !MIGU_TONE_PATHS[source]) return result;
+
+    result = result.replace(MIGU_TONE_PATHS[source], MIGU_TONE_PATHS[targetToneFlag]);
+    return result.replace(MIGU_TONE_EXTENSIONS[source], MIGU_TONE_EXTENSIONS[targetToneFlag]);
+  }
+
+  function normalizeMiguToneFlag(quality) {
+    const requestedQuality = normalizeMiguQualityKey(quality);
+    return qualityLevels[requestedQuality];
+  }
+
+  function normalizeMiguQualityKey(quality) {
+    const requestedQuality = quality || "128k";
+    if (qualityLevels[requestedQuality]) return requestedQuality;
+    const entry = Object.entries(qualityLevels).find(
+      ([, toneFlag]) => toneFlag === requestedQuality,
+    );
+    if (entry) return entry[0];
+    throw new Error(`咪咕音乐不支持 ${requestedQuality} 音质`);
+  }
+
+  async function probeMiguMediaUrl(url) {
+    try {
+      const response = await httpHead(url, {
+        timeout: 8000,
+        maxRedirects: 5,
+        validateStatus: () => true,
+      });
+      if (response.status >= 200 && response.status < 400) return true;
+      if (response.status === 404 || response.status === 410) return false;
+    } catch (_) {
+      // 网络波动时保留目标音质，避免错误降级。
+    }
+    return null;
+  }
+
+  async function resolveMiguStrategyUrl(baseUrl, requestedQuality) {
+    const candidates = MIGU_QUALITY_FALLBACKS[requestedQuality] || [requestedQuality, "128k"];
+    for (const candidateQuality of candidates) {
+      const candidateUrl = replaceMiguTone(baseUrl, qualityLevels[candidateQuality], "PQ");
+      if (candidateQuality === "128k") {
+        return { url: candidateUrl, quality: candidateQuality };
+      }
+
+      const available = await probeMiguMediaUrl(candidateUrl);
+      if (available !== false) {
+        if (candidateQuality !== requestedQuality) {
+          sdk.log.warn(`[咪咕] ${requestedQuality} 资源不可用，已降级至 ${candidateQuality}`);
+        }
+        return { url: candidateUrl, quality: candidateQuality };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 官方线路：resourceinfo 解析 ID -> strategy/listen-url 解密 -> CDN 音质路径转换
+   * 返回 { code: 200, url } 或抛错
+   */
+  async function miguMusicUrl(_source, musicItem, quality) {
+    const item =
+      musicItem && typeof musicItem === "object" ? musicItem : { copyrightId: musicItem };
+    const itemId = String(item.id || "");
+    let copyrightId = String(item.copyrightId || item.copyright_id || "");
+    let contentId = String(item.contentId || item.content_id || "");
+    let miguSongId = String(item.songId || "");
+
+    if (!contentId && /^\d{15,}$/.test(itemId)) contentId = itemId;
+    if (!miguSongId && itemId && itemId !== contentId) miguSongId = itemId;
+    if (!copyrightId && itemId && !contentId) copyrightId = itemId;
+    if (!copyrightId && !contentId) throw new Error("缺少 copyrightId/contentId");
+
+    const requestedQuality = normalizeMiguQualityKey(quality);
+    const toneFlag = normalizeMiguToneFlag(requestedQuality);
+    const headersC = {
+      channel: "0140210",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Referer: "https://m.music.migu.cn/",
+    };
+
+    if (copyrightId && (!contentId || !miguSongId)) {
+      try {
+        const info = await httpGet(
+          "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2&copyrightId=" +
+            encodeURIComponent(copyrightId),
+          { headers: headersC, timeout: 10000 },
+        );
+        const resource = info.data && info.data.resource && info.data.resource[0];
+        if (resource) {
+          contentId = String(resource.contentId || contentId || "");
+          miguSongId = String(resource.songId || miguSongId || "");
+          copyrightId = String(resource.copyrightId || copyrightId || "");
+        }
+      } catch (e) {
+        sdk.log.error("[咪咕] resourceinfo 失败:", e.message);
+      }
+    }
+
+    const extractUrl = (body) => {
+      if (!body) return null;
+      if (typeof body === "string") {
+        try {
+          body = JSON.parse(body);
+        } catch (_) {
+          return null;
+        }
+      }
+      let url =
+        (body.data &&
+          (body.data.url ||
+            body.data.playUrl ||
+            body.data.listenUrl ||
+            (body.data.songItem && body.data.songItem.url))) ||
+        body.playUrl ||
+        body.listenUrl ||
+        body.url;
+      if (!url && body.data) {
+        const s = JSON.stringify(body.data);
+        const m = s.match(/https?:\/\/[^"'\\]+?\.(?:mp3|m4a|aac|flac|wav)[^"'\\]*/i);
+        if (m) url = m[0];
+      }
+      if (!url) return null;
+      if (url.startsWith("//")) url = "https:" + url;
+      return String(url).replace(/\+/g, "%2B");
+    };
+
+    if (contentId) {
+      try {
+        const strategyHeaders = {
+          birth: "h5page",
+          channel: "014X031",
+          Referer: "https://y.migu.cn/",
+          "location-data": "30.6698676660,104.1229614820",
+          "location-info": "",
+        };
+        const response = await httpGet(
+          "https://c.musicapp.migu.cn/strategy/listen-url/h5/v2.4?contentId=" +
+            encodeURIComponent(contentId) +
+            "&copyrightId=" +
+            encodeURIComponent(copyrightId) +
+            "&resourceType=2&netType=01&toneFlag=PQ&scene=&lowerQualityContentId=" +
+            encodeURIComponent(contentId),
+          { headers: strategyHeaders, responseType: "arraybuffer", timeout: 10000 },
+        );
+        const decoded = decodeMiguStrategyResponse(response.data);
+        const url = extractUrl(decoded);
+        if (url) {
+          const resolved = await resolveMiguStrategyUrl(url, requestedQuality);
+          if (resolved) return { code: 200, ...resolved };
+        }
+      } catch (e) {
+        sdk.log.error("[咪咕] strategy listen-url 失败:", e.message);
+      }
+    }
+
+    // 兼容旧线路；部分歌曲或接口异常时仍可直接按 toneFlag 获取。
+    if (miguSongId && contentId) {
+      try {
+        const r = await httpGet(
+          "https://c.musicapp.migu.cn/MIGUM2.0/v2.0/content/listen-url?netType=00&resourceType=2&songId=" +
+            encodeURIComponent(miguSongId) +
+            "&toneFlag=" +
+            toneFlag +
+            "&copyrightId=" +
+            encodeURIComponent(copyrightId) +
+            "&contentId=" +
+            encodeURIComponent(contentId),
+          { headers: headersC, timeout: 10000 },
+        );
+        const url = extractUrl(r.data);
+        if (url) {
+          return {
+            code: 200,
+            url: replaceMiguTone(url, toneFlag, undefined, false),
+            quality: requestedQuality,
+          };
+        }
+        if (r.data && r.data.data && r.data.data.dialogInfo) {
+          throw new Error(r.data.data.dialogInfo.text || "无法获取播放链接");
+        }
+      } catch (e) {
+        sdk.log.error("[咪咕] listen-url v2.0 失败:", e.message);
+      }
+    }
+
+    // 兜底：仅 contentId
+    if (contentId || copyrightId) {
+      try {
+        const cid = contentId || copyrightId;
+        const sid = miguSongId || "";
+        const r = await httpGet(
+          "https://c.musicapp.migu.cn/MIGUM2.0/v2.0/content/listen-url?netType=00&resourceType=2" +
+            (sid ? "&songId=" + encodeURIComponent(sid) : "") +
+            "&toneFlag=" +
+            toneFlag +
+            "&copyrightId=" +
+            encodeURIComponent(copyrightId) +
+            "&contentId=" +
+            encodeURIComponent(cid),
+          { headers: headersC, timeout: 10000 },
+        );
+        const url = extractUrl(r.data);
+        if (url) {
+          return {
+            code: 200,
+            url: replaceMiguTone(url, toneFlag, undefined, false),
+            quality: requestedQuality,
+          };
+        }
+      } catch (e) {
+        sdk.log.error("[咪咕] listen-url 兜底失败:", e.message);
+      }
+    }
+
+    throw new Error("咪咕官方线路获取失败");
+  }
+
+  const DELTA = 2654435769n;
+
+  const MIN_LENGTH = 32;
+
+  const keyArr = [
+    27303562373562475n,
+    18014862372307051n,
+    22799692160172081n,
+    34058940340699235n,
+    30962724186095721n,
+    27303523720101991n,
+    27303523720101998n,
+    31244139033526382n,
+    28992395054481524n,
+  ];
+
+  const MAX = 9223372036854775807n;
+
+  const MIN = -9223372036854775808n;
+
+  const mrcRegexps = {
+    lineTime: /^\s*\[(\d+),\d+\]/,
+    wordTime: /\(\d+,\d+\)/,
+    wordTimeAll: /(\(\d+,\d+\))/g,
+  };
+
+  const boardList = [
+    {
+      id: "27553319",
+      name: "尖叫新歌榜",
+      bangid: "27553319",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/dk/3ebe613aca744a7c95e29d7e8e91f2e7",
+    },
+    {
+      id: "27186466",
+      name: "尖叫热歌榜",
+      bangid: "27186466",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/dh/ab6099687adc46febf73f885107ddb37",
+    },
+    {
+      id: "27553408",
+      name: "尖叫原创榜",
+      bangid: "27553408",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/dh/e98a179c357c436d8e2746fcbe64dda2",
+    },
+    {
+      id: "75959118",
+      name: "音乐风向榜",
+      bangid: "75959118",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/hh/72ea2a03dd554a5abded58a49af05d32",
+    },
+    {
+      id: "76557036",
+      name: "彩铃分贝榜",
+      bangid: "76557036",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/hi/c50f0baa268c486290cb35394ac0f8a0",
+    },
+    {
+      id: "76557745",
+      name: "会员臻爱榜",
+      bangid: "76557745",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/hi/eab41af2aee7487cbb4b11b187f0dddb",
+    },
+    {
+      id: "23189800",
+      name: "港台榜",
+      bangid: "23189800",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/dh/2d827a0ea8ea459992a9add11adba63e",
+    },
+    {
+      id: "23189399",
+      name: "内地榜",
+      bangid: "23189399",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/di/b0fcbed68fa642048a5ebef817235c72",
+    },
+    {
+      id: "19190036",
+      name: "欧美榜",
+      bangid: "19190036",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/dh/a97fbb1b8fd04f6eb648a05be773c87c",
+    },
+    {
+      id: "83176390",
+      name: "国风金曲榜",
+      bangid: "83176390",
+      coverImg:
+        "https://d.musicapp.migu.cn/data/oss/column/00/1w/di/b0fcbed68fa642048a5ebef817235c72",
+    },
+  ];
+
+  const UA =
+    "Mozilla/5.0 (Linux; Android 6.0.1; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Mobile Safari/537.36 Edg/89.0.774.68";
+
+  const By = hash("md5", UA);
+
+  function sizeFormate(size) {
+    if (!size || size === 0) return "0B";
+    if (size < 1024) return size + "B";
+    if (size < 1024 * 1024) return (size / 1024).toFixed(2) + "KB";
+    if (size < 1024 * 1024 * 1024) return (size / (1024 * 1024)).toFixed(2) + "MB";
+    return (size / (1024 * 1024 * 1024)).toFixed(2) + "GB";
+  }
+
+  function formatImgUrl(img) {
+    if (!img) return null;
+    if (/^https?:/.test(img)) return img;
+    if (/^\/\//.test(img)) return "http:" + img;
+    return "http://d.musicapp.migu.cn" + img;
+  }
+
+  function normalizeDurationSeconds(value) {
+    if (value === undefined || value === null || value === "") return undefined;
+
+    if (typeof value === "string" && value.includes(":")) {
+      const parts = value.split(":").map((part) => parseInt(part, 10));
+      if (parts.some((part) => Number.isNaN(part))) return undefined;
+      return parts.reduce((total, part) => total * 60 + part, 0);
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) return undefined;
+
+    // Migu V3 search returns seconds directly, while some legacy fields may still be milliseconds.
+    return numericValue >= 1000 ? Math.floor(numericValue / 1000) : Math.floor(numericValue);
+  }
+
+  /**
+   * 作者单曲 song-list 接口不返回 length/duration，但有 newRateFormats.size。
+   * 用 CBR 档位（PQ/HQ/LQ）按体积反推秒数；flac/hires 码率不稳，不用于估算。
+   */
+  function estimateDurationFromFormats(item) {
+    if (!item || typeof item !== "object") return undefined;
+    const formats = []
+      .concat(Array.isArray(item.newRateFormats) ? item.newRateFormats : [])
+      .concat(Array.isArray(item.rateFormats) ? item.rateFormats : []);
+    if (!formats.length) return undefined;
+
+    const bitrateMap = {
+      PQ: 128000,
+      HQ: 320000,
+      LQ: 48000,
+    };
+
+    for (const type of ["PQ", "HQ", "LQ"]) {
+      const format = formats.find((f) => f && f.formatType === type);
+      if (!format) continue;
+      const size = Number(format.size || format.androidSize || format.iosSize);
+      const bitrate = bitrateMap[type];
+      if (!Number.isFinite(size) || size < 1000 || !bitrate) continue;
+      const seconds = Math.floor((size * 8) / bitrate);
+      if (seconds > 5 && seconds < 7200) return seconds;
+    }
+    return undefined;
+  }
+
+  /** 咪咕列表常见时长字段：duration / length(00:03:02) / songTime 等；缺失时用音质 size 估算 */
+  function pickDurationSeconds(item) {
+    if (!item || typeof item !== "object") return undefined;
+    const candidates = [
+      item.duration,
+      item.length,
+      item.songTime,
+      item.playTime,
+      item.timeLength,
+      item.songLength,
+      item.lengthOfTrack,
+    ];
+    for (const value of candidates) {
+      const seconds = normalizeDurationSeconds(value);
+      if (seconds) return seconds;
+    }
+    return estimateDurationFromFormats(item);
+  }
+
+  function toMD5(str) {
+    return hash("md5", str);
+  }
+
+  function createSignature(time, str) {
+    const deviceId = "963B7AA0D21511ED807EE5846EC87D20";
+    const signatureMd5 = "6cdc72a439cef99a3418d2a78aa28c73";
+    const sign = toMD5(
+      `${str}${signatureMd5}yyapp2d16148780a1dcc7408e06336b98cfd50${deviceId}${time}`,
+    );
+    return { sign, deviceId };
+  }
+
+  function musicCanPlayFilter(_) {
+    return _.mp3 || _.listenUrl || _.lisQq || _.lisCr;
+  }
+
+  function addMiguQuality(qualities, format) {
+    if (!format) return;
+
+    let formatType;
+    let size;
+    let bitrate;
+    if (typeof format === "string") {
+      const parts = format.split("|");
+      formatType = parts[0];
+      bitrate = Number(parts[2]) || undefined;
+      size = Number(parts[3]) || undefined;
+    } else {
+      formatType = format.formatType || format.toneFlag;
+      size =
+        format.asize ||
+        format.isize ||
+        format.size ||
+        format.androidSize ||
+        format.iosSize ||
+        format.fileSize;
+      bitrate = format.bitRate || format.bitrate;
+    }
+
+    const definition = MIGU_QUALITY_INFO[formatType];
+    if (!definition) return;
+    qualities[definition.key] = {
+      size: size ? sizeFormate(size) : "N/A",
+      bitrate: bitrate || definition.bitrate,
+    };
+
+    // 3D60 与 Z3D 使用同一歌曲资源编号；接口只声明 Z3D 时也可取到 60s 版本。
+    if (formatType === "Z3D" && !qualities.atmos_plus) {
+      qualities.atmos_plus = {};
+    }
+  }
+
+  function getMiGuQualitiesFromSong(songData) {
+    const qualities = {};
+    const formats = []
+      .concat(Array.isArray(songData.audioFormats) ? songData.audioFormats : [])
+      .concat(Array.isArray(songData.newRateFormats) ? songData.newRateFormats : [])
+      .concat(Array.isArray(songData.rateFormats) ? songData.rateFormats : []);
+
+    if (typeof songData.rateFormats === "string") {
+      songData.rateFormats
+        .split("|")
+        .filter(Boolean)
+        .forEach((formatType) => {
+          formats.push({ formatType });
+        });
+    }
+
+    formats.forEach((format) => addMiguQuality(qualities, format));
+    if (Object.keys(qualities).length === 0) {
+      qualities["128k"] = {};
+    }
+    return qualities;
+  }
+
+  function extractLyricInfo(songData) {
+    const sources = [
+      songData,
+      songData === null || songData === void 0 ? void 0 : songData.songInfo,
+      songData === null || songData === void 0 ? void 0 : songData.musicInfo,
+      songData === null || songData === void 0 ? void 0 : songData.objectInfo,
+      songData === null || songData === void 0 ? void 0 : songData.fullSong,
+    ].filter(Boolean);
+
+    const pickUrl = (fields) => {
+      for (const source of sources) {
+        for (const field of fields) {
+          if (source[field]) {
+            return source[field];
+          }
+        }
+      }
+      return undefined;
+    };
+
+    return {
+      lrcUrl: pickUrl(["lrcUrl", "lrcurl", "lyricUrl", "lyricUrlNew"]),
+      mrcUrl: pickUrl(["mrcUrl", "mrcurl", "mrcLyricUrl"]),
+      trcUrl: pickUrl(["trcUrl", "trcurl", "trcLyricUrl"]),
+    };
+  }
+
+  function formatSingerName(singerList) {
+    if (!singerList || !Array.isArray(singerList)) return "";
+    return singerList
+      .map((singer) => singer.name || singer.singerName || "")
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  const toLong = (str) => {
+    const num = typeof str == "string" ? BigInt("0x" + str) : str;
+    if (num > MAX) return toLong(num - (1n << 64n));
+    else if (num < MIN) return toLong(num + (1n << 64n));
+    return num;
+  };
+
+  const toBigintArray = (data) => {
+    const length = Math.floor(data.length / 16);
+    const jArr = Array(length);
+    for (let i = 0; i < length; i++) {
+      jArr[i] = toLong(data.substring(i * 16, i * 16 + 16));
+    }
+    return jArr;
+  };
+
+  const longToBytes = (l) => {
+    const result = zeroBytes(8);
+    for (let i = 0; i < 8; i++) {
+      result[i] = parseInt(l & 0xffn);
+      l >>= 8n;
+    }
+    return result;
+  };
+
+  const longArrToString = (data) => {
+    const arrayList = [];
+    for (const j of data) arrayList.push(longToBytes(j).toString("utf16le"));
+    return arrayList.join("");
+  };
+
+  const teaDecrypt = (data, key) => {
+    const length = data.length;
+    const lengthBigint = BigInt(length);
+    if (length >= 1) {
+      let j2 = data[0];
+      let j3 = toLong((6n + 52n / lengthBigint) * DELTA);
+      while (true) {
+        let j4 = j3;
+        if (j4 == 0n) break;
+        let j5 = toLong(3n & toLong(j4 >> 2n));
+        let j6 = lengthBigint;
+        while (true) {
+          j6--;
+          if (j6 > 0n) {
+            let j7 = data[j6 - 1n];
+            let i = j6;
+            j2 = toLong(
+              data[i] -
+                (toLong(toLong(j2 ^ j4) + toLong(j7 ^ key[toLong(toLong(3n & j6) ^ j5)])) ^
+                  toLong(
+                    toLong(toLong(j7 >> 5n) ^ toLong(j2 << 2n)) +
+                      toLong(toLong(j2 >> 3n) ^ toLong(j7 << 4n)),
+                  )),
+            );
+            data[i] = j2;
+          } else break;
+        }
+        let j8 = data[lengthBigint - 1n];
+        j2 = toLong(
+          data[0n] -
+            toLong(
+              toLong(toLong(key[toLong(toLong(j6 & 3n) ^ j5)] ^ j8) + toLong(j2 ^ j4)) ^
+                toLong(
+                  toLong(toLong(j8 >> 5n) ^ toLong(j2 << 2n)) +
+                    toLong(toLong(j2 >> 3n) ^ toLong(j8 << 4n)),
+                ),
+            ),
+        );
+        data[0] = j2;
+        j3 = toLong(j4 - DELTA);
+      }
+    }
+    return data;
+  };
+
+  function decryptMrc(data) {
+    if (data == null || data.length < MIN_LENGTH) return data;
+    try {
+      return longArrToString(teaDecrypt(toBigintArray(data), keyArr));
+    } catch (error) {
+      sdk.log.error("[咪咕] MRC解密失败:", error);
+      return null;
+    }
+  }
+
+  function parseMrc(str) {
+    if (!str) return null;
+    try {
+      str = str.replace(/\r/g, "");
+      const lines = str.split("\n");
+      const lxlrcLines = [];
+      const lrcLines = [];
+
+      for (const line of lines) {
+        if (line.length < 6) continue;
+        let result = mrcRegexps.lineTime.exec(line);
+        if (!result) continue;
+
+        const startTime = parseInt(result[1]);
+        let time = startTime;
+        let ms = time % 1000;
+        time /= 1000;
+        let m = parseInt(time / 60)
+          .toString()
+          .padStart(2, "0");
+        time %= 60;
+        let s = parseInt(time).toString().padStart(2, "0");
+        time = `${m}:${s}.${ms}`;
+
+        let words = line.replace(mrcRegexps.lineTime, "");
+        lrcLines.push(`[${time}]${words.replace(mrcRegexps.wordTimeAll, "")}`);
+
+        let times = words.match(mrcRegexps.wordTimeAll);
+        if (!times) continue;
+        times = times.map((t) => {
+          const r = /\((\d+),(\d+)\)/.exec(t);
+          return `<${parseInt(r[1]) - startTime},${r[2]}>`;
+        });
+        const wordArr = words.split(mrcRegexps.wordTime);
+        const newWords = times.map((t, index) => `${t}${wordArr[index]}`).join("");
+        lxlrcLines.push(`[${time}]${newWords}`);
+      }
+
+      return {
+        lyric: lrcLines.join("\n"),
+        lxlyric: lxlrcLines.join("\n"),
+      };
+    } catch (error) {
+      sdk.log.error("[咪咕] MRC解析失败:", error);
+      return null;
+    }
+  }
+
+  function cleanLyricText(text) {
+    if (!text) return "";
+    return text
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  async function getHighQualityPic(songId) {
+    try {
+      const res = await httpGet(
+        `http://music.migu.cn/v3/api/music/audioPlayer/getSongPic?songId=${songId}`,
+        {
+          headers: {
+            Referer: "http://music.migu.cn/v3/music/player/audio?from=migu",
+          },
+        },
+      );
+      if (res.data && res.data.returnCode === "000000") {
+        let url = res.data.largePic || res.data.mediumPic || res.data.smallPic;
+        if (url && !/^https?:/.test(url)) url = "http:" + url;
+        return url;
+      }
+    } catch (error) {}
+    return null;
+  }
+
+  async function fetchText(url) {
+    if (!url) return "";
+    try {
+      const res = await httpGet(url, {
+        headers: {
+          Referer: "https://app.c.nf.migu.cn/",
+          "User-Agent": "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 6 Build/LYZ28E)",
+        },
+      });
+      return res.data || "";
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取文本失败:", error);
+      return "";
+    }
+  }
+
+  async function searchMusicV3(query, page, limit = searchRows) {
+    const time = Date.now().toString();
+    const signData = createSignature(time, query);
+
+    const headers = {
+      uiVersion: "A_music_3.6.1",
+      deviceId: signData.deviceId,
+      timestamp: time,
+      sign: signData.sign,
+      channel: "0146921",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+    };
+
+    const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch=%7B%22song%22%3A1%2C%22album%22%3A0%2C%22singer%22%3A0%2C%22tagSong%22%3A1%2C%22mvSong%22%3A0%2C%22bestShow%22%3A1%2C%22songlist%22%3A0%2C%22lyricSong%22%3A0%7D&pageSize=${limit}&text=${encodeURIComponent(query)}&pageNo=${page}&sort=0&sid=USS`;
+
+    try {
+      const res = await httpGet(url, { headers });
+      return res.data;
+    } catch (error) {
+      sdk.log.error("[咪咕] 搜索V3 API失败，回退到旧API:", error);
+      return searchBase(query, page, 2);
+    }
+  }
+
+  async function searchBase(query, page, type) {
+    const headers = {
+      Accept: "application/json, text/javascript, */*; q=0.01",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+      Connection: "keep-alive",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      Host: "m.music.migu.cn",
+      Referer: `https://m.music.migu.cn/v3/search?keyword=${encodeURIComponent(query)}`,
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; Android 6.0.1; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Mobile Safari/537.36 Edg/89.0.774.68",
+      "X-Requested-With": "XMLHttpRequest",
+    };
+    const params = {
+      keyword: query,
+      type,
+      pgc: page,
+      rows: searchRows,
+    };
+    const data = await httpGet("https://m.music.migu.cn/migu/remoting/scr_search_tag", {
+      headers,
+      params,
+    });
+    return data.data;
+  }
+
+  async function searchMusic(query, page) {
+    const result = await searchMusicV3(query, page);
+    if (result && result.code === "000000" && result.songResultData) {
+      const songResultData = result.songResultData || { resultList: [], totalCount: 0 };
+      const musics = [];
+
+      songResultData.resultList.forEach((itemArray) => {
+        if (!Array.isArray(itemArray)) return;
+
+        itemArray.forEach((item) => {
+          if (!item.songId || !item.copyrightId) return;
+
+          const qualities = {};
+
+          if (item.audioFormats && Array.isArray(item.audioFormats)) {
+            item.audioFormats.forEach((format) => addMiguQuality(qualities, format));
+          }
+
+          if (Object.keys(qualities).length === 0) {
+            if (item.mp3 || item.listenUrl) {
+              qualities["128k"] = {
+                size: "N/A",
+                bitrate: 128000,
+              };
+            }
+            if (item.lisQq) {
+              qualities["320k"] = {
+                size: "N/A",
+                bitrate: 320000,
+              };
+            }
+            if (item.lisCr) {
+              qualities["flac"] = {
+                size: "N/A",
+                bitrate: 1411000,
+              };
+            }
+          }
+
+          if (Object.keys(qualities).length === 0) {
+            qualities["128k"] = {
+              size: "N/A",
+              bitrate: 128000,
+            };
+          }
+
+          let artwork = item.img3 || item.img2 || item.img1 || null;
+          if (artwork && !/https?:/.test(artwork)) artwork = "http://d.musicapp.migu.cn" + artwork;
+
+          const singerList = (item.singerList || []).map((s) => ({
+            id: s.id || s.singerId,
+            name: s.name || s.singerName,
+            avatar: s.img || s.singerPic || "",
+          }));
+
+          musics.push({
+            id: item.songId,
+            artwork: artwork,
+            title: item.name || item.songName,
+            artist: formatSingerName(item.singerList) || item.artist,
+            singerList: singerList,
+            album: item.album || item.albumName,
+            url: item.mp3 || item.listenUrl,
+            copyrightId: item.copyrightId,
+            singerId: item.singerId,
+            qualities: qualities,
+            albumId: item.albumId,
+            duration: pickDurationSeconds(item),
+            lrcUrl: item.lrcUrl,
+            mv: item.mvId || undefined,
+            mvId: item.mvId || undefined,
+            mvCopyrightId: item.mvCopyrightId || item.mvList?.[0]?.copyrightId || undefined,
+            mrcUrl: item.mrcurl,
+            trcUrl: item.trcUrl,
+          });
+        });
+      });
+
+      return {
+        isEnd: songResultData.totalCount <= page * searchRows,
+        data: musics,
+      };
+    }
+
+    if (result && result.musics) {
+      const data = result;
+      const musics = data.musics.map((_) => {
+        const qualities = {};
+
+        if (_.mp3 || _.listenUrl || musicCanPlayFilter(_)) {
+          qualities["128k"] = {
+            size: "N/A",
+            bitrate: 128000,
+          };
+        }
+
+        if (_.lisQq || _.hqUrl) {
+          qualities["320k"] = {
+            size: "N/A",
+            bitrate: 320000,
+          };
+        }
+
+        if (_.lisCr || _.sqUrl) {
+          qualities["flac"] = {
+            size: "N/A",
+            bitrate: 1411000,
+          };
+        }
+
+        if (Object.keys(qualities).length === 0) {
+          qualities["128k"] = {
+            size: "N/A",
+            bitrate: 128000,
+          };
+        }
+
+        let artwork = _.picL || _.picM || _.picS || _.cover || _.songPic || null;
+        if (artwork && !/https?:/.test(artwork)) artwork = "http://d.musicapp.migu.cn" + artwork;
+
+        const singerList = _.singerId
+          ? [
+              {
+                id: _.singerId,
+                name: _.artist,
+              },
+            ]
+          : [];
+
+        return {
+          id: _.id,
+          artwork: artwork,
+          title: _.songName,
+          artist: _.artist,
+          singerList: singerList,
+          album: _.albumName,
+          url: musicCanPlayFilter(_),
+          copyrightId: _.copyrightId,
+          singerId: _.singerId,
+          qualities: qualities,
+          duration: pickDurationSeconds(_),
+          vipFlag: _.vipFlag,
+          mv: _.mvId || undefined,
+          mvId: _.mvId || undefined,
+          mvCopyrightId: _.mvCopyrightId || _.mvList?.[0]?.copyrightId || undefined,
+          lrcUrl: _.lrcUrl,
+          mrcUrl: _.mrcurl,
+          trcUrl: _.trcUrl,
+        };
+      });
+
+      return {
+        isEnd: +data.pageNo * searchRows >= data.pgt,
+        data: musics,
+      };
+    }
+
+    return {
+      isEnd: true,
+      data: [],
+    };
+  }
+
+  async function searchAlbumV3(query, page, limit = searchRows) {
+    const time = Date.now().toString();
+    const signData = createSignature(time, query);
+
+    const headers = {
+      uiVersion: "A_music_3.6.1",
+      deviceId: signData.deviceId,
+      timestamp: time,
+      sign: signData.sign,
+      channel: "0146921",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+    };
+
+    const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=1&isCopyright=1&searchSwitch=%7B%22song%22%3A0%2C%22album%22%3A1%2C%22singer%22%3A0%2C%22tagSong%22%3A0%2C%22mvSong%22%3A0%2C%22bestShow%22%3A0%2C%22songlist%22%3A0%2C%22lyricSong%22%3A0%7D&pageSize=${limit}&text=${encodeURIComponent(query)}&pageNo=${page}&sort=0&sid=USS`;
+
+    try {
+      const res = await httpGet(url, { headers });
+      return res.data;
+    } catch (error) {
+      sdk.log.error("[咪咕] 搜索专辑V3 API失败:", error);
+      return null;
+    }
+  }
+
+  async function searchAlbum(query, page) {
+    const result = await searchAlbumV3(query, page);
+
+    if (result && result.code === "000000" && result.albumResultData) {
+      const albumData = result.albumResultData || { result: [], totalCount: 0 };
+      const rawList = albumData.result || albumData.resultList || [];
+      const albums = [];
+
+      rawList.forEach((item) => {
+        if (!item || !item.id) return;
+
+        let artwork = null;
+        if (item.imgItems && item.imgItems.length > 0) {
+          artwork = item.imgItems[0].img;
+        } else if (item.img) {
+          artwork = item.img;
+        } else {
+          artwork = item.localAlbumPicM || item.localAlbumPicS || item.albumPic;
+        }
+
+        albums.push({
+          id: item.id,
+          artwork: formatImgUrl(artwork),
+          title: item.name || item.title,
+          date: item.publishDate || item.publishTime,
+          artist:
+            formatSingerName(item.singers) ||
+            (item.singer
+              ? Array.isArray(item.singer)
+                ? item.singer.map((s) => s.name).join(", ")
+                : item.singer
+              : ""),
+          singer: item.singers || item.singer,
+          description: item.albumIntro || item.intro,
+          worksNum: item.songNum || item.songCount || item.fullSongTotal,
+        });
+      });
+
+      return {
+        isEnd: albumData.totalCount <= page * searchRows,
+        data: albums,
+      };
+    }
+
+    const data = await searchBase(query, page, 4);
+    if (!data || !data.albums) {
+      return { isEnd: true, data: [] };
+    }
+
+    const albums = data.albums.map((_) => ({
+      id: _.id,
+      artwork: formatImgUrl(_.albumPicL || _.albumPicM || _.albumPicS),
+      title: _.title,
+      date: _.publishDate,
+      artist: (_.singer || []).map((s) => s.name).join(","),
+      singer: _.singer,
+      worksNum: _.fullSongTotal,
+    }));
+    return {
+      isEnd: +data.pageNo * searchRows >= data.pgt,
+      data: albums,
+    };
+  }
+
+  async function searchArtistV3(query, page, limit = searchRows) {
+    const time = Date.now().toString();
+    const signData = createSignature(time, query);
+
+    const headers = {
+      uiVersion: "A_music_3.6.1",
+      deviceId: signData.deviceId,
+      timestamp: time,
+      sign: signData.sign,
+      channel: "0146921",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+    };
+
+    const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=1&isCopyright=1&searchSwitch=%7B%22song%22%3A0%2C%22album%22%3A0%2C%22singer%22%3A1%2C%22tagSong%22%3A0%2C%22mvSong%22%3A0%2C%22bestShow%22%3A0%2C%22songlist%22%3A0%2C%22lyricSong%22%3A0%7D&pageSize=${limit}&text=${encodeURIComponent(query)}&pageNo=${page}&sort=0&sid=USS`;
+
+    try {
+      const res = await httpGet(url, { headers });
+      return res.data;
+    } catch (error) {
+      sdk.log.error("[咪咕] 搜索歌手V3 API失败:", error);
+      return null;
+    }
+  }
+
+  async function searchArtist(query, page) {
+    const result = await searchArtistV3(query, page);
+
+    if (result && result.code === "000000" && result.singerResultData) {
+      const singerData = result.singerResultData || { result: [], totalCount: 0 };
+      const rawList = singerData.result || singerData.resultList || [];
+      const artists = [];
+
+      rawList.forEach((item) => {
+        if (!item || !item.id) return;
+
+        let avatar = null;
+        if (item.singerPicUrl && item.singerPicUrl.length > 0) {
+          avatar = item.singerPicUrl[0].img;
+        } else if (item.imgs && item.imgs.length > 0) {
+          avatar = item.imgs[0].img;
+        } else if (item.img) {
+          avatar = item.img;
+        }
+
+        artists.push({
+          id: item.id,
+          name: item.name || item.title,
+          avatar: formatImgUrl(avatar),
+          description: item.intro || item.artistIntro,
+          worksNum: item.songCount ?? item.songNum ?? item.musicNum,
+          songCount: item.songCount ?? item.songNum ?? item.musicNum,
+          albumCount: item.albumCount ?? item.albumNum,
+          albumNum: item.albumCount || item.albumNum,
+          fans: item.followNum || item.fansNum,
+        });
+      });
+
+      return {
+        isEnd: singerData.totalCount <= page * searchRows,
+        data: artists,
+      };
+    }
+
+    const data = await searchBase(query, page, 1);
+    if (!data || !data.artists) {
+      return { isEnd: true, data: [] };
+    }
+
+    const artists = data.artists.map((result) => ({
+      name: result.title,
+      id: result.id,
+      avatar: formatImgUrl(result.artistPicL || result.artistPicM || result.artistPicS),
+      worksNum: result.songNum,
+      songCount: result.songNum,
+    }));
+    return {
+      isEnd: +data.pageNo * searchRows >= data.pgt,
+      data: artists,
+    };
+  }
+
+  async function searchMusicSheetV3(query, page, limit = searchRows) {
+    const time = Date.now().toString();
+    const signData = createSignature(time, query);
+
+    const headers = {
+      uiVersion: "A_music_3.6.1",
+      deviceId: signData.deviceId,
+      timestamp: time,
+      sign: signData.sign,
+      channel: "0146921",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+    };
+
+    const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=1&isCopyright=1&searchSwitch=%7B%22song%22%3A0%2C%22album%22%3A0%2C%22singer%22%3A0%2C%22tagSong%22%3A0%2C%22mvSong%22%3A0%2C%22bestShow%22%3A0%2C%22songlist%22%3A1%2C%22lyricSong%22%3A0%7D&pageSize=${limit}&text=${encodeURIComponent(query)}&pageNo=${page}&sort=0&sid=USS`;
+
+    try {
+      const res = await httpGet(url, { headers });
+      return res.data;
+    } catch (error) {
+      sdk.log.error("[咪咕] 搜索歌单V3 API失败:", error);
+      return null;
+    }
+  }
+
+  async function searchMusicSheet(query, page) {
+    const result = await searchMusicSheetV3(query, page);
+
+    if (result && result.code === "000000" && result.songListResultData) {
+      const listData = result.songListResultData || { result: [], totalCount: 0 };
+      const musicsheet = (listData.result || []).map((item) => {
+        let artwork = item.musicListPicUrl || item.img;
+        if (!artwork && item.imgItem) {
+          artwork = item.imgItem.img;
+        }
+
+        return {
+          id: item.id,
+          title: item.name || item.title,
+          artist: item.userName || item.ownerName,
+          artwork: formatImgUrl(artwork),
+          description: item.intro || item.summary,
+          worksNum: item.musicNum || item.songCount,
+          playCount: item.playNum || item.playCount,
+        };
+      });
+
+      return {
+        isEnd: listData.totalCount <= page * searchRows,
+        data: musicsheet,
+      };
+    }
+
+    const data = await searchBase(query, page, 6);
+    if (!data || !data.songLists) {
+      return { isEnd: true, data: [] };
+    }
+
+    const musicsheet = data.songLists.map((result) => ({
+      title: result.name,
+      id: result.id,
+      artist: result.userName,
+      artwork: formatImgUrl(
+        result.picL || result.picM || result.picS || result.img || result.cover,
+      ),
+      description: result.intro,
+      worksNum: result.musicNum,
+      playCount: result.playNum,
+    }));
+    return {
+      isEnd: +data.pageNo * searchRows >= data.pgt,
+      data: musicsheet,
+    };
+  }
+
+  async function searchLyricV3(query, page, limit = searchRows) {
+    const time = Date.now().toString();
+    const signData = createSignature(time, query);
+
+    const headers = {
+      uiVersion: "A_music_3.6.1",
+      deviceId: signData.deviceId,
+      timestamp: time,
+      sign: signData.sign,
+      channel: "0146921",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+    };
+
+    const searchSwitch = encodeURIComponent(
+      JSON.stringify({
+        song: 0,
+        album: 0,
+        singer: 0,
+        tagSong: 0,
+        mvSong: 0,
+        bestShow: 0,
+        songlist: 0,
+        lyricSong: 1,
+      }),
+    );
+
+    const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=1&isCopyright=1&searchSwitch=${searchSwitch}&pageSize=${limit}&text=${encodeURIComponent(query)}&pageNo=${page}&sort=0&sid=USS`;
+
+    try {
+      const res = await httpGet(url, { headers });
+      return res.data;
+    } catch (error) {
+      sdk.log.error("[咪咕] 搜索歌词V3 API失败:", error);
+      return null;
+    }
+  }
+
+  async function searchLyric(query, page) {
+    const result = await searchLyricV3(query, page);
+
+    if (result && result.code === "000000" && result.lyricResultData) {
+      const lyricData = result.lyricResultData || { result: [], totalCount: 0 };
+      const rawList = lyricData.result || lyricData.resultList || [];
+      const flattened = [];
+
+      rawList.forEach((item) => {
+        if (!item) return;
+        if (Array.isArray(item)) {
+          item.forEach((sub) => sub && flattened.push(sub));
+        } else {
+          flattened.push(item);
+        }
+      });
+
+      const lyrics = flattened
+        .map((item) => {
+          const wrapper = item.objectInfo || item;
+          const songInfo = wrapper.songInfo || wrapper.fullSong || wrapper.musicInfo || wrapper;
+          const lyricText =
+            cleanLyricText(
+              wrapper.lyric ||
+                wrapper.lyricContent ||
+                wrapper.lyricText ||
+                wrapper.lyricTxt ||
+                wrapper.lyricStr ||
+                songInfo.lyric ||
+                songInfo.lyricContent,
+            ) || "";
+
+          let artwork = null;
+          if (songInfo.albumImgs && songInfo.albumImgs.length > 0) {
+            artwork = songInfo.albumImgs[0].img;
+          } else if (songInfo.imgItems && songInfo.imgItems.length > 0) {
+            artwork = songInfo.imgItems[0].img;
+          } else {
+            artwork =
+              songInfo.img3 ||
+              songInfo.img2 ||
+              songInfo.img1 ||
+              songInfo.albumPic ||
+              songInfo.cover ||
+              songInfo.songPic ||
+              songInfo.picL ||
+              songInfo.picM ||
+              songInfo.picS ||
+              songInfo.mediumPic ||
+              songInfo.largePic ||
+              songInfo.smallPic;
+          }
+
+          let artist = formatSingerName(songInfo.singerList);
+          if (!artist && Array.isArray(songInfo.singers)) {
+            artist = songInfo.singers
+              .map((s) => s.name || s.singerName || s)
+              .filter(Boolean)
+              .join(", ");
+          }
+          if (!artist && Array.isArray(songInfo.artists)) {
+            artist = songInfo.artists
+              .map((s) => s.name || s.singerName || s)
+              .filter(Boolean)
+              .join(", ");
+          }
+          if (!artist) {
+            if (Array.isArray(songInfo.singerName)) {
+              artist = songInfo.singerName.join(", ");
+            } else {
+              artist = songInfo.singerName || songInfo.singer || songInfo.artist || "";
+            }
+          }
+
+          const title = songInfo.songName || songInfo.name || songInfo.title;
+          const id = songInfo.songId || songInfo.id || wrapper.id;
+
+          if (!title || (!id && !songInfo.copyrightId)) {
+            return null;
+          }
+
+          const lyricInfo = extractLyricInfo(wrapper);
+          const songLyricInfo = extractLyricInfo(songInfo);
+
+          return {
+            title,
+            id: id || songInfo.copyrightId,
+            artist,
+            artwork: formatImgUrl(artwork),
+            album: songInfo.album || songInfo.albumName,
+            lrc: lyricText,
+            copyrightId: songInfo.copyrightId,
+            lrcUrl: lyricInfo.lrcUrl || songLyricInfo.lrcUrl,
+            mrcUrl: lyricInfo.mrcUrl || songLyricInfo.mrcUrl,
+            trcUrl: lyricInfo.trcUrl || songLyricInfo.trcUrl,
+          };
+        })
+        .filter(Boolean);
+
+      const totalCount = Number(lyricData.totalCount || lyricData.total || 0);
+      const isEnd = totalCount > 0 ? totalCount <= page * searchRows : lyrics.length < searchRows;
+
+      return {
+        isEnd,
+        data: lyrics,
+      };
+    }
+
+    try {
+      const data = await searchBase(query, page, 7);
+      const songs = Array.isArray(data?.songs) ? data.songs : [];
+      const lyrics = songs.map((result) => {
+        const lyricInfo = extractLyricInfo(result);
+        return {
+          title: result.title,
+          id: result.id,
+          artist: result.artist,
+          artwork: formatImgUrl(
+            result.img3 ||
+              result.img2 ||
+              result.img1 ||
+              result.picL ||
+              result.picM ||
+              result.picS ||
+              result.cover ||
+              result.songPic ||
+              result.albumPic ||
+              result.mediumPic,
+          ),
+          lrc: cleanLyricText(result.lyrics),
+          album: result.albumName,
+          copyrightId: result.copyrightId,
+          lrcUrl: lyricInfo.lrcUrl,
+          mrcUrl: lyricInfo.mrcUrl,
+          trcUrl: lyricInfo.trcUrl,
+        };
+      });
+
+      return {
+        isEnd: data && data.pgt ? +data.pageNo * searchRows >= data.pgt : songs.length < searchRows,
+        data: lyrics,
+      };
+    } catch (error) {
+      sdk.log.error("[咪咕] 旧歌词搜索失败:", error);
+    }
+
+    return {
+      isEnd: true,
+      data: [],
+    };
+  }
+
+  async function getMediaSource(musicItem, quality) {
+    try {
+      const res = await miguMusicUrl("mg", musicItem, quality || "128k");
+      if (res && res.code === 200 && res.url) {
+        return { url: res.url, quality: res.quality };
+      }
+      sdk.log.error(`[咪咕] 获取播放链接失败: ${(res && res.msg) || "未知错误"}`);
+      return null;
+    } catch (error) {
+      sdk.log.error(`[咪咕] 获取播放源错误: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async function getMiGuMusicInfo(copyrightId) {
+    try {
+      const res = await httpPost(
+        "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2",
+        `resourceId=${copyrightId}`,
+        {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 6.0.1; Moto G (4)) AppleWebKit/537.36",
+            Referer: "https://m.music.migu.cn/",
+          },
+        },
+      );
+
+      if (res.data && res.data.resource && res.data.resource.length > 0) {
+        return res.data.resource[0];
+      }
+      return null;
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取歌曲信息失败:", error);
+      return null;
+    }
+  }
+
+  const MIGU_MV_HEADERS = {
+    channel: "0140210",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    Referer: "https://m.music.migu.cn/",
+  };
+
+  function parseMiguVideoDuration(value) {
+    if (typeof value === "number")
+      return value > 10000 ? Math.round(value / 1000) : Math.round(value);
+    const parts = String(value || "")
+      .split(":")
+      .map(Number);
+    if (parts.length === 3 && parts.every(Number.isFinite))
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2 && parts.every(Number.isFinite)) return parts[0] * 60 + parts[1];
+    return undefined;
+  }
+
+  function orderMiguMvFormats(rateFormats, requestedQuality) {
+    const formats = Array.isArray(rateFormats) ? rateFormats.filter((item) => item?.url) : [];
+    if (!formats.length) return [];
+    const requested = String(requestedQuality || "1080p").toLowerCase();
+    const order =
+      requested === "4k" || requested === "uhd"
+        ? ["UHD", "SQ", "HQ", "PQ"]
+        : Number(requested.replace(/p$/, "")) >= 1080
+          ? ["HQ", "SQ", "UHD", "PQ"]
+          : Number(requested.replace(/p$/, "")) >= 720
+            ? ["HQ", "PQ", "SQ", "UHD"]
+            : ["PQ", "HQ", "SQ", "UHD"];
+    const ordered = order
+      .map((formatType) =>
+        formats.find((item) => String(item.formatType).toUpperCase() === formatType),
+      )
+      .filter(Boolean);
+    return ordered.concat(formats.filter((item) => !ordered.includes(item)));
+  }
+
+  function getMiguMvQuality(formatType) {
+    const type = String(formatType || "").toUpperCase();
+    if (type === "UHD") return "4k";
+    if (type === "SQ" || type === "HQ") return "1080p";
+    return "720p";
+  }
+
+  function buildMiguMediaUrl(path) {
+    if (!path) return "";
+    if (/^\/\//.test(path)) return `https:${path}`;
+    if (/^https?:\/\//i.test(path)) {
+      return String(path).replace(
+        /^http:\/\/freevod\.nf\.migu\.cn(?::8080)?/i,
+        "https://freevod.nf.migu.cn",
+      );
+    }
+    return `https://freetyst.nf.migu.cn${path}`;
+  }
+
+  async function requestMiguMvPlayUrl(resource, format) {
+    if (!resource?.contentId || !format?.url) return "";
+    const response = await httpGet(
+      "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/mvplayinfo.do",
+      {
+        params: {
+          mvContentId: resource.contentId,
+          mvCopyrightId: resource.copyrightId,
+          format: format.format,
+          url: format.url,
+          size: format.size,
+          resourceType: resource.resourceType || "D",
+        },
+        headers: MIGU_MV_HEADERS,
+        timeout: 20000,
+      },
+    );
+    return response.data?.code === "000000" ? buildMiguMediaUrl(response.data.playUrl) : "";
+  }
+
+  async function getMvSource(musicItem, videoQuality = "1080p") {
+    const mvId = musicItem?.mvId || musicItem?.mv || musicItem?.mvCopyrightId;
+    if (!mvId) return null;
+
+    try {
+      const response = await httpGet(
+        "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do",
+        {
+          params: { resourceType: "D", resourceId: String(mvId) },
+          headers: MIGU_MV_HEADERS,
+          timeout: 20000,
+        },
+      );
+      const resource = response.data?.resource?.[0];
+      if (!resource) return null;
+      const orderedFormats = orderMiguMvFormats(resource.rateFormats, videoQuality);
+      let selected = orderedFormats[0] || null;
+      let url = "";
+      for (const format of orderedFormats) {
+        try {
+          url = await requestMiguMvPlayUrl(resource, format);
+        } catch (_) {}
+        if (url) {
+          selected = format;
+          break;
+        }
+      }
+      // Older fixtures may expose a directly playable URL instead of mvplayinfo.
+      if (!url) {
+        url = buildMiguMediaUrl(
+          selected?.url || resource.widescreenPath || resource.highscreenPath,
+        );
+      }
+      if (!url) return null;
+      const isHls = /\.m3u8(?:\?|$)/i.test(url);
+      const actualQuality = getMiguMvQuality(selected?.formatType);
+      const selectedSize = Number(selected?.size) || undefined;
+      return {
+        url,
+        headers: MIGU_MV_HEADERS,
+        userAgent: MIGU_MV_HEADERS["User-Agent"],
+        videoQuality: actualQuality,
+        mimeType: isHls
+          ? "application/vnd.apple.mpegurl"
+          : selected?.fileType
+            ? `video/${String(selected.fileType).toLowerCase()}`
+            : "video/mp4",
+        duration: parseMiguVideoDuration(resource.migumvDuration),
+        size: selectedSize,
+        availableVideoQualities: [
+          {
+            key: actualQuality,
+            label: actualQuality,
+            size: selectedSize,
+            mimeType: isHls ? "application/vnd.apple.mpegurl" : "video/mp4",
+          },
+        ],
+        // mvplayinfo 返回带 playSessionId 的临时 HLS 地址，保守刷新以免缓存过期会话。
+        expiresAt: isHls ? Date.now() + 30 * 60 * 1000 : undefined,
+      };
+    } catch (error) {
+      sdk.log.error(`[咪咕] 获取 MV 播放源错误: ${error.message}`);
+      return null;
+    }
+  }
+
+  async function getMusicInfo(musicBase) {
+    if (musicBase.artwork && musicBase.qualities && Object.keys(musicBase.qualities).length > 0) {
+      return {
+        id: musicBase.id,
+        copyrightId: musicBase.copyrightId,
+        title: musicBase.title,
+        artist: musicBase.artist,
+        album: musicBase.album,
+        albumId: musicBase.albumId,
+        artwork: musicBase.artwork,
+        qualities: musicBase.qualities,
+        mv: musicBase.mv,
+        mvId: musicBase.mvId,
+        mvCopyrightId: musicBase.mvCopyrightId,
+        platform: "咪咕音乐",
+      };
+    }
+
+    const songId = musicBase.id || musicBase.copyrightId || musicBase.songId;
+    if (!songId) {
+      sdk.log.error("[咪咕] getMusicInfo: 缺少有效的歌曲ID");
+      return null;
+    }
+
+    try {
+      const time = Date.now().toString();
+      const signData = createSignature(time, songId);
+
+      const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch=%7B%22song%22%3A1%2C%22album%22%3A0%2C%22singer%22%3A0%2C%22tagSong%22%3A1%2C%22mvSong%22%3A0%2C%22bestShow%22%3A1%2C%22songlist%22%3A0%2C%22lyricSong%22%3A0%7D&pageSize=10&text=${encodeURIComponent(songId)}&pageNo=1&sort=0&sid=USS`;
+
+      const res = await httpGet(url, {
+        headers: {
+          uiVersion: "A_music_3.6.1",
+          deviceId: signData.deviceId,
+          timestamp: time,
+          sign: signData.sign,
+          channel: "0146921",
+          "User-Agent":
+            "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+        },
+      });
+
+      if (res.data && res.data.code === "000000" && res.data.songResultData) {
+        const resultList = res.data.songResultData.resultList || [];
+
+        for (const itemArray of resultList) {
+          if (!Array.isArray(itemArray)) continue;
+
+          for (const item of itemArray) {
+            if (
+              item.songId === songId ||
+              item.copyrightId === songId ||
+              String(item.songId) === String(songId) ||
+              String(item.copyrightId) === String(songId)
+            ) {
+              const qualities = {};
+              if (item.audioFormats && Array.isArray(item.audioFormats)) {
+                item.audioFormats.forEach((format) => addMiguQuality(qualities, format));
+              }
+              if (Object.keys(qualities).length === 0) {
+                qualities["128k"] = {};
+                qualities["320k"] = {};
+              }
+
+              let artwork = item.img3 || item.img2 || item.img1 || null;
+              if (artwork && !/https?:/.test(artwork))
+                artwork = "http://d.musicapp.migu.cn" + artwork;
+
+              const singerList = (item.singerList || []).map((s) => ({
+                id: s.id || s.singerId,
+                name: s.name || s.singerName,
+              }));
+
+              return {
+                id: item.songId,
+                copyrightId: item.copyrightId,
+                title: item.name || item.songName,
+                artist: formatSingerName(item.singerList) || item.artist,
+                singerList: singerList,
+                album: item.album || item.albumName,
+                albumId: item.albumId,
+                artwork: artwork,
+                duration: pickDurationSeconds(item),
+                qualities: qualities,
+                mv: item.mvId || undefined,
+                mvId: item.mvId || undefined,
+                mvCopyrightId: item.mvCopyrightId || item.mvList?.[0]?.copyrightId || undefined,
+                platform: "咪咕音乐",
+              };
+            }
+          }
+        }
+      }
+
+      sdk.log.error("[咪咕] getMusicInfo: 未找到歌曲信息");
+      return null;
+    } catch (error) {
+      sdk.log.error("[咪咕] getMusicInfo 错误:", error.message);
+      return null;
+    }
+  }
+
+  async function getLyric(musicItem) {
+    try {
+      const mrcUrl = musicItem.mrcUrl;
+      const lrcUrl = musicItem.lrcUrl;
+      const trcUrl = musicItem.trcUrl;
+
+      let musicInfo = null;
+      if (!mrcUrl && !lrcUrl) {
+        musicInfo = await getMiGuMusicInfo(musicItem.copyrightId);
+      }
+
+      const finalMrcUrl = mrcUrl || musicInfo?.mrcurl || musicInfo?.mrcUrl;
+      const finalLrcUrl = lrcUrl || musicInfo?.lrcUrl;
+      const finalTrcUrl = trcUrl || musicInfo?.trcUrl;
+
+      if (!finalMrcUrl && !finalLrcUrl) {
+        const headers = {
+          Accept: "application/json, text/javascript, */*; q=0.01",
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          Host: "m.music.migu.cn",
+          Referer: `https://m.music.migu.cn/migu/l/?s=149&p=163&c=5200&j=l&id=${musicItem.copyrightId}`,
+          "User-Agent":
+            "Mozilla/5.0 (Linux; Android 6.0.1; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Mobile Safari/537.36 Edg/89.0.774.68",
+        };
+        const result = (
+          await httpGet("https://m.music.migu.cn/migu/remoting/cms_detail_tag", {
+            headers,
+            params: {
+              cpid: musicItem.copyrightId,
+            },
+          })
+        ).data;
+        return {
+          rawLrc: result.data?.lyricLrc || "",
+        };
+      }
+
+      let lyricPromise;
+
+      if (finalMrcUrl) {
+        lyricPromise = fetchText(finalMrcUrl).then((content) => {
+          if (!content) return null;
+          const decrypted = decryptMrc(content);
+          if (decrypted) {
+            const parsed = parseMrc(decrypted);
+            if (parsed) return parsed;
+          }
+          return null;
+        });
+      } else if (finalLrcUrl) {
+        lyricPromise = fetchText(finalLrcUrl).then((text) => ({
+          lyric: text,
+          lxlyric: "",
+        }));
+      }
+
+      const translationPromise = finalTrcUrl ? fetchText(finalTrcUrl) : Promise.resolve("");
+
+      if (!lyricPromise) {
+        return { rawLrc: "" };
+      }
+
+      const [lyricResult, translation] = await Promise.all([lyricPromise, translationPromise]);
+
+      if (!lyricResult) {
+        return { rawLrc: "" };
+      }
+
+      return {
+        rawLrc: lyricResult.lyric || "",
+        translation: translation || undefined,
+      };
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取歌词失败:", error);
+      return { rawLrc: "" };
+    }
+  }
+
+  async function getArtistAlbumWorks(artistItem, page) {
+    try {
+      const result = await searchAlbum(artistItem.name, page);
+
+      if (result && result.data) {
+        const albums = result.data.filter((album) => {
+          const albumArtist = album.artist?.toLowerCase() || "";
+          const artistName = artistItem.name?.toLowerCase() || "";
+          return albumArtist.includes(artistName) || artistName.includes(albumArtist);
+        });
+
+        return {
+          isEnd: result.isEnd,
+          // Search results filtered by artist do not provide an exact artist total.
+          artistItem: artistWorksItem(artistItem, "album"),
+          data: albums,
+        };
+      }
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取歌手专辑失败:", error.message);
+    }
+
+    return {
+      isEnd: true,
+      data: [],
+    };
+  }
+
+  // Song and album totals have separate meanings; never reuse a generic worksNum.
+  function artistWorksItem(artist, type, ...totals) {
+    const item = { ...artist };
+    delete item.songCount;
+    delete item.albumCount;
+    const songs = playlistSheetItem(
+      {},
+      artist?.songCount,
+      artist?.musicSize,
+      artist?.trackCount,
+      artist?.musicCount,
+      artist?.song_count,
+      artist?.worksNums,
+    ).worksNum;
+    const albums = playlistSheetItem(
+      {},
+      artist?.albumCount,
+      artist?.albumSize,
+      artist?.albumNum,
+      artist?.album_count,
+    ).worksNum;
+    if (songs != null) item.songCount = songs;
+    if (albums != null) item.albumCount = albums;
+    const key = type === "album" ? "albumCount" : "songCount";
+    const total = playlistSheetItem({}, ...totals, item[key]).worksNum;
+    if (total != null) item[key] = total;
+    return item;
+  }
+
+  async function getArtistWorks(artistItem, page, type) {
+    if (type === "music") {
+      try {
+        const res = await httpGet(
+          `https://app.c.nf.migu.cn/MIGUM3.0/v1.0/template/song-list/release/`,
+          {
+            params: {
+              singerId: artistItem.id,
+              templateVersion: "2",
+              needSimple: "01",
+              pageNumber: page,
+            },
+            transformResponse: [
+              (data) => {
+                if (typeof data === "string") {
+                  try {
+                    const fixedData = data.replace(/,\"subTitle1\":\s*\"[^}]*\}[^}]*\}\"/g, "");
+                    return JSON.parse(fixedData);
+                  } catch (e) {
+                    sdk.log.error("[咪咕] JSON 解析失败:", e.message);
+                    return { code: "ERROR", data: {} };
+                  }
+                }
+                return data;
+              },
+            ],
+          },
+        );
+
+        if (res.data && res.data.code === "000000" && res.data.data?.contentItemList) {
+          const itemsArray = res.data.data.contentItemList[0]?.itemList || [];
+          const items = itemsArray.map((item) => item.song || item).filter(Boolean);
+
+          return {
+            artistItem: artistWorksItem(
+              artistItem,
+              "music",
+              res.data.data.totalCount,
+              res.data.totalCount,
+            ),
+            data: items.map((item) => {
+              const qualities = {};
+
+              if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
+                item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
+              }
+
+              if (Object.keys(qualities).length === 0) {
+                qualities["128k"] = { size: "N/A", bitrate: 128000 };
+              }
+
+              let artwork = null;
+              if (item.albumImgs && item.albumImgs.length > 0) {
+                artwork = item.albumImgs[0].img;
+              } else {
+                artwork = item.img || item.cover;
+              }
+
+              let artist = "";
+              if (item.artists && Array.isArray(item.artists)) {
+                artist = item.artists
+                  .map((a) => a.name)
+                  .filter(Boolean)
+                  .join(", ");
+              } else if (item.singer) {
+                artist = item.singer;
+              }
+
+              return {
+                id: item.songId,
+                artwork: formatImgUrl(artwork),
+                title: item.songName || item.title,
+                artist: artist,
+                album: item.album || item.albumName,
+                copyrightId: item.copyrightId,
+                singerId: item.singerId,
+                qualities: qualities,
+                duration: pickDurationSeconds(item),
+                lrcUrl: item.lrcUrl,
+                mrcUrl: item.mrcUrl,
+                trcUrl: item.trcUrl,
+              };
+            }),
+          };
+        }
+      } catch (error) {
+        sdk.log.error("[咪咕] 获取歌手作品失败:", error.message);
+      }
+
+      return { data: [] };
+    } else if (type === "album") {
+      return getArtistAlbumWorks(artistItem, page);
+    }
+  }
+
+  // Playlist metadata is independent of the number of tracks loaded on this page.
+  // Ignore absent/invalid counts; zero is a valid total for an empty playlist.
+  function playlistSheetItem(sheet, ...totals) {
+    const item = { ...sheet };
+    delete item.worksNum;
+    for (const value of [...totals, sheet?.worksNum, sheet?.trackCount, sheet?.musicCount]) {
+      if (typeof value !== "number" && typeof value !== "string") continue;
+      if (String(value).trim() === "") continue;
+      const count = Number(value);
+      if (Number.isSafeInteger(count) && count >= 0) {
+        item.worksNum = count;
+        break;
+      }
+    }
+    return item;
+  }
+
+  async function miguPlaylistSheetItem(sheet, sheetId, ...totals) {
+    const item = playlistSheetItem(sheet, ...totals);
+    if (item.worksNum != null) return item;
+    // The H5 songs response may only describe this page. Query the existing
+    // playlist metadata endpoint instead of treating page size as the total.
+    try {
+      const response = await httpGet(
+        `https://m.music.migu.cn/migu/remoting/query_playlist_by_id_tag?onLine=1&queryChannel=0&createUserId=migu&contentCountMin=5&playListId=${encodeURIComponent(sheetId)}`,
+        { headers: { Referer: "https://m.music.migu.cn/" }, timeout: 10000 },
+      );
+      return playlistSheetItem(item, response.data?.rsp?.playList?.[0]?.contentCount);
+    } catch (error) {
+      return item;
+    }
+  }
+
+  async function getMusicSheetInfo(sheet, page) {
+    try {
+      let sheetId = sheet.id || sheet;
+
+      try {
+        const url = `https://app.c.nf.migu.cn/MIGUM2.0/v1.0/user/queryMusicListSongs.do?musicListId=${sheetId}&pageNo=${page}&pageSize=30`;
+
+        const res = await httpGet(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+            Referer: "https://m.music.migu.cn/",
+          },
+        });
+
+        if (res.data && res.data.code === "000000" && res.data.list) {
+          const musicList = res.data.list.map((item) => {
+            const qualities = {};
+            const lyricInfo = extractLyricInfo(item);
+
+            if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
+              item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
+            }
+
+            if (Object.keys(qualities).length === 0 && item.rateFormats) {
+              item.rateFormats.split("|").forEach((format) => addMiguQuality(qualities, format));
+            }
+
+            if (Object.keys(qualities).length === 0) {
+              qualities["128k"] = { size: "N/A", bitrate: 128000 };
+            }
+
+            let artist = "";
+            if (item.artists && Array.isArray(item.artists)) {
+              artist = item.artists
+                .map((a) => a.name || a.artistName || "")
+                .filter(Boolean)
+                .join(", ");
+            } else if (item.singer) {
+              artist = item.singer;
+            } else if (item.singerName) {
+              artist = Array.isArray(item.singerName)
+                ? item.singerName.join(", ")
+                : item.singerName;
+            }
+
+            let artwork = null;
+            if (item.albumImgs && item.albumImgs.length > 0) {
+              artwork = formatImgUrl(item.albumImgs[0].img);
+            } else {
+              artwork = formatImgUrl(item.albumPic || item.img3 || item.img2 || item.img1);
+            }
+
+            return {
+              id: item.songId || item.id,
+              artwork: artwork,
+              title: item.songName || item.name,
+              artist: artist,
+              album: item.album || item.albumName,
+              copyrightId: item.copyrightId,
+              singerId: item.singerId,
+              qualities: qualities,
+              duration: pickDurationSeconds(item),
+              lrcUrl: lyricInfo.lrcUrl,
+              mrcUrl: lyricInfo.mrcUrl,
+              trcUrl: lyricInfo.trcUrl,
+            };
+          });
+
+          return {
+            isEnd: res.data.totalCount <= page * 30,
+            sheetItem: await miguPlaylistSheetItem(sheet, sheetId, res.data.totalCount),
+            musicList: musicList,
+          };
+        }
+      } catch (err) {}
+
+      try {
+        const time = Date.now().toString();
+        const signData = createSignature(time, sheetId);
+
+        const headers = {
+          uiVersion: "A_music_3.6.1",
+          deviceId: signData.deviceId,
+          timestamp: time,
+          sign: signData.sign,
+          channel: "0146921",
+          "User-Agent":
+            "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+        };
+
+        const url = `https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${sheetId}&pageNo=${page}&pageSize=30`;
+        const res = await httpGet(url, { headers });
+
+        if (res.data && res.data.resource && res.data.resource.length > 0) {
+          const musicList = res.data.resource.map((item) => {
+            const qualities = {};
+            const lyricInfo = extractLyricInfo(item);
+
+            if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
+              item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
+            }
+
+            if (Object.keys(qualities).length === 0) {
+              qualities["128k"] = { size: "N/A", bitrate: 128000 };
+            }
+
+            const singerList = (item.singers || []).map((s) => ({
+              id: s.id || s.singerId,
+              name: s.name || s.singerName,
+              avatar: s.img || s.singerPic || "",
+            }));
+
+            return {
+              id: item.songId || item.copyrightId || item.id,
+              artwork: formatImgUrl(
+                item.albumImgs && item.albumImgs.length > 0
+                  ? item.albumImgs[0].img
+                  : item.img3 || item.img2 || item.img1 || item.cover,
+              ),
+              title: item.songName || item.name,
+              artist: item.singer || formatSingerName(item.singers),
+              singerList: singerList,
+              album: item.album || item.albumName,
+              copyrightId: item.copyrightId,
+              singerId: item.singerId,
+              qualities: qualities,
+              duration: pickDurationSeconds(item),
+              lrcUrl: lyricInfo.lrcUrl,
+              mrcUrl: lyricInfo.mrcUrl,
+              trcUrl: lyricInfo.trcUrl,
+            };
+          });
+
+          return {
+            isEnd: res.data.totalCount <= page * 30,
+            sheetItem: await miguPlaylistSheetItem(sheet, sheetId, res.data.totalCount),
+            musicList: musicList,
+          };
+        }
+      } catch (err) {}
+
+      const res = (
+        await httpGet("https://m.music.migu.cn/migumusic/h5/playlist/songsInfo", {
+          params: {
+            palylistId: sheetId,
+            pageNo: page,
+            pageSize: 30,
+          },
+          headers: {
+            Host: "m.music.migu.cn",
+            referer: "https://m.music.migu.cn/v4/music/playlist/",
+            By: "7242bd16f68cd9b39c54a8e61537009f",
+            "User-Agent":
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1 Edg/113.0.0.0",
+          },
+        })
+      ).data.data;
+
+      if (!res) {
+        return {
+          isEnd: true,
+          musicList: [],
+        };
+      }
+
+      const isEnd = res.total < 30;
+      return {
+        isEnd,
+        sheetItem: await miguPlaylistSheetItem(sheet, sheetId, res.totalCount, res.songCount),
+        musicList: res.items
+          .filter((item) => {
+            var _a;
+            return (
+              ((_a = item === null || item === void 0 ? void 0 : item.fullSong) === null ||
+              _a === void 0
+                ? void 0
+                : _a.vipFlag) === 0
+            );
+          })
+          .map((_) => {
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+
+            const qualities = getMiGuQualitiesFromSong(_);
+            const lyricInfo = extractLyricInfo(_);
+
+            return {
+              id: _.id,
+              artwork: formatImgUrl(_.mediumPic),
+              title: _.name,
+              artist:
+                (_f =
+                  (_e =
+                    (_d =
+                      (_c = (_b = _.singers) === null || _b === void 0 ? void 0 : _b.map) ===
+                        null || _c === void 0
+                        ? void 0
+                        : _c.call(_b, (_) => _.name)) === null || _d === void 0
+                      ? void 0
+                      : _d.join) === null || _e === void 0
+                    ? void 0
+                    : _e.call(_d, ",")) !== null && _f !== void 0
+                  ? _f
+                  : "",
+              album:
+                (_h = (_g = _.album) === null || _g === void 0 ? void 0 : _g.albumName) !== null &&
+                _h !== void 0
+                  ? _h
+                  : "",
+              copyrightId: _.copyrightId,
+              singerId:
+                (_k = (_j = _.singers) === null || _j === void 0 ? void 0 : _j[0]) === null ||
+                _k === void 0
+                  ? void 0
+                  : _k.id,
+              qualities: qualities,
+              lrcUrl: lyricInfo.lrcUrl,
+              mrcUrl: lyricInfo.mrcUrl,
+              trcUrl: lyricInfo.trcUrl,
+            };
+          }),
+      };
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取歌单信息失败:", error);
+      return {
+        isEnd: true,
+        musicList: [],
+      };
+    }
+  }
+
+  async function importMusicSheet(urlLike) {
+    var _a, _b, _c, _d;
+    let id;
+    if (!id) {
+      id = (urlLike.match(/https?:\/\/music\.migu\.cn\/v3\/(?:my|music)\/playlist\/([0-9]+)/) ||
+        [])[1];
+    }
+    if (!id) {
+      id = (urlLike.match(
+        /https?:\/\/h5\.nf\.migu\.cn\/app\/v4\/p\/share\/playlist\/index.html\?.*id=([0-9]+)/,
+      ) || [])[1];
+    }
+    if (!id) {
+      id = (_a = urlLike.match(/^\s*(\d+)\s*$/)) === null || _a === void 0 ? void 0 : _a[1];
+    }
+    if (!id) {
+      const shortLink = String(urlLike).match(/https?:\/\/c\.migu\.cn\/[^\s"'<>]+/);
+      if (shortLink) {
+        const response = await sdk.http.request({
+          url: shortLink[0],
+          method: "GET",
+          maxRedirects: 0,
+          responseType: "text",
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/109.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml",
+            host: "c.migu.cn",
+          },
+        });
+        const redirect = Object.entries(response.headers || {}).find(
+          ([name]) => name.toLowerCase() === "location",
+        );
+        if (response.status >= 300 && response.status < 400 && redirect) {
+          const location = String(redirect[1]);
+          const match =
+            location.match(/[?&]id=(\d+)(?:[&#]|$)/) ||
+            location.match(/\/playlist\/(\d+)(?:[/?#]|$)/);
+          if (match) id = match[1];
+        }
+      }
+    }
+    if (!id) {
+      return;
+    }
+    const headers = {
+      host: "m.music.migu.cn",
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "User-Agent":
+        "Mozilla/5.0 (Linux; Android 6.0.1; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Mobile Safari/537.36 Edg/89.0.774.68",
+      "X-Requested-With": "XMLHttpRequest",
+      Referer: "https://m.music.migu.cn",
+    };
+    const res = (
+      await httpGet(
+        `https://m.music.migu.cn/migu/remoting/query_playlist_by_id_tag?onLine=1&queryChannel=0&createUserId=migu&contentCountMin=5&playListId=${id}`,
+        {
+          headers,
+        },
+      )
+    ).data;
+    const playlistInfo = res.rsp.playList[0];
+    const contentCount = parseInt(playlistInfo.contentCount);
+    const cids = [];
+    const pageSignatures = new Set();
+    if (!Number.isFinite(contentCount) || contentCount < 0) throw new Error("[咪咕] 歌单总数异常");
+    let pageNo = 1;
+    while ((pageNo - 1) * 20 < contentCount) {
+      const listPage = (
+        await httpGet(`https://music.migu.cn/v3/music/playlist/${id}?page=${pageNo}`)
+      ).data;
+      const pageRows = htmlAttributes(listPage, "data-cid");
+      const pageIds = [];
+      pageIds.push(...pageRows);
+      const signature = JSON.stringify(pageIds);
+      if (!pageIds.length || pageSignatures.has(signature))
+        throw new Error("[咪咕] 歌单分页未推进");
+      pageSignatures.add(signature);
+      cids.push(...pageIds);
+      pageNo += 1;
+    }
+    if (cids.length === 0) {
+      return;
+    }
+    const uniqueCids = [...new Set(cids)];
+    const items = [];
+    for (let offset = 0; offset < uniqueCids.length; offset += 100) {
+      const songs = (
+        await http({
+          url: `https://music.migu.cn/v3/api/music/audioPlayer/songs?type=1&copyrightId=${uniqueCids.slice(offset, offset + 100).join(",")}`,
+          headers: { referer: "http://m.music.migu.cn/v3" },
+          xsrfCookieName: "XSRF-TOKEN",
+          withCredentials: true,
+        })
+      ).data;
+      if (!Array.isArray(songs?.items) || !songs.items.length)
+        throw new Error("[咪咕] 歌曲详情批次异常");
+      items.push(...songs.items);
+    }
+    const musicList = items.map((_) => {
+      var _a, _b, _c, _d, _e, _f;
+      const lyricInfo = extractLyricInfo(_);
+      return {
+        id: _.songId,
+        artwork: formatImgUrl(_.picL || _.picM || _.picS || _.cover || _.songPic),
+        title: _.songName,
+        artist:
+          (_b =
+            (_a = _.singers) === null || _a === void 0 ? void 0 : _a.map((_) => _.artistName)) ===
+            null || _b === void 0
+            ? void 0
+            : _b.join(", "),
+        album:
+          (_d = (_c = _.albums) === null || _c === void 0 ? void 0 : _c[0]) === null ||
+          _d === void 0
+            ? void 0
+            : _d.albumName,
+        copyrightId: _.copyrightId,
+        singerId:
+          (_f = (_e = _.singers) === null || _e === void 0 ? void 0 : _e[0]) === null ||
+          _f === void 0
+            ? void 0
+            : _f.artistId,
+        qualities: getMiGuQualitiesFromSong(_), // 添加音质检测
+        lrcUrl: lyricInfo.lrcUrl,
+        mrcUrl: lyricInfo.mrcUrl,
+        trcUrl: lyricInfo.trcUrl,
+      };
+    });
+    return {
+      id: String(playlistInfo.playListId || playlistInfo.id || id),
+      title: playlistInfo.playListName || playlistInfo.name || playlistInfo.title || "",
+      artwork: formatImgUrl(
+        playlistInfo.playListPic || playlistInfo.image || playlistInfo.img || playlistInfo.cover,
+      ),
+      artist: playlistInfo.createUserName || playlistInfo.userName || playlistInfo.ownerName || "",
+      description: playlistInfo.summary || playlistInfo.intro || playlistInfo.description || "",
+      worksNum: Number(playlistInfo.contentCount) || musicList.length,
+      playCount: Number(playlistInfo.playCount || playlistInfo.playNum) || 0,
+      musicList,
+    };
+  }
+
+  async function getRecommendSheetTags() {
+    try {
+      const res = await httpGet(
+        "https://app.c.nf.migu.cn/pc/v1.0/template/musiclistplaza-taglist/release",
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+            Referer: "https://m.music.migu.cn/",
+          },
+        },
+      );
+
+      if (res.data && res.data.code === "000000" && res.data.data) {
+        const rawList = res.data.data;
+
+        const hotTags =
+          rawList[0]?.content?.map((item) => ({
+            id: item.texts?.[1] || item.tagId,
+            title: item.texts?.[0] || item.tagName,
+          })) || [];
+
+        const data = rawList.slice(1).map((group) => ({
+          title: group.header?.title || group.name,
+          data: (group.content || []).map((item) => ({
+            id: item.texts?.[1] || item.tagId,
+            title: item.texts?.[0] || item.tagName,
+          })),
+        }));
+
+        return {
+          pinned: hotTags.slice(0, 8),
+          data,
+        };
+      }
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取歌单标签失败，使用备用API:", error.message);
+    }
+
+    try {
+      const allTags = (
+        await httpGet("https://m.music.migu.cn/migumusic/h5/playlist/allTag", {
+          headers: {
+            host: "m.music.migu.cn",
+            referer: "https://m.music.migu.cn/v4/music/playlist",
+            "User-Agent":
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1 Edg/113.0.0.0",
+            By: "7242bd16f68cd9b39c54a8e61537009f",
+          },
+        })
+      ).data.data.tags;
+
+      const data = allTags.map((_) => ({
+        title: _.tagName,
+        data: _.tags.map((t) => ({
+          id: t.tagId,
+          title: t.tagName,
+        })),
+      }));
+
+      return {
+        pinned: [
+          { title: "流行", id: "1000001672" },
+          { title: "伤感", id: "1000001795" },
+          { title: "电影", id: "1001076080" },
+          { title: "经典老歌", id: "1000001635" },
+          { title: "中国风", id: "1000001675" },
+          { title: "翻唱", id: "1000001831" },
+        ],
+        data,
+      };
+    } catch (e) {
+      return { pinned: [], data: [] };
+    }
+  }
+
+  async function getRecommendSheetsByTag(sheetItem, page) {
+    const pageSize = 30;
+    const tagId = sheetItem?.id || "";
+
+    try {
+      let url;
+      if (!tagId) {
+        url = `https://app.c.nf.migu.cn/pc/bmw/page-data/playlist-square-recommend/v1.0?templateVersion=2&pageNo=${page}`;
+      } else {
+        url = `https://app.c.nf.migu.cn/pc/v1.0/template/musiclistplaza-listbytag/release?pageNumber=${page}&templateVersion=2&tagId=${tagId}`;
+      }
+
+      const res = await httpGet(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+          Referer: "https://m.music.migu.cn/",
+        },
+      });
+
+      if (res.data && res.data.code === "000000" && res.data.data) {
+        let list = [];
+
+        if (res.data.data.contents) {
+          const extractPlaylists = (contents, result = [], ids = new Set()) => {
+            for (const item of contents) {
+              if (item.contents) {
+                extractPlaylists(item.contents, result, ids);
+              } else if (item.resType === "2021" && !ids.has(item.resId)) {
+                ids.add(item.resId);
+                result.push({
+                  id: String(item.resId),
+                  title: item.txt,
+                  artwork: formatImgUrl(item.img),
+                  artist: "",
+                  description: item.txt2 || "",
+                });
+              }
+            }
+            return result;
+          };
+          list = extractPlaylists(res.data.data.contents);
+        } else if (res.data.data.contentItemList) {
+          const itemList =
+            res.data.data.contentItemList[1]?.itemList ||
+            res.data.data.contentItemList[0]?.itemList ||
+            [];
+          list = itemList.map((item) => ({
+            id: String(item.logEvent?.contentId || item.id),
+            title: item.title,
+            artwork: formatImgUrl(item.imageUrl),
+            artist: "",
+            playCount: item.barList?.[0]?.title || "",
+          }));
+        }
+
+        if (list.length > 0) {
+          return {
+            isEnd: list.length < pageSize,
+            data: list,
+          };
+        }
+      }
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取推荐歌单失败，使用备用API:", error.message);
+    }
+
+    const res = (
+      await httpGet("https://m.music.migu.cn/migumusic/h5/playlist/list", {
+        params: {
+          columnId: 15127272,
+          tagId: tagId,
+          pageNum: page,
+          pageSize,
+        },
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1 Edg/113.0.0.0",
+          host: "m.music.migu.cn",
+          By: "7242bd16f68cd9b39c54a8e61537009f",
+          Referer: "https://m.music.migu.cn/v4/music/playlist",
+        },
+      })
+    ).data.data;
+
+    const isEnd = page * pageSize > res.total;
+    const data = res.items.map((_) => ({
+      id: _.playListId,
+      artist: _.createUserName,
+      title: _.playListName,
+      artwork: formatImgUrl(_.image),
+      playCount: _.playCount,
+      createUserId: _.createUserId,
+    }));
+
+    return {
+      isEnd,
+      data,
+    };
+  }
+
+  async function getTopLists() {
+    const yinyue = {
+      title: "咪咕音乐榜",
+      data: boardList.slice(0, 6).map((item) => ({
+        id: item.bangid,
+        title: item.name,
+        coverImg: item.coverImg,
+      })),
+    };
+
+    const diqu = {
+      title: "地区榜",
+      data: boardList.slice(6).map((item) => ({
+        id: item.bangid,
+        title: item.name,
+        coverImg: item.coverImg,
+      })),
+    };
+
+    return [yinyue, diqu];
+  }
+
+  async function getTopListDetail(topListItem) {
+    const bangid = topListItem.id;
+
+    try {
+      const res = await httpGet(
+        `https://app.c.nf.migu.cn/MIGUM2.0/v1.0/content/querycontentbyId.do?columnId=${bangid}&needAll=0`,
+        {
+          headers: {
+            Referer: "https://app.c.nf.migu.cn/",
+            "User-Agent":
+              "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 6 Build/LYZ28E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Mobile Safari/537.36",
+            channel: "0146921",
+          },
+        },
+      );
+
+      if (
+        res.data &&
+        res.data.code === "000000" &&
+        res.data.columnInfo &&
+        res.data.columnInfo.contents
+      ) {
+        const musicList = res.data.columnInfo.contents.map((item) => {
+          const songInfo = item.objectInfo || item;
+          const qualities = {};
+
+          if (songInfo.newRateFormats && Array.isArray(songInfo.newRateFormats)) {
+            songInfo.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
+          }
+
+          if (Object.keys(qualities).length === 0) {
+            qualities["128k"] = { size: "N/A", bitrate: 128000 };
+          }
+
+          let artwork = null;
+          if (songInfo.albumImgs && songInfo.albumImgs.length > 0) {
+            artwork = songInfo.albumImgs[0].img;
+          } else if (songInfo.albumPic) {
+            artwork = songInfo.albumPic;
+          } else if (songInfo.img3 || songInfo.img2 || songInfo.img1) {
+            artwork = songInfo.img3 || songInfo.img2 || songInfo.img1;
+          } else if (songInfo.cover) {
+            artwork = songInfo.cover;
+          } else if (songInfo.mediumPic || songInfo.largePic || songInfo.smallPic) {
+            artwork = songInfo.largePic || songInfo.mediumPic || songInfo.smallPic;
+          }
+          artwork = formatImgUrl(artwork);
+
+          let artist = "";
+          if (songInfo.artists && Array.isArray(songInfo.artists)) {
+            artist = songInfo.artists
+              .map((a) => a.name)
+              .filter(Boolean)
+              .join(", ");
+          } else if (songInfo.singer) {
+            artist = songInfo.singer;
+          } else if (songInfo.singerName) {
+            artist = Array.isArray(songInfo.singerName)
+              ? songInfo.singerName.join(", ")
+              : songInfo.singerName;
+          }
+
+          return {
+            id: songInfo.songId,
+            artwork: artwork,
+            title: songInfo.songName,
+            artist: artist,
+            album: songInfo.album || songInfo.albumName,
+            copyrightId: songInfo.copyrightId,
+            singerId: songInfo.singerId,
+            lrcUrl: songInfo.lrcUrl,
+            mrcUrl: songInfo.mrcUrl,
+            trcUrl: songInfo.trcUrl,
+            qualities: qualities,
+            duration: pickDurationSeconds(songInfo),
+          };
+        });
+
+        return {
+          ...topListItem,
+          musicList: musicList,
+        };
+      }
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取榜单详情失败，使用备用API:", error.message);
+    }
+
+    const res = await httpGet(`https://m.music.migu.cn/migumusic/h5/billboard/home`, {
+      params: {
+        pathName: bangid,
+        pageNum: 1,
+        pageSize: 100,
+      },
+      headers: {
+        Accept: "*/*",
+        Host: "m.music.migu.cn",
+        referer: `https://m.music.migu.cn/v4/music/top/${bangid}`,
+        "User-Agent": UA,
+        By,
+      },
+    });
+
+    if (res.data && res.data.data && res.data.data.songs) {
+      return {
+        ...topListItem,
+        musicList: res.data.data.songs.items.map((_) => {
+          let artwork = null;
+          if (_.albumImgs && _.albumImgs.length > 0) {
+            artwork = _.albumImgs[0].img;
+          } else {
+            artwork = _.mediumPic || _.largePic || _.smallPic || _.img || _.cover;
+          }
+
+          return {
+            id: _.id,
+            artwork: formatImgUrl(artwork),
+            title: _.name,
+            artist: _.singers?.map((s) => s.name).join(", ") || "",
+            album: _.album?.albumName || "",
+            copyrightId: _.copyrightId,
+            singerId: _.singers?.[0]?.id,
+            qualities: getMiGuQualitiesFromSong(_),
+            duration: pickDurationSeconds(_),
+          };
+        }),
+      };
+    }
+
+    return { ...topListItem, musicList: [] };
+  }
+
+  async function getMusicComments(musicItem, page = 1) {
+    const pageSize = 20;
+
+    try {
+      const targetId = musicItem.id || musicItem.copyrightId;
+
+      const res = await httpGet(`https://music.migu.cn/v3/api/comment/listComments`, {
+        params: {
+          targetId: targetId,
+          pageSize: pageSize,
+          pageNo: page,
+        },
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4195.1 Safari/537.36",
+          Referer: "https://music.migu.cn",
+        },
+      });
+
+      if (res.status !== 200 || res.data.returnCode !== "000000") {
+        return { isEnd: true, data: [] };
+      }
+
+      const comments = (res.data.data?.items || []).map((item) => ({
+        id: item.commentId?.toString(),
+        nickName: item.author?.name || "",
+        avatar: item.author?.avatar?.startsWith("//")
+          ? `http:${item.author.avatar}`
+          : item.author?.avatar,
+        comment: item.body || "",
+        like: item.praiseCount,
+        createAt: item.createTime ? new Date(item.createTime).getTime() : null,
+        replies: (item.replyCommentList || []).map((c) => ({
+          id: c.commentId?.toString(),
+          nickName: c.author?.name || "",
+          avatar: c.author?.avatar?.startsWith("//") ? `http:${c.author.avatar}` : c.author?.avatar,
+          comment: c.body || "",
+          like: c.praiseCount,
+          createAt: c.createTime ? new Date(c.createTime).getTime() : null,
+        })),
+      }));
+
+      const total = res.data.data?.itemTotal || 0;
+
+      return {
+        isEnd: page * pageSize >= total,
+        data: comments,
+      };
+    } catch (error) {
+      sdk.log.error("[咪咕] 获取评论失败:", error);
+      return { isEnd: true, data: [] };
+    }
+  }
+
+  function getMusicDetailPageUrl(musicItem) {
+    const copyrightId = musicItem.copyrightId || musicItem.copyright_id || musicItem.id;
+    return copyrightId ? `http://music.migu.cn/v3/music/song/${copyrightId}` : "";
+  }
+
+  async function getHotSearch() {
+    const response = await httpGet("https://jadeite.migu.cn/music_search/v3/search/hotword", {
+      timeout: 10000,
+    });
+    const body = response.data;
+    const list = body?.data?.hotwords?.[0]?.hotwordList;
+    if (body?.code !== "000000" || !Array.isArray(list)) {
+      throw new Error("咪咕音乐热搜加载失败，请稍后重试");
+    }
+    return [
+      ...new Set(
+        list
+          .filter((item) => item?.resourceType === "song")
+          .map((item) => item.word)
+          .filter((word) => typeof word === "string" && word.trim())
+          .map((word) => word.trim()),
+      ),
+    ].slice(0, 30);
+  }
+
+  async function search(query, page, type) {
+    if (type === "music") {
+      return await searchMusic(query, page);
+    }
+    if (type === "album") {
+      return await searchAlbum(query, page);
+    }
+    if (type === "artist") {
+      return await searchArtist(query, page);
+    }
+    if (type === "sheet") {
+      return await searchMusicSheet(query, page);
+    }
+    if (type === "lyric") {
+      return await searchLyric(query, page);
+    }
+  }
+
+  async function getAlbumInfo(albumItem) {
+    async function findCorrectAlbumId(albumName, artistName) {
+      try {
+        const time = Date.now().toString();
+        const query = albumName;
+        const signData = createSignature(time, query);
+
+        const url = `https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch=%7B%22song%22%3A1%2C%22album%22%3A0%2C%22singer%22%3A0%2C%22tagSong%22%3A1%2C%22mvSong%22%3A0%2C%22bestShow%22%3A1%2C%22songlist%22%3A0%2C%22lyricSong%22%3A0%7D&pageSize=30&text=${encodeURIComponent(query)}&pageNo=1&sort=0&sid=USS`;
+
+        const res = await httpGet(url, {
+          headers: {
+            uiVersion: "A_music_3.6.1",
+            deviceId: signData.deviceId,
+            timestamp: time,
+            sign: signData.sign,
+            channel: "0146921",
+            "User-Agent":
+              "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+          },
+        });
+
+        if (res.data && res.data.code === "000000" && res.data.songResultData) {
+          const songs = res.data.songResultData.resultList || [];
+          for (const songArray of songs) {
+            for (const song of Array.isArray(songArray) ? songArray : [songArray]) {
+              if (song.album === albumName && song.albumId) {
+                return song.albumId;
+              }
+            }
+          }
+          for (const songArray of songs) {
+            for (const song of Array.isArray(songArray) ? songArray : [songArray]) {
+              if (song.albumId) {
+                return song.albumId;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        sdk.log.error("[咪咕] 搜索专辑ID失败:", e.message);
+      }
+      return null;
+    }
+
+    async function getAlbumSongs(albumId) {
+      try {
+        const res = await httpGet(
+          `http://app.c.nf.migu.cn/MIGUM2.0/v1.0/content/queryAlbumSong?albumId=${albumId}&pageNo=1`,
+        );
+
+        return res.data?.data || res.data;
+      } catch (error) {
+        sdk.log.error("[咪咕] 获取专辑歌曲失败:", error.message);
+        return null;
+      }
+    }
+
+    let albumId = albumItem.id;
+    let musicListData = null;
+
+    const data = await getAlbumSongs(albumId);
+    if (data && data.songList && data.songList.length > 0) {
+      musicListData = data;
+    }
+
+    if (!musicListData) {
+      const correctId = await findCorrectAlbumId(albumItem.title, albumItem.artist);
+      if (correctId) {
+        albumId = correctId;
+        const data2 = await getAlbumSongs(albumId);
+        if (data2 && data2.songList && data2.songList.length > 0) {
+          musicListData = data2;
+        }
+      }
+    }
+
+    if (!musicListData || !musicListData.songList) {
+      return {
+        albumItem: { description: albumItem.description || "" },
+        musicList: [],
+      };
+    }
+
+    return {
+      albumItem: { description: albumItem.description || "" },
+      musicList: musicListData.songList.map((item) => {
+        const qualities = {};
+        if (item.newRateFormats && Array.isArray(item.newRateFormats)) {
+          item.newRateFormats.forEach((format) => addMiguQuality(qualities, format));
+        }
+        if (Object.keys(qualities).length === 0) {
+          qualities["128k"] = { size: "N/A", bitrate: 128000 };
+        }
+
+        let artwork = null;
+        if (item.albumImgs && item.albumImgs.length > 0) {
+          artwork = item.albumImgs[0].img;
+        }
+
+        let artist = "";
+        if (item.artists && Array.isArray(item.artists)) {
+          artist = item.artists
+            .map((a) => a.name)
+            .filter(Boolean)
+            .join(", ");
+        } else if (item.singer) {
+          artist = item.singer;
+        }
+
+        return {
+          id: item.songId,
+          artwork: formatImgUrl(artwork),
+          title: item.songName,
+          artist: artist,
+          album: item.album || albumItem.title,
+          copyrightId: item.copyrightId,
+          singerId: item.singerId,
+          qualities: qualities,
+          duration: pickDurationSeconds(item),
+        };
+      }),
+    };
+  }
+  let activeImport = null;
+  function importedSnapshot(entity) {
+    if (!entity._bakaImportToken) return null;
+    if (
+      !activeImport ||
+      activeImport.token !== entity._bakaImportToken ||
+      activeImport.entity.id !== entity.id ||
+      activeImport.expiresAt <= Date.now()
+    ) {
+      activeImport = null;
+      throw Object.assign(new Error("Imported collection expired; import its share link again"), {
+        code: "temporary_unavailable",
+      });
+    }
+    return activeImport;
+  }
+  async function importCollection(url) {
+    const imported = await importMusicSheet(url);
+    if (!imported || !Array.isArray(imported.musicList) || imported.id == null) {
+      throw Object.assign(new Error("The share link did not return a valid collection"), {
+        code: "track_unavailable",
+      });
+    }
+    if (imported.musicList.length > 100000) {
+      throw Object.assign(new Error("Imported collection exceeds the 100000-track limit"), {
+        code: "temporary_unavailable",
+      });
+    }
+    const token = sdk.crypto.randomBytes(16);
+    const entity = { ...imported, type: imported.type || "sheet", _bakaImportToken: token };
+    delete entity.musicList;
+    activeImport = {
+      token,
+      entity,
+      items: imported.musicList,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    };
+    return entity;
+  }
+  return {
+    search,
+    entity: (entity) => getMusicInfo(entity),
+    collection: async (entity) => {
+      const snapshot = importedSnapshot(entity);
+      if (snapshot) return snapshot.entity;
+      if (entity.type === "artist") return entity;
+      const result = await (entity.type === "album"
+        ? getAlbumInfo(entity)
+        : getMusicSheetInfo(entity, 1));
+      return { ...entity, ...(result.albumItem || result.sheetItem || {}) };
+    },
+    members: (entity, page, kind) => {
+      const snapshot = importedSnapshot(entity);
+      if (snapshot)
+        return {
+          isEnd: true,
+          musicList: snapshot.items,
+          sheetItem: snapshot.entity,
+          total: snapshot.items.length,
+        };
+      return entity.type === "artist"
+        ? getArtistWorks(entity, page, kind)
+        : entity.type === "chart"
+          ? getTopListDetail(entity, page)
+          : entity.type === "album"
+            ? getAlbumInfo(entity, page)
+            : getMusicSheetInfo(entity, page);
+    },
+    charts: getTopLists,
+    tags: getRecommendSheetTags,
+    playlists: getRecommendSheetsByTag,
+    hotSearch: getHotSearch,
+
+    resolve: getMediaSource,
+    video: getMvSource,
+    lyric: getLyric,
+    comments: getMusicComments,
+    importSheet: importCollection,
+    share: getMusicDetailPageUrl,
+  };
+}
+
+const handlers = {
+  search: async (request, sdk) =>
+    pageResult(
+      await operations(sdk).search(request.query, pageNumber(request.cursor), request.kind),
+      request,
+    ),
+  entities: { get: async ({ entity }, sdk) => operations(sdk).entity(entity) },
+  collections: {
+    get: async ({ entity }, sdk) => operations(sdk).collection(entity),
+    members: async (request, sdk) =>
+      pageResult(
+        await operations(sdk).members(request.entity, pageNumber(request.cursor), request.kind),
+        request,
+      ),
+  },
+  discovery: {
+    charts: async (request, sdk) => sliceResult(await operations(sdk).charts(), request),
+    playlistTags: async (request, sdk) => sliceResult(await operations(sdk).tags(), request),
+    playlists: async (request, sdk) =>
+      pageResult(await operations(sdk).playlists(request.tag, pageNumber(request.cursor)), request),
+    hotSearch: async (request, sdk) => sliceResult(await operations(sdk).hotSearch(), request),
+  },
+  media: {
+    prepare: async ({ entity, quality }) => ({
+      protocol: "lx",
+      source: "mg",
+      musicInfo: {
+        ...entity,
+        songmid: entity.songmid || entity.hash || entity.copyrightId || entity.id,
+      },
+      quality,
+    }),
+    resolve: async ({ entity, quality }, sdk) => {
+      if (typeof requestMusicUrl === "function") {
+        const result = await requestMusicUrl(
+          entity,
+          quality || manifest.supportedQualities[0],
+          sdk,
+        );
+        return typeof result === "string" ? { url: result, quality } : result;
+      }
+      return operations(sdk).resolve(entity, quality || manifest.supportedQualities[0]);
+    },
+    video: async ({ entity, quality }, sdk) => operations(sdk).video(entity, quality || "1080p"),
+  },
+  lyrics: { get: async ({ entity }, sdk) => operations(sdk).lyric(entity) },
+  comments: {
+    list: async (request, sdk) =>
+      pageResult(
+        await operations(sdk).comments(request.entity, pageNumber(request.cursor)),
+        request,
+      ),
+  },
+  links: {
+    resolve: async ({ url }, sdk) => operations(sdk).importSheet(url),
+    share: async ({ entity }, sdk) => operations(sdk).share(entity),
+  },
+};
+module.exports = { manifest, handlers };

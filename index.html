@@ -454,6 +454,61 @@
             margin-top: var(--space-2);
         }
 
+        .source-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-5);
+        }
+
+        .client-switch {
+            display: flex;
+            flex-shrink: 0;
+            gap: 4px;
+            padding: 4px;
+            margin: 0;
+            min-inline-size: 0;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-full);
+            background: var(--color-surface-secondary);
+        }
+
+        .client-switch label { position: relative; flex: 1; cursor: pointer; }
+        .client-switch input {
+            position: absolute;
+            opacity: 0;
+            width: 1px;
+            height: 1px;
+        }
+        .client-switch span {
+            display: block;
+            padding: 12px 18px;
+            border-radius: var(--radius-full);
+            color: var(--color-text-secondary);
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 20px;
+            text-align: center;
+            white-space: nowrap;
+            transition: background 160ms ease-out, color 160ms ease-out;
+        }
+        .client-switch input:checked + span {
+            background: var(--color-surface);
+            color: var(--color-text-primary);
+            box-shadow: 0 1px 4px var(--color-shadow-lg);
+        }
+        .client-switch input:focus-visible + span {
+            outline: 2px solid var(--color-accent);
+            outline-offset: 2px;
+        }
+        @media (max-width: 600px) {
+            .source-heading { align-items: stretch; flex-direction: column; gap: 16px; }
+            .client-switch { align-self: stretch; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .client-switch span { transition: none; }
+        }
+
         /* ============================================
            8. Cards
            ============================================ */
@@ -1480,9 +1535,22 @@
 
         <!-- Source Selection -->
         <section class="section fade-in fade-in-delay-1">
-            <div class="section-header">
-                <h2 class="section-title">选择音源</h2>
-                <p class="section-desc">选择一个音源类型以开始使用</p>
+            <div class="section-header source-heading">
+                <div>
+                    <h2 class="section-title">选择音源</h2>
+                    <p class="section-desc">选好客户端和音源，复制链接即可添加。</p>
+                </div>
+                <input type="hidden" id="pluginApiVersion" value="2">
+                <fieldset class="client-switch" aria-label="选择你使用的客户端">
+                    <label>
+                        <input type="radio" name="clientVersion" value="2" checked onchange="selectClientVersion(this.value)">
+                        <span>新版客户端</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="clientVersion" value="1" onchange="selectClientVersion(this.value)">
+                        <span>旧版客户端</span>
+                    </label>
+                </fieldset>
             </div>
             <div class="card">
                 <div class="source-grid" id="sourceGrid">
@@ -1720,12 +1788,12 @@
                     <div class="api-item">
                         <span class="api-method">GET</span>
                         <div class="api-label">订阅 (有 Key)</div>
-                        <div class="api-url">/api/subscription.json?source=ikun&key=YOUR_KEY.json</div>
+                        <div class="api-url">/api/v2/subscription?source=ikun&amp;key=YOUR_KEY</div>
                     </div>
                     <div class="api-item">
                         <span class="api-method">GET</span>
                         <div class="api-label">订阅 (内置 Key)</div>
-                        <div class="api-url">/api/subscription.json?source=cihedai.json</div>
+                        <div class="api-url">/api/v2/subscription?source=cihedai</div>
                     </div>
                     <div class="api-item">
                         <span class="api-method">GET</span>
@@ -1759,6 +1827,11 @@
         // State
         // ============================================
         let selectedSource = null;
+
+        function selectClientVersion(version) {
+            document.getElementById('pluginApiVersion').value = version;
+            if (selectedSource) generateLinks(true);
+        }
 
         // Plugin Configuration
         const PLUGINS = [
@@ -2021,15 +2094,13 @@
                 return;
             }
 
-            // BakaMusic 要求订阅 URL 以 .json 结尾
-            // 有 Key:  ?source=xxx&key=yyy.json  (key 末尾带 .json)
-            // 无 Key:  ?source=xxx.json           (source 末尾带 .json)
-            let subscriptionUrl;
-            if (apiKey) {
-                subscriptionUrl = `${baseUrl}/api/subscription.json?source=${selectedSource.source}&key=${apiKey}.json`;
-            } else {
-                subscriptionUrl = `${baseUrl}/api/subscription.json?source=${selectedSource.source}.json`;
-            }
+            const v2 = document.getElementById('pluginApiVersion').value === '2';
+            const query = new URLSearchParams({source: selectedSource.source});
+            if (apiKey) query.set('key', apiKey);
+            // Only the original V1 client needs its historical URL convention.
+            const subscriptionUrl = v2
+                ? `${baseUrl}/api/v2/subscription?${query}`
+                : `${baseUrl}/api/subscription.json?${query}.json`;
 
             document.getElementById('subscriptionUrl').textContent = subscriptionUrl;
 
@@ -2056,12 +2127,13 @@
                 // 音源插件: 检查此音源是否支持
                 if (plugin.requiresKey && !supported.includes(plugin.file)) return;
 
-                let pluginUrl = `${baseUrl}/plugins/${plugin.file}`;
+                const v2 = document.getElementById('pluginApiVersion').value === '2';
+                let pluginUrl = `${baseUrl}${v2 ? '/v2/plugins/' : '/plugins/'}${plugin.file}`;
 
                 if (plugin.requiresKey) {
-                    pluginUrl += `?source=${selectedSource.source}`;
+                    pluginUrl += `?source=${encodeURIComponent(selectedSource.source)}`;
                     if (apiKey) {
-                        pluginUrl += `&key=${apiKey}`;
+                        pluginUrl += `&key=${encodeURIComponent(apiKey)}`;
                     }
                 }
 
@@ -2070,11 +2142,18 @@
                 card.innerHTML = `
                     <div class="plugin-icon-circle" aria-hidden="true">${plugin.emoji}</div>
                     <div class="plugin-name">${plugin.name}</div>
-                    <div class="plugin-version">v${plugin.version}</div>
+                    <div class="plugin-version">v${v2 ? '1.0.0' : plugin.version}</div>
                     <div class="plugin-badge ${plugin.requiresKey ? '' : 'free'}">${plugin.requiresKey ? '' : 'Free'}</div>
-                    <button class="plugin-copy-btn" onclick="event.stopPropagation(); copyPluginLink('${pluginUrl}', this)">复制</button>
-                    <div class="plugin-url-detail">${pluginUrl}</div>
+                    <button class="plugin-copy-btn">复制</button>
+                    <div class="plugin-url-detail"></div>
                 `;
+
+                const copyButton = card.querySelector('.plugin-copy-btn');
+                copyButton.addEventListener('click', event => {
+                    event.stopPropagation();
+                    copyPluginLink(pluginUrl, copyButton);
+                });
+                card.querySelector('.plugin-url-detail').textContent = pluginUrl;
 
                 card.addEventListener('click', () => card.classList.toggle('expanded'));
                 grid.appendChild(card);
