@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "kw.v1",
   id: "cc.baka.kw",
   name: "酷我音乐",
-  version: "1.0.4",
+  version: "1.0.5",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-cache",
@@ -163,6 +163,61 @@ function dailyResult(result, request) {
       ? result.state
       : "blocked",
   };
+}
+
+
+function commentSort(value) {
+  if (value == null || value === "hot") return "hot";
+  if (value === "latest" || value === "new" || value === "newest") return "latest";
+  throw new Error("Invalid comment sort; expected hot or latest");
+}
+function commentCount(value) {
+  if ((typeof value !== "number" && typeof value !== "string") || !/^(0|[1-9]\d*)$/.test(String(value))) return undefined;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+function commentText(value) {
+  // Keep URL and filesystem tokens intact before decoding provider line breaks.
+  return String(value == null ? "" : value).split(/((?:https?:\/\/|www\.)[^\s<>]+|[A-Za-z]:[\\/][^\s<>]+|(?:^|[\s(\[])\/[A-Za-z0-9_.~-][^\s<>]*)/gi)
+    .map((part, index) => index % 2 ? part : part.replace(/\\r\\n|\\n|\\r|\/r\/n|\/n|\r\n?|<br\s*\/?>|&#(?:10|13|x0?a|x0?d);/gi, "\n")).join("");
+}
+function normalizeComment(item) {
+  const result = { ...item, comment: commentText(item.comment) };
+  if (typeof result.avatar === "string" && result.avatar.startsWith("//")) result.avatar = "https:" + result.avatar;
+  if (Array.isArray(item.replies)) result.replies = item.replies.map(normalizeComment);
+  if (item.quote && typeof item.quote === "object") result.quote = normalizeComment(item.quote);
+  return result;
+}
+function commentReplyContext(entity, rootId) {
+  return { v: 1, provider: "cc.baka.kw", entityId: entity.id, rootId: String(rootId) };
+}
+function commentRoot(entity, context) {
+  if (context == null) return null;
+  if (typeof context !== "object" || Array.isArray(context) || context.v !== 1 ||
+      context.provider !== "cc.baka.kw" || context.entityId !== entity.id ||
+      typeof context.rootId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(context.rootId) ||
+      Object.keys(context).some(key => !["v", "provider", "entityId", "rootId"].includes(key))) {
+    throw new Error("Comment reply context does not match this provider or entity scope");
+  }
+  return context.rootId;
+}
+function commentMeta(item, entity, total) {
+  const count = commentCount(total);
+  if (count != null) item.replyCount = count;
+  if (item.id != null && (count == null || count > 0)) item.replyContext = commentReplyContext(entity, item.id);
+  return item;
+}
+function commentPageResult(result, request) {
+  const state = pageState(request.cursor);
+  const items = result.data;
+  if (!Array.isArray(items) || items.length > 20 || (!items.length && result.isEnd === false) ||
+      (state.offset > 0 && state.offset >= items.length)) throw new Error("Provider comment pagination did not advance");
+  const end = Math.min(items.length, state.offset + pageLimit(request));
+  let nextCursor = null;
+  if (end < items.length) nextCursor = "v2:" + encodeURIComponent(JSON.stringify({ ...state, offset: end }));
+  else if (result.isEnd === false) nextCursor = "v2:" + encodeURIComponent(JSON.stringify({ ...result.nextState, upstreamPage: state.upstreamPage + 1, offset: 0 }));
+  return { items: items.slice(state.offset, end).map(normalizeComment), nextCursor,
+    ...(Number.isSafeInteger(result.total) && result.total >= 0 ? { total: result.total } : {}) };
 }
 
 const operationCache = new WeakMap();
@@ -2051,60 +2106,34 @@ function createOperations(sdk) {
     });
   }
 
-  async function getMusicComments(musicItem, page = 1) {
+  async function getMusicComments(musicItem, page = 1, request = {}) {
+    if (typeof request === "string") request = { sort: request };
+    const sort = commentSort(request.sort);
+    const root = commentRoot(musicItem, request.replyContext);
     const pageSize = 20;
+    const state = pageState(request.cursor);
+    const finish = result => result;
 
-    try {
-      const res = await httpGet("http://ncomment.kuwo.cn/com.s", {
-        params: {
-          f: "web",
-          type: "get_comment",
-          aapiver: 1,
-          prod: "kwplayer_ar_10.5.2.0",
-          digest: 15,
-          sid: musicItem.id,
-          start: pageSize * (page - 1),
-          msgflag: 1,
-          count: pageSize,
-          newver: 3,
-          uid: 0,
-        },
-        headers: {
-          "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9;)",
-        },
-      });
-
-      if (res.status !== 200 || res.data.code !== "200") {
-        throw new Error("Provider comments request failed");
-      }
-
-      const comments = (res.data.comments || []).map((item) => ({
-        id: item.id?.toString(),
-        nickName: item.u_name || "",
-        avatar: item.u_pic,
-        comment: item.msg || "",
-        like: item.like_num,
-        createAt: item.time ? Number(item.time) * 1000 : null,
-        replies: (item.child_comments || []).map((c) => ({
-          id: c.id?.toString(),
-          nickName: c.u_name || "",
-          avatar: c.u_pic,
-          comment: c.msg || "",
-          like: c.like_num,
-          createAt: c.time ? Number(c.time) * 1000 : null,
-        })),
-      }));
-
-      const total = res.data.comments_counts || 0;
-
-      return {
-        isEnd: page * pageSize >= total,
-        data: comments,
-      };
-    } catch (error) {
-      sdk.log.error("[酷我] 获取评论失败:", error);
-      throw error;
+    const res = await httpGet("https://ncomment.kuwo.cn/com.s", { params: {
+      f: "web", type: root ? "get_child_comment" : sort === "hot" ? "get_rec_comment" : "get_comment", aapiver: 1,
+      prod: "kwplayer_ar_10.5.2.0", digest: 15, sid: musicItem.id, start: pageSize * (page - 1), msgflag: 1, count: pageSize, newver: 3, uid: 0,
+      ...(root ? { pcid: root } : {}),
+    }, headers: { "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9;)" } });
+    if (String(res.data?.code) !== "200") throw new Error("Provider comments request failed");
+    // The current child endpoint returns ordinary comments; older services expose child_comments directly.
+    const rows = root ? res.data.comments || res.data.child_comments : sort === "hot" ? res.data.hot_comments : res.data.comments;
+    if (!Array.isArray(rows)) throw new Error("Provider returned malformed comments");
+    function format(item, main = false) {
+      const result = { id: String(item.id), nickName: item.u_name || "", avatar: item.u_pic, comment: item.msg || "", like: item.like_num,
+        createAt: Number(item.time) > 0 ? Number(item.time) * 1000 : null, replies: (item.child_comments || []).map(value => format(value)) };
+      const quote = item.parent_comment || item.reply;
+      if (quote) { result.quote = format(quote); delete result.quote.replies; }
+      return main ? commentMeta(result, musicItem, item.child_comment_count == null ? item.child_comments_count : item.child_comment_count) : result;
     }
+    const total = commentCount(root ? res.data.comments_counts == null ? res.data.child_comment_count == null ? res.data.child_comments_count : res.data.child_comment_count : res.data.comments_counts : sort === "hot" ? res.data.hot_comments_counts : res.data.comments_counts);
+    return finish({ data: rows.map(item => format(item, !root)), total,
+      isEnd: rows.length < pageSize || (total != null && page * pageSize >= total) });
+
   }
 
   function getMusicDetailPageUrl(musicItem) {
@@ -2502,8 +2531,8 @@ const handlers = {
   lyrics: { get: async ({ entity }, sdk) => operations(sdk).lyric(entity) },
   comments: {
     list: async (request, sdk) =>
-      pageResult(
-        await operations(sdk).comments(request.entity, pageNumber(request.cursor)),
+      commentPageResult(
+        await operations(sdk).comments(request.entity, pageNumber(request.cursor), request),
         request,
       ),
   },
@@ -2552,7 +2581,9 @@ function bindPageHandlers() {
           request.tag && typeof request.tag === "object" && request.tag.id != null
             ? { id: request.tag.id, digest: request.tag.digest }
             : request.tag,
-        sort: request.sort,
+        sort: capability === "comments.list" ? commentSort(request.sort) : request.sort,
+        commentLimit: capability === "comments.list" ? pageLimit(request) : undefined,
+        replyContext: capability === "comments.list" ? request.replyContext : undefined,
         context: request.context,
         revision: request.revision,
         sourceRevision: request.sourceRevision,

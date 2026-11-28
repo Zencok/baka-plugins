@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "mg.v1",
   id: "cc.baka.mg",
   name: "咪咕音乐",
-  version: "1.0.4",
+  version: "1.0.5",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-cache",
@@ -155,6 +155,61 @@ function dailyResult(result, request) {
       ? result.state
       : "blocked",
   };
+}
+
+
+function commentSort(value) {
+  if (value == null || value === "hot") return "hot";
+  if (value === "latest" || value === "new" || value === "newest") return "latest";
+  throw new Error("Invalid comment sort; expected hot or latest");
+}
+function commentCount(value) {
+  if ((typeof value !== "number" && typeof value !== "string") || !/^(0|[1-9]\d*)$/.test(String(value))) return undefined;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+function commentText(value) {
+  // Keep URL and filesystem tokens intact before decoding provider line breaks.
+  return String(value == null ? "" : value).split(/((?:https?:\/\/|www\.)[^\s<>]+|[A-Za-z]:[\\/][^\s<>]+|(?:^|[\s(\[])\/[A-Za-z0-9_.~-][^\s<>]*)/gi)
+    .map((part, index) => index % 2 ? part : part.replace(/\\r\\n|\\n|\\r|\/r\/n|\/n|\r\n?|<br\s*\/?>|&#(?:10|13|x0?a|x0?d);/gi, "\n")).join("");
+}
+function normalizeComment(item) {
+  const result = { ...item, comment: commentText(item.comment) };
+  if (typeof result.avatar === "string" && result.avatar.startsWith("//")) result.avatar = "https:" + result.avatar;
+  if (Array.isArray(item.replies)) result.replies = item.replies.map(normalizeComment);
+  if (item.quote && typeof item.quote === "object") result.quote = normalizeComment(item.quote);
+  return result;
+}
+function commentReplyContext(entity, rootId) {
+  return { v: 1, provider: "cc.baka.mg", entityId: entity.id, rootId: String(rootId) };
+}
+function commentRoot(entity, context) {
+  if (context == null) return null;
+  if (typeof context !== "object" || Array.isArray(context) || context.v !== 1 ||
+      context.provider !== "cc.baka.mg" || context.entityId !== entity.id ||
+      typeof context.rootId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(context.rootId) ||
+      Object.keys(context).some(key => !["v", "provider", "entityId", "rootId"].includes(key))) {
+    throw new Error("Comment reply context does not match this provider or entity scope");
+  }
+  return context.rootId;
+}
+function commentMeta(item, entity, total) {
+  const count = commentCount(total);
+  if (count != null) item.replyCount = count;
+  if (item.id != null && (count == null || count > 0)) item.replyContext = commentReplyContext(entity, item.id);
+  return item;
+}
+function commentPageResult(result, request) {
+  const state = pageState(request.cursor);
+  const items = result.data;
+  if (!Array.isArray(items) || items.length > 20 || (!items.length && result.isEnd === false) ||
+      (state.offset > 0 && state.offset >= items.length)) throw new Error("Provider comment pagination did not advance");
+  const end = Math.min(items.length, state.offset + pageLimit(request));
+  let nextCursor = null;
+  if (end < items.length) nextCursor = "v2:" + encodeURIComponent(JSON.stringify({ ...state, offset: end }));
+  else if (result.isEnd === false) nextCursor = "v2:" + encodeURIComponent(JSON.stringify({ ...result.nextState, upstreamPage: state.upstreamPage + 1, offset: 0 }));
+  return { items: items.slice(state.offset, end).map(normalizeComment), nextCursor,
+    ...(Number.isSafeInteger(result.total) && result.total >= 0 ? { total: result.total } : {}) };
 }
 
 const operationCache = new WeakMap();
@@ -3028,109 +3083,48 @@ function createOperations(sdk) {
   }
 
   async function getMusicComments(musicItem, request = {}) {
-    try {
-      const state = pageState(request.cursor);
-      if (
-        request.cursor != null &&
-        (state.upstreamPage < 2 || state.offset < 1 || !/^[1-9]\d*$/.test(state.commentId || ""))
-      ) {
-        throw new Error("Invalid provider comment cursor");
-      }
-      const copyrightId = String(musicItem.copyrightId || "");
-      let resourceId = String(
-        musicItem.songId || (String(musicItem.id || "") !== copyrightId ? musicItem.id || "" : ""),
-      );
-      // The current comment API expects songId, not copyrightId. Older saved
-      // records can contain only the primary copyright identity.
-      if (!resourceId && copyrightId) {
-        const info = await httpGet(
-          "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do",
-          {
-            params: { resourceType: 2, copyrightId },
-            headers: { Referer: "https://m.music.migu.cn/" },
-            timeout: 10000,
-          },
-        );
-        if (info.data?.code !== "000000") throw new Error("Provider comment song lookup failed");
-        resourceId = String(info.data.resource?.[0]?.songId || "");
-      }
-      if (!/^[1-9]\d*$/.test(resourceId)) throw new Error("Provider comment song identity is unavailable");
-
-      const pageSize = Math.min(20, pageLimit(request));
-      const res = await httpGet("https://u.musicapp.migu.cn/MIGUM3.0/user/comment/stack/v1.0", {
-        params: {
-          resourceId,
-          resourceType: 2,
-          pageSize,
-          hotCommentStart: 0,
-          platformType: 1,
-          commentId: state.commentId || "0",
-          queryType: 1,
-        },
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4195.1 Safari/537.36",
-          Referer: "https://m.music.migu.cn/",
-        },
-        timeout: 10000,
-      });
-      const data = res.data?.data;
-      const rawTotal = data?.commentNums;
-      if (typeof rawTotal !== "string" && typeof rawTotal !== "number") {
-        throw new Error("Provider comments request failed");
-      }
-      const total = Number(rawTotal);
-      if (
-        res.data?.code !== "000000" ||
-        !Array.isArray(data?.comments) ||
-        data.comments.length > pageSize ||
-        !/^(0|[1-9]\d*)$/.test(String(rawTotal)) ||
-        !Number.isSafeInteger(total) || total < 0
-      ) {
-        throw new Error("Provider comments request failed");
-      }
-      function formatComment(item, reply = false) {
-        const id = String((reply ? item?.replyId : item?.commentId) || "");
-        if (!/^[1-9]\d*$/.test(id)) throw new Error("Provider returned an invalid comment identity");
-        const user = item.user || {};
-        const avatar = user.middleIcon || user.smallIcon || user.bigIcon;
-        const time = String((reply ? item.replyTime : item.commentTime) || "");
-        const timestamp = Date.parse(time.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(:\d{2})?$/, "$1T$2$3+08:00"));
-        const like = Number(item.opNumItem?.thumbNum || 0);
-        const result = {
-          id,
-          nickName: user.nickName || "",
-          avatar: avatar?.startsWith("//") ? "https:" + avatar : avatar,
-          comment: (reply ? item.replyInfo : item.commentInfo) || "",
-          like: Number.isFinite(like) ? like : 0,
-          createAt: Number.isFinite(timestamp) ? timestamp : null,
-        };
-        if (!reply) result.replies = (item.replyComments || []).map((item) => formatComment(item, true));
-        return result;
-      }
-      // queryType=1 supplies newest comments plus a separate hot preview.
-      // Only the newest stream follows commentId, so do not repeat hot previews.
-      const items = data.comments.map((item) => formatComment(item));
-      const ids = items.map((item) => item.id);
-      if (
-        (!items.length && state.offset < total) ||
-        new Set(ids).size !== ids.length || ids.includes(state.commentId)
-      ) {
-        throw new Error("Provider comment pagination did not advance");
-      }
-      const offset = state.offset + items.length;
-      const isEnd = items.length < pageSize || offset >= total;
-      return {
-        items,
-        total,
-        nextCursor: isEnd ? null : "v2:" + encodeURIComponent(JSON.stringify({
-          upstreamPage: state.upstreamPage + 1, offset, commentId: ids[ids.length - 1],
-        })),
-      };
-    } catch (error) {
-      sdk.log.error("[咪咕] 获取评论失败:", error);
-      throw error;
+    if (typeof request === "string") request = { sort: request };
+    const sort = commentSort(request.sort);
+    const root = commentRoot(musicItem, request.replyContext);
+    const state = pageState(request.cursor);
+    const pageSize = Math.min(20, pageLimit(request));
+    if (!root && sort === "latest" && request.cursor != null && !/^[1-9]\d*$/.test(state.commentId || "")) throw new Error("Invalid provider comment cursor");
+    const copyrightId = String(musicItem.copyrightId || "");
+    let resourceId = String(musicItem.songId || (String(musicItem.id || "") !== copyrightId ? musicItem.id || "" : ""));
+    if (!resourceId && copyrightId) {
+      const info = await httpGet("https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do", { params: { resourceType: 2, copyrightId }, headers: { Referer: "https://m.music.migu.cn/" }, timeout: 10000 });
+      if (info.data?.code !== "000000") throw new Error("Provider comment song lookup failed");
+      resourceId = String(info.data.resource?.[0]?.songId || "");
     }
+    if (!/^[1-9]\d*$/.test(resourceId)) throw new Error("Provider comment song identity is unavailable");
+    const res = await httpGet("https://u.musicapp.migu.cn/MIGUM3.0/user/comment/stack/" + (root ? encodeURIComponent(root) + "/" : "") + "v1.0", {
+      params: { resourceId, resourceType: 2, pageSize, hotCommentStart: state.offset, platformType: 1,
+        commentId: !root && sort === "latest" ? state.commentId || "0" : "0", queryType: root || sort === "hot" ? 2 : 1,
+        ...(root ? { start: state.offset } : {}), },
+      headers: { "User-Agent": "Mozilla/5.0", Referer: "https://m.music.migu.cn/" }, timeout: 10000,
+    });
+    const data = res.data?.data;
+    const rows = root ? data?.mainCommentItem?.replyComments : sort === "hot" ? data?.hotComments : data?.comments;
+    const total = commentCount(root ? data?.replyTotalCount : sort === "hot" ? data?.cfgHotCount : data?.commentNums);
+    if (res.data?.code !== "000000" || !Array.isArray(rows) || rows.length > pageSize || total == null) throw new Error("Provider comments request failed");
+    function format(item, reply = false) {
+      const id = String((reply ? item.replyId : item.commentId) || "");
+      if (!/^[1-9]\d*$/.test(id)) throw new Error("Provider returned an invalid comment identity");
+      const time = String((reply ? item.replyTime : item.commentTime) || "");
+      const timestamp = Date.parse(time.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(:\d{2})?$/, "$1T$2$3+08:00"));
+      const result = { id, nickName: item.user?.nickName || "", avatar: item.user?.middleIcon || item.user?.bigIcon || item.user?.smallIcon,
+        comment: (reply ? item.replyInfo : item.commentInfo) || "", like: Number(item.opNumItem?.thumbNum) || 0,
+        createAt: Number.isFinite(timestamp) ? timestamp : null };
+      if (!reply) { result.replies = (item.replyComments || []).map(value => format(value, true)); commentMeta(result, musicItem, item.replyTotalCount); }
+      return result;
+    }
+    const items = rows.map(item => normalizeComment(format(item, Boolean(root))));
+    const ids = items.map(item => item.id);
+    if ((!items.length && state.offset < total) || new Set(ids).size !== ids.length || ids.includes(state.commentId)) throw new Error("Provider comment pagination did not advance");
+    const offset = state.offset + items.length;
+    const isEnd = items.length < pageSize || offset >= total;
+    const nextState = { upstreamPage: state.upstreamPage + 1, offset, commentId: ids[ids.length - 1] };
+    return { items, total, nextCursor: isEnd ? null : "v2:" + encodeURIComponent(JSON.stringify(nextState)) };
   }
 
   function getMusicDetailPageUrl(musicItem) {
@@ -3479,7 +3473,9 @@ function bindPageHandlers() {
           request.tag && typeof request.tag === "object" && request.tag.id != null
             ? { id: request.tag.id, digest: request.tag.digest }
             : request.tag,
-        sort: request.sort,
+        sort: capability === "comments.list" ? commentSort(request.sort) : request.sort,
+        commentLimit: capability === "comments.list" ? pageLimit(request) : undefined,
+        replyContext: capability === "comments.list" ? request.replyContext : undefined,
         context: request.context,
         revision: request.revision,
         sourceRevision: request.sourceRevision,

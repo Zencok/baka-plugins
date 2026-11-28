@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "wy.v1",
   id: "cc.baka.wy",
   name: "网易云音乐",
-  version: "1.0.3",
+  version: "1.0.4",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-store",
@@ -163,6 +163,61 @@ function dailyResult(result, request) {
       ? result.state
       : "blocked",
   };
+}
+
+
+function commentSort(value) {
+  if (value == null || value === "hot") return "hot";
+  if (value === "latest" || value === "new" || value === "newest") return "latest";
+  throw new Error("Invalid comment sort; expected hot or latest");
+}
+function commentCount(value) {
+  if ((typeof value !== "number" && typeof value !== "string") || !/^(0|[1-9]\d*)$/.test(String(value))) return undefined;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+function commentText(value) {
+  // Keep URL and filesystem tokens intact before decoding provider line breaks.
+  return String(value == null ? "" : value).split(/((?:https?:\/\/|www\.)[^\s<>]+|[A-Za-z]:[\\/][^\s<>]+|(?:^|[\s(\[])\/[A-Za-z0-9_.~-][^\s<>]*)/gi)
+    .map((part, index) => index % 2 ? part : part.replace(/\\r\\n|\\n|\\r|\/r\/n|\/n|\r\n?|<br\s*\/?>|&#(?:10|13|x0?a|x0?d);/gi, "\n")).join("");
+}
+function normalizeComment(item) {
+  const result = { ...item, comment: commentText(item.comment) };
+  if (typeof result.avatar === "string" && result.avatar.startsWith("//")) result.avatar = "https:" + result.avatar;
+  if (Array.isArray(item.replies)) result.replies = item.replies.map(normalizeComment);
+  if (item.quote && typeof item.quote === "object") result.quote = normalizeComment(item.quote);
+  return result;
+}
+function commentReplyContext(entity, rootId) {
+  return { v: 1, provider: "cc.baka.wy", entityId: entity.id, rootId: String(rootId) };
+}
+function commentRoot(entity, context) {
+  if (context == null) return null;
+  if (typeof context !== "object" || Array.isArray(context) || context.v !== 1 ||
+      context.provider !== "cc.baka.wy" || context.entityId !== entity.id ||
+      typeof context.rootId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(context.rootId) ||
+      Object.keys(context).some(key => !["v", "provider", "entityId", "rootId"].includes(key))) {
+    throw new Error("Comment reply context does not match this provider or entity scope");
+  }
+  return context.rootId;
+}
+function commentMeta(item, entity, total) {
+  const count = commentCount(total);
+  if (count != null) item.replyCount = count;
+  if (item.id != null && (count == null || count > 0)) item.replyContext = commentReplyContext(entity, item.id);
+  return item;
+}
+function commentPageResult(result, request) {
+  const state = pageState(request.cursor);
+  const items = result.data;
+  if (!Array.isArray(items) || items.length > 20 || (!items.length && result.isEnd === false) ||
+      (state.offset > 0 && state.offset >= items.length)) throw new Error("Provider comment pagination did not advance");
+  const end = Math.min(items.length, state.offset + pageLimit(request));
+  let nextCursor = null;
+  if (end < items.length) nextCursor = "v2:" + encodeURIComponent(JSON.stringify({ ...state, offset: end }));
+  else if (result.isEnd === false) nextCursor = "v2:" + encodeURIComponent(JSON.stringify({ ...result.nextState, upstreamPage: state.upstreamPage + 1, offset: 0 }));
+  return { items: items.slice(state.offset, end).map(normalizeComment), nextCursor,
+    ...(Number.isSafeInteger(result.total) && result.total >= 0 ? { total: result.total } : {}) };
 }
 
 const operationCache = new WeakMap();
@@ -1746,68 +1801,40 @@ function createOperations(sdk) {
   }
   // YRC 逐字歌词转 QRC 格式
 
-  async function getMusicComments(musicItem, page = 1) {
+  async function getMusicComments(musicItem, page = 1, request = {}) {
+    if (typeof request === "string") request = { sort: request };
+    const sort = commentSort(request.sort);
+    const root = commentRoot(musicItem, request.replyContext);
     const pageSize = 20;
+    const state = pageState(request.cursor);
+    const finish = result => result;
+
     const id = "R_SO_4_" + musicItem.id;
-
-    try {
-      const pae = getParamsAndEnc(
-        JSON.stringify({
-          rid: id,
-          limit: pageSize,
-          offset: (page - 1) * pageSize,
-          csrf_token: "",
-        }),
-      );
-
-      const res = await httpPost(
-        `https://music.163.com/weapi/v1/resource/hotcomments/${id}`,
-        formEncode(pae),
-        {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36",
-            accept: "*/*",
-            origin: "https://music.163.com",
-            referer: "http://music.163.com/",
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-        },
-      );
-
-      if (res.status !== 200 || res.data?.code !== 200) {
-        throw new Error("Provider comments request failed");
-      }
-
-      const hotComments = (res.data.hotComments || []).map((item) => ({
-        id: item.commentId?.toString(),
-        nickName: item.user?.nickname || "",
-        avatar: item.user?.avatarUrl,
-        comment: item.content || "",
-        like: item.likedCount,
-        createAt: item.time,
-        location: item.ipLocation?.location,
-        replies: (item.beReplied || []).map((reply) => ({
-          id: reply.beRepliedCommentId?.toString(),
-          nickName: reply.user?.nickname || "",
-          avatar: reply.user?.avatarUrl,
-          comment: reply.content || "",
-          like: null,
-          createAt: null,
-          location: reply.ipLocation?.location,
-        })),
-      }));
-
-      const hasMore = res.data.hasMore || false;
-
-      return {
-        isEnd: !hasMore,
-        data: hotComments,
-      };
-    } catch (error) {
-      sdk.log.error("[网易云] 获取热评失败:", error);
-      throw error;
+    const payload = root ? { parentCommentId: root, threadId: id, time: state.commentTime == null ? -1 : state.commentTime, limit: pageSize }
+      : { rid: id, limit: pageSize, offset: (page - 1) * pageSize, beforeTime: 0, csrf_token: "" };
+    if (root && page > 1 && state.commentTime == null) throw new Error("Comment reply cursor is unavailable");
+    const params = getParamsAndEnc(JSON.stringify(payload));
+    const res = await httpPost(root ? "https://music.163.com/weapi/resource/comment/floor/get" :
+      "https://music.163.com/weapi/v1/resource/" + (sort === "hot" ? "hotcomments/" : "comments/") + id,
+      formEncode(params), { headers: { "User-Agent": "Mozilla/5.0", origin: "https://music.163.com", referer: "https://music.163.com/", "Content-Type": "application/x-www-form-urlencoded" } });
+    if (res.data?.code !== 200) throw new Error("Provider comments request failed");
+    const data = root ? res.data.data : res.data;
+    const rows = root ? data?.comments : sort === "hot" ? data?.hotComments : data?.comments;
+    if (!Array.isArray(rows)) throw new Error("Provider returned malformed comments");
+    function format(item, main = false) {
+      const result = { id: String(item.commentId), nickName: item.user?.nickname || "", avatar: item.user?.avatarUrl,
+        comment: item.content || "", like: item.likedCount, createAt: item.time, location: item.ipLocation?.location, replies: [] };
+      const quote = item.beReplied?.[0];
+      if (quote) result.quote = { id: String(quote.beRepliedCommentId), nickName: quote.user?.nickname || "", avatar: quote.user?.avatarUrl, comment: quote.content || "", location: quote.ipLocation?.location };
+      return main ? commentMeta(result, musicItem, item.showFloorComment?.replyCount) : result;
     }
+    const hasMore = root ? data.hasMore : sort === "hot" ? data.hasMore : data.more;
+    const total = commentCount(root ? data.totalCount : data.total);
+    const nextTime = data.time == null ? rows[rows.length - 1]?.time : data.time;
+    if (root && hasMore && (commentCount(nextTime) == null || String(nextTime) === String(state.commentTime))) throw new Error("Comment reply cursor did not advance");
+    return finish({ data: rows.map(item => format(item, !root)), isEnd: typeof hasMore === "boolean" ? !hasMore : rows.length < pageSize,
+      total, nextState: root ? { commentTime: nextTime } : {} });
+
   }
 
   function getMusicDetailPageUrl(musicItem) {
@@ -2184,8 +2211,8 @@ const handlers = {
   lyrics: { get: async ({ entity }, sdk) => operations(sdk).lyric(entity) },
   comments: {
     list: async (request, sdk) =>
-      pageResult(
-        await operations(sdk).comments(request.entity, pageNumber(request.cursor)),
+      commentPageResult(
+        await operations(sdk).comments(request.entity, pageNumber(request.cursor), request),
         request,
       ),
   },
@@ -2234,7 +2261,9 @@ function bindPageHandlers() {
           request.tag && typeof request.tag === "object" && request.tag.id != null
             ? { id: request.tag.id, digest: request.tag.digest }
             : request.tag,
-        sort: request.sort,
+        sort: capability === "comments.list" ? commentSort(request.sort) : request.sort,
+        commentLimit: capability === "comments.list" ? pageLimit(request) : undefined,
+        replyContext: capability === "comments.list" ? request.replyContext : undefined,
         context: request.context,
         revision: request.revision,
         sourceRevision: request.sourceRevision,

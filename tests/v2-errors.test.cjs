@@ -114,8 +114,8 @@ function commentsBody(id) {
     wy: { code: 200, hotComments: [], hasMore: false },
     qq: { code: 0, req: { code: 0, data: { CommentList: { Comments: [] } } } },
     kg: { list: [] },
-    kw: { code: "200", comments: [], comments_counts: 0 },
-    mg: { code: "000000", data: { comments: [], commentNums: "0" } },
+    kw: { code: "200", comments: [], comments_counts: 0, hot_comments: [], hot_comments_counts: 0 },
+    mg: { code: "000000", data: { comments: [], commentNums: "0", hotComments: [], cfgHotCount: "0" } },
     bilibili: { code: 0, data: { replies: [], cursor: { is_end: true } } },
   }[id];
 }
@@ -152,7 +152,7 @@ for (const id of ["wy", "qq", "kg", "kw", "mg", "bilibili"]) {
     assert.deepEqual(plain(await invoke(load(id), id, commentSdk(id))), {
       items: [],
       nextCursor: null,
-      ...(id === "mg" ? { total: 0 } : {}),
+      ...(["kw", "mg"].includes(id) ? { total: 0 } : {}),
     });
   });
 }

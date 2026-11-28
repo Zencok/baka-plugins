@@ -51,10 +51,11 @@ test('MG comments use native song IDs, current response fields, replies, and com
     return calls.length === 1 ? body([firstComment, comment('20')], 3) : body([comment('10')], 3);
   });
   const plugin = load();
-  const request = { entity: { id: '1125329711', copyrightId: '60054704101' }, limit: 2 };
+  const request = { sort: 'latest', entity: { id: '1125329711', copyrightId: '60054704101' }, limit: 2 };
   const first = await plugin.handlers.comments.list(request, sdk);
   assert.equal(first.total, 3);
   assert.deepEqual(plain(first.items[0]), {
+    replyContext: { v: 1, provider: 'cc.baka.mg', entityId: '1125329711', rootId: '30' },
     id: '30', nickName: 'Listener', avatar: 'https://fixture/avatar.jpg', comment: 'Comment 30',
     like: 7, createAt: Date.parse('2026-11-24T22:10:00+08:00'),
     replies: [{ id: '31', nickName: 'Reply listener', avatar: 'https://fixture/reply.jpg',
@@ -70,7 +71,7 @@ test('MG comments use native song IDs, current response fields, replies, and com
 
 test('MG resolves copyright-only tracks to native song identity and rejects failed resolution', async () => {
   const plugin = load();
-  const request = { entity: { id: '60054701923', copyrightId: '60054701923' }, limit: 20 };
+  const request = { sort: 'latest', entity: { id: '60054701923', copyrightId: '60054701923' }, limit: 20 };
   const calls = [];
   const sdk = sdkFor(request => {
     const url = new URL(request.url);
@@ -91,7 +92,7 @@ test('MG resolves copyright-only tracks to native song identity and rejects fail
 });
 
 test('MG malformed/service/HTML responses cannot become confirmed empty comment pages', async () => {
-  const request = { entity: { id: '1125329711' } };
+  const request = { sort: 'latest', entity: { id: '1125329711' } };
   const plugin = load();
   for (const failure of [
     '<html>new site</html>', { code: 'FAILED' }, { code: '000000', data: {} },
@@ -108,14 +109,14 @@ test('MG malformed/service/HTML responses cannot become confirmed empty comment 
 test('MG rejects a repeated native comment page rather than looping cursors', async () => {
   const plugin = load();
   const sdk = sdkFor(() => body([comment('30'), comment('20')], 4));
-  const request = { entity: { id: '1125329711' }, limit: 2 };
+  const request = { sort: 'latest', entity: { id: '1125329711' }, limit: 2 };
   const first = await plugin.handlers.comments.list(request, sdk);
   await assert.rejects(plugin.handlers.comments.list({ ...request, cursor: first.nextCursor }, sdk), /advance|cursor/);
 });
 
 test('MG rejects nonprimitive comment totals before numeric coercion', async () => {
   const plugin = load();
-  const request = { entity: { id: '1125329711' } };
+  const request = { sort: 'latest', entity: { id: '1125329711' } };
   for (const commentNums of [[0], ['0'], {}, null]) {
     await assert.rejects(plugin.handlers.comments.list(request, sdkFor(() => ({
       code: '000000', data: { comments: [], commentNums },
@@ -152,11 +153,14 @@ test('MG current comment protocol runs through the actual lean QuickJS HTTP SDK'
     const provider = path.join(directory, 'mg.js');
     const requestFile = path.join(directory, 'request.json');
     const resultFile = path.join(directory, 'result.json');
-    fs.writeFileSync(provider, source().replaceAll(stackUrl, `http://127.0.0.1:${server.address().port}/comments`));
+    const stackPrefix = stackUrl.slice(0, -'v1.0'.length);
+    const prepared = source().replaceAll(stackPrefix, `http://127.0.0.1:${server.address().port}/comments/`);
+    assert.equal(prepared.includes(stackPrefix), false, 'native fixture must redirect the real provider endpoint');
+    fs.writeFileSync(provider, prepared);
     let cursor = null;
     const ids = [];
     do {
-      fs.writeFileSync(requestFile, JSON.stringify({ entity: { id: '1125329711' }, limit: 2, cursor }));
+      fs.writeFileSync(requestFile, JSON.stringify({ sort: 'latest', entity: { id: '1125329711' }, limit: 2, cursor }));
       const result = await run(process.env.BAKA_V2_PROBE, [provider, 'comments.list', requestFile], {
         env: { ...process.env, BAKA_PROVIDER_RESULT_FILE: resultFile },
       });

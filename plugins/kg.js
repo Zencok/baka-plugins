@@ -2345,88 +2345,100 @@ async function getTopListDetail(topListItem, page) {
 }
 
 
-async function getMusicComments(musicItem, page = 1) {
-  const pageSize = 20;
-  const timestamp = Date.now();
-  const hash = musicItem.id || musicItem.hash;
 
-  try {
-    const musicInfo = await getMusicInfoRaw(hash);
-    const res_id = musicInfo?.classification?.[0]?.res_id;
-
-    if (!res_id) {
-      console.log('[酷狗] 无法获取res_id，获取评论失败');
-      return { isEnd: true, data: [] };
-    }
-
-    console.log('[酷狗] 评论请求参数:', { hash, res_id, page });
-
-    const params =
-      `appid=1005&clienttime=${timestamp}&clienttoken=0&clientver=11409&` +
-      `code=fc4be23b4e972707f36b8a828a93ba8a&dfid=0&extdata=${hash}&kugouid=0&` +
-      `mid=16249512204336365674023395779019&mixsongid=${res_id}&p=${page}&pagesize=${pageSize}&` +
-      `uuid=0&ver=10`;
-
-    const signature = signatureParams(params, 'android');
-    const url = `http://m.comment.service.kugou.com/r/v1/rank/newest?${params}&signature=${signature}`;
-
-    console.log('[酷狗] 评论请求URL:', url);
-    console.log('[酷狗] 签名:', signature);
-
-    const res = await axios_1.default.get(url, {
-      headers: {
-        'accept': 'application/json',
-        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 Edg/107.0.1418.24',
-      },
-      timeout: 15000,
-    });
-
-    console.log('[酷狗] 评论响应状态:', res.status);
-    console.log('[酷狗] 评论响应数据:', res.data);
-
-    if (res.status !== 200 || !res.data || !res.data.list) {
-      console.error('[酷狗] 评论API返回异常:', res.data);
-      return { isEnd: true, data: [] };
-    }
-
-    const comments = (res.data.list || []).map((item) => {
-      let timestamp = null;
-      if (item.addtime) {
-        try {
-          timestamp = new Date(item.addtime).getTime();
-        } catch (e) {
-          timestamp = null;
-        }
-      }
-
-      return {
-        id: item.id?.toString(),
-        nickName: item.user_name || '',
-        avatar: item.user_pic,
-        comment: item.content || '',
-        like: item.like?.likenum || 0,
-        createAt: timestamp,
-        location: item.location,
-        replies: [],
-      };
-    });
-
-    const isEnd = !res.data.list || res.data.list.length < pageSize;
-
-    console.log('[酷狗] 解析评论数量:', comments.length);
-
-    return {
-      isEnd: isEnd,
-      data: comments,
-    };
-  } catch (error) {
-    console.error('[酷狗] 获取评论失败:', error.message || error);
-    if (error.response) {
-      console.error('[酷狗] 响应状态:', error.response.status);
-      console.error('[酷狗] 响应数据:', error.response.data);
-    }
-    return { isEnd: true, data: [] };
+function commentSort(value) {
+  if (value == null || value === "hot") return "hot";
+  if (value === "latest" || value === "new" || value === "newest") return "latest";
+  throw new Error("Invalid comment sort; expected hot or latest");
+}
+function commentCount(value) {
+  if ((typeof value !== "number" && typeof value !== "string") || !/^(0|[1-9]\d*)$/.test(String(value))) return undefined;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+function commentText(value) {
+  // Keep URL and filesystem tokens intact before decoding provider line breaks.
+  return String(value == null ? "" : value).split(/((?:https?:\/\/|www\.)[^\s<>]+|[A-Za-z]:[\\/][^\s<>]+|(?:^|[\s(\[])\/[A-Za-z0-9_.~-][^\s<>]*)/gi)
+    .map((part, index) => index % 2 ? part : part.replace(/\\r\\n|\\n|\\r|\/r\/n|\/n|\r\n?|<br\s*\/?>|&#(?:10|13|x0?a|x0?d);/gi, "\n")).join("");
+}
+function normalizeComment(item) {
+  const result = { ...item, comment: commentText(item.comment) };
+  if (typeof result.avatar === "string" && result.avatar.startsWith("//")) result.avatar = "https:" + result.avatar;
+  if (Array.isArray(item.replies)) result.replies = item.replies.map(normalizeComment);
+  if (item.quote && typeof item.quote === "object") result.quote = normalizeComment(item.quote);
+  return result;
+}
+function commentReplyContext(entity, rootId, childrenId, mixsongId) {
+  return { v: 1, provider: "cc.baka.kg", entityId: entity.id, rootId: String(rootId), childrenId, mixsongId };
+}
+function commentRoot(entity, context) {
+  if (context == null) return null;
+  if (typeof context !== "object" || Array.isArray(context) || context.v !== 1 ||
+      context.provider !== "cc.baka.kg" || context.entityId !== entity.id ||
+      typeof context.rootId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(context.rootId) ||
+      typeof context.childrenId !== "string" || !/^[1-9]\d{0,19}$/.test(context.childrenId) ||
+      typeof context.mixsongId !== "string" || !/^[1-9]\d{0,19}$/.test(context.mixsongId) ||
+      Object.keys(context).some(key => !["v", "provider", "entityId", "rootId", "childrenId", "mixsongId"].includes(key))) {
+    throw new Error("Comment reply context does not match this provider or entity scope");
   }
+  return context.rootId;
+}
+function commentMeta(item, entity, total, childrenId, mixsongId) {
+  const count = commentCount(total);
+  if (count != null) item.replyCount = count;
+  if (item.id != null && (count == null || count > 0)) item.replyContext = commentReplyContext(entity, item.id, childrenId, mixsongId);
+  return item;
+}
+// V1 uses numbered calls; retain only bounded native continuation state, never comment bodies.
+const commentLegacyStates = new Map();
+function legacyCommentState(entity, page, sort, root) {
+  const key = JSON.stringify([entity.id, sort, root]);
+  if (page === 1) {
+    if (commentLegacyStates.size >= 100) commentLegacyStates.delete(commentLegacyStates.keys().next().value);
+    commentLegacyStates.set(key, new Map());
+  }
+  const states = commentLegacyStates.get(key);
+  return { state: states?.get(page) || {}, finish(result) {
+    if (states && !result.isEnd && result.nextState) states.set(page + 1, result.nextState);
+    return { isEnd: result.isEnd, data: result.data.map(normalizeComment),
+      ...(Number.isSafeInteger(result.total) && result.total >= 0 ? { total: result.total } : {}) };
+  } };
+}
+
+async function getMusicComments(musicItem, page = 1, request = {}) {
+  if (typeof request === "string") request = { sort: request };
+  const sort = commentSort(request.sort);
+  const root = commentRoot(musicItem, request.replyContext);
+  const pageSize = 20;
+  const { state, finish } = legacyCommentState(musicItem, page, sort, root);
+
+  const hash = musicItem.hash || musicItem.id;
+  const musicInfo = root ? null : await getMusicInfoRaw(hash, { strict: true });
+  const resId = root ? request.replyContext.mixsongId : musicInfo?.classification?.[0]?.res_id;
+  if (!resId) throw new Error("Provider comment song identity is unavailable");
+  let url;
+  if (root) {
+    url = "https://gateway.kugou.com/index.php?r=commentsv2/getReplyWithLike&code=fc4be23b4e972707f36b8a828a93ba8a&ver=1.01&clientver=8373&appid=1001&kugouid=0&need_show_image=1&childrenid=" + encodeURIComponent(request.replyContext.childrenId) + "&mixsongid=" + encodeURIComponent(resId) + "&tid=" + encodeURIComponent(root) + "&p=" + page + "&pagesize=" + pageSize;
+  } else {
+    const params = "appid=1005&clienttime=" + Date.now() + "&clienttoken=0&clientver=11409&code=fc4be23b4e972707f36b8a828a93ba8a&dfid=0&extdata=" + encodeURIComponent(hash) + "&kugouid=0&mid=16249512204336365674023395779019&mixsongid=" + encodeURIComponent(resId) + "&p=" + page + "&pagesize=" + pageSize + "&uuid=0&ver=10";
+    url = "https://gateway.kugou.com/mcomment/r/v1/rank/" + (sort === "hot" ? "topliked" : "newest") + "?" + params + "&signature=" + signatureParams(params, "android");
+  }
+  const res = await axios_1.default.get(url, { headers: { "User-Agent": root ? "Android712-AndroidPhone-8983-18-0-COMMENT-wifi" : "Mozilla/5.0", "x-router": "m.comment.service.kugou.com" }, timeout: 15000 });
+  if ((res.data?.err_code != null && res.data.err_code !== 0) || !Array.isArray(res.data?.list)) throw new Error("Provider comments request failed");
+  const childrenId = root ? request.replyContext.childrenId : String(res.data.childrenid || "");
+  if (!root && res.data.list.length && !/^[1-9]\d{0,19}$/.test(childrenId)) throw new Error("Provider comment thread identity is unavailable");
+  function format(item, main = false) {
+    const time = item.addtime ? Date.parse(String(item.addtime).replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/, "$1T$2+08:00")) : NaN;
+    const result = { id: String(item.id), nickName: item.user_name || "", avatar: item.user_pic, comment: item.content || "",
+      like: item.like?.likenum || 0, createAt: Number.isFinite(time) ? time : null, location: item.location,
+      replies: (item.replys || []).map(value => format(value)) };
+    if (item.pcontent) result.quote = { nickName: item.puser || "", avatar: item.puser_pic, comment: item.pcontent };
+    return main ? commentMeta(result, musicItem, item.reply_num, childrenId, String(resId)) : result;
+  }
+  const total = commentCount(root ? res.data.comments_num : res.data.count);
+  return finish({ data: res.data.list.map(item => format(item, !root)), total,
+    isEnd: res.data.list.length < pageSize || (total != null && page * pageSize >= total) });
+
 }
 
 function getMusicDetailPageUrl(musicItem) {
@@ -2464,7 +2476,7 @@ module.exports = {
   userVariables: [{key:"kg_user_id",name:"用户 ID",hint:"在 LyraMesh /connect 选择酷狗登录并复制连接码，用于个人每日推荐。"}],
   getHotSearch,
   platform: "酷狗音乐",
-  version: "1.3.7",
+  version: "1.3.8",
   author: "BakaMusic",
   appVersion: ">0.1.0-alpha.0",
   srcUrl: UPDATE_URL,

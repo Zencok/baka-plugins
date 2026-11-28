@@ -55,7 +55,7 @@ test('WY daily configuration, detail and import use personal connection over HTT
   vm.runInContext(source,context);
   vm.runInContext('eapiEncrypt = (path, body) => ({params:JSON.stringify(body)})',context);
   const plugin=module.exports;
-  assert.equal(plugin.version,'1.1.8');
+  assert.equal(plugin.version,'1.1.9');
   assert.equal(plugin.userVariables[0].key,'wy_user_id');
   assert.equal(Array.from(plugin.supportedQualities).join(','),'128k,320k,flac,hires,atmos,master');
   assert.equal((await plugin.getDailyRecommendations()).state,'unconfigured');

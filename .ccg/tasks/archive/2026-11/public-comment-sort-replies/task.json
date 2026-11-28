@@ -1,0 +1,13 @@
+{
+  "id": "public-comment-sort-replies",
+  "title": "Expose real public-provider hot/latest comments with complete reply avatars",
+  "status": "completed",
+  "complexity": "L",
+  "risk": "medium",
+  "domain": "plugins",
+  "currentPhase": "completed",
+  "nextAction": "Archived implementation, local review and test evidence; parent integrates client changes and normal plugin update flow",
+  "createdAt": "2026-11-28T09:47:36.719Z",
+  "branch": "main",
+  "completedAt": "2026-11-28T10:08:56.260Z"
+}

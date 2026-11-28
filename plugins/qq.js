@@ -1288,94 +1288,98 @@ async function getTopListDetail(topListItem) {
   return { ...topListItem, musicList: songList.map(song => formatMusicItem(song)) };
 }
 
-async function getMusicComments(musicItem, page = 1) {
-  const pageSize = 20;
 
-  try {
-    const songId = await getMusicInfoForComment(musicItem);
-
-    if (!songId || typeof songId !== 'number') {
-      return { isEnd: true, data: [] };
-    }
-
-    const res = await axios_1.default.post(
-      'https://u.y.qq.com/cgi-bin/musicu.fcg',
-      {
-        comm: {
-          cv: 4747474,
-          ct: 24,
-          format: 'json',
-          inCharset: 'utf-8',
-          outCharset: 'utf-8',
-          notice: 0,
-          platform: 'yqq.json',
-          needNewCode: 1,
-          uin: 0
-        },
-        req: {
-          module: 'music.globalComment.CommentRead',
-          method: 'GetHotCommentList',
-          param: {
-            BizType: 1,
-            BizId: String(songId),
-            LastCommentSeqNo: '',
-            PageSize: pageSize,
-            PageNum: page - 1,
-            HotType: 1,
-            WithAirborne: 0,
-            PicEnable: 1
-          }
-        }
-      },
-      {
-        headers: {
-          accept: 'application/json',
-          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
-          referer: 'https://y.qq.com/',
-          origin: 'https://y.qq.com',
-          'content-type': 'application/json; charset=utf-8'
-        }
-      }
-    );
-
-    if (res.data.code !== 0 || !res.data.req || res.data.req.code !== 0) {
-      return { isEnd: true, data: [] };
-    }
-
-    const commentList = res.data.req.data?.CommentList?.Comments || [];
-    const comments = commentList.map((item) => {
-      const comment = {
-        id: item.CmId,
-        nickName: item.Nick || '',
-        avatar: item.Avatar,
-        comment: item.Content || '',
-        like: item.PraiseNum || 0,
-        createAt: item.PubTime ? parseInt(item.PubTime + '000') : null,
-        replies: []
-      };
-
-      if (item.SubComments && Array.isArray(item.SubComments)) {
-        comment.replies = item.SubComments.map((c) => ({
-          id: c.CmId,
-          nickName: c.Nick || '',
-          avatar: c.Avatar || '',
-          comment: c.Content || '',
-          like: c.PraiseNum || 0,
-          createAt: c.PubTime ? parseInt(c.PubTime + '000') : null,
-        }));
-      }
-
-      return comment;
-    });
-
-    return {
-      isEnd: commentList.length < pageSize,
-      data: comments,
-    };
-  } catch (error) {
-    console.error('[QQ音乐] 获取热评论失败:', error);
-    return { isEnd: true, data: [] };
+function commentSort(value) {
+  if (value == null || value === "hot") return "hot";
+  if (value === "latest" || value === "new" || value === "newest") return "latest";
+  throw new Error("Invalid comment sort; expected hot or latest");
+}
+function commentCount(value) {
+  if ((typeof value !== "number" && typeof value !== "string") || !/^(0|[1-9]\d*)$/.test(String(value))) return undefined;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+function commentText(value) {
+  // Keep URL and filesystem tokens intact before decoding provider line breaks.
+  return String(value == null ? "" : value).split(/((?:https?:\/\/|www\.)[^\s<>]+|[A-Za-z]:[\\/][^\s<>]+|(?:^|[\s(\[])\/[A-Za-z0-9_.~-][^\s<>]*)/gi)
+    .map((part, index) => index % 2 ? part : part.replace(/\\r\\n|\\n|\\r|\/r\/n|\/n|\r\n?|<br\s*\/?>|&#(?:10|13|x0?a|x0?d);/gi, "\n")).join("");
+}
+function normalizeComment(item) {
+  const result = { ...item, comment: commentText(item.comment) };
+  if (typeof result.avatar === "string" && result.avatar.startsWith("//")) result.avatar = "https:" + result.avatar;
+  if (Array.isArray(item.replies)) result.replies = item.replies.map(normalizeComment);
+  if (item.quote && typeof item.quote === "object") result.quote = normalizeComment(item.quote);
+  return result;
+}
+function commentReplyContext(entity, rootId) {
+  return { v: 1, provider: "cc.baka.qq", entityId: entity.id, rootId: String(rootId) };
+}
+function commentRoot(entity, context) {
+  if (context == null) return null;
+  if (typeof context !== "object" || Array.isArray(context) || context.v !== 1 ||
+      context.provider !== "cc.baka.qq" || context.entityId !== entity.id ||
+      typeof context.rootId !== "string" || !/^[A-Za-z0-9_!.*-]{1,256}$/.test(context.rootId) ||
+      Object.keys(context).some(key => !["v", "provider", "entityId", "rootId"].includes(key))) {
+    throw new Error("Comment reply context does not match this provider or entity scope");
   }
+  return context.rootId;
+}
+function commentMeta(item, entity, total) {
+  const count = commentCount(total);
+  if (count != null) item.replyCount = count;
+  if (item.id != null && (count == null || count > 0)) item.replyContext = commentReplyContext(entity, item.id);
+  return item;
+}
+// V1 uses numbered calls; retain only bounded native continuation state, never comment bodies.
+const commentLegacyStates = new Map();
+function legacyCommentState(entity, page, sort, root) {
+  const key = JSON.stringify([entity.id, sort, root]);
+  if (page === 1) {
+    if (commentLegacyStates.size >= 100) commentLegacyStates.delete(commentLegacyStates.keys().next().value);
+    commentLegacyStates.set(key, new Map());
+  }
+  const states = commentLegacyStates.get(key);
+  return { state: states?.get(page) || {}, finish(result) {
+    if (states && !result.isEnd && result.nextState) states.set(page + 1, result.nextState);
+    return { isEnd: result.isEnd, data: result.data.map(normalizeComment),
+      ...(Number.isSafeInteger(result.total) && result.total >= 0 ? { total: result.total } : {}) };
+  } };
+}
+
+async function getMusicComments(musicItem, page = 1, request = {}) {
+  if (typeof request === "string") request = { sort: request };
+  const sort = commentSort(request.sort);
+  const root = commentRoot(musicItem, request.replyContext);
+  const pageSize = 20;
+  const { state, finish } = legacyCommentState(musicItem, page, sort, root);
+
+  const songId = await getMusicInfoForComment(musicItem);
+  if (!songId || typeof songId !== "number") throw new Error("Provider comment song identity is unavailable");
+  const param = root ? { RootCmId: root, LastCommentSeqNo: state.commentSeq || "", LastRankScore: state.rankScore || "", RankType: sort === "hot" ? 1 : 0, PageSize: pageSize, PageNum: page - 1, PicEnable: 1 }
+    : { BizType: 1, BizId: String(songId), LastCommentSeqNo: state.commentSeq || "", PageSize: pageSize, PageNum: page - 1, PicEnable: 1,
+      ...(sort === "hot" ? { HotType: 1, WithAirborne: 0 } : { HashTagID: "", SelfSeeEnable: 1, AudioEnable: 1, WithHot: 0 }) };
+  const res = await axios_1.default.post("https://u.y.qq.com/cgi-bin/musicu.fcg", {
+    comm: { cv: 4747474, ct: 24, format: "json", inCharset: "utf-8", outCharset: "utf-8", platform: "yqq.json", needNewCode: 1, uin: 0 },
+    req: { module: "music.globalComment.CommentRead", method: root ? "GetReplyCommentList" : sort === "hot" ? "GetHotCommentList" : "GetNewCommentList", param },
+  }, { headers: { referer: "https://y.qq.com/", origin: "https://y.qq.com", "Content-Type": "application/json; charset=utf-8" } });
+  if (res.data?.code !== 0 || res.data.req?.code !== 0) throw new Error("Provider comments request failed");
+  const data = res.data.req.data?.CommentList;
+  if (!Array.isArray(data?.Comments)) throw new Error("Provider returned malformed comments");
+  function format(item, main = false) {
+    const result = { id: String(item.CmId), nickName: item.Nick || "", avatar: item.Avatar,
+      comment: item.Content || "", like: item.PraiseNum || 0, createAt: Number(item.PubTime) > 0 ? Number(item.PubTime) * 1000 : null,
+      replies: (item.SubComments || []).map(value => format(value)) };
+    if (Array.isArray(item.RepliedComments) && item.RepliedComments.length) result.quote = format(item.RepliedComments[0]);
+    return main ? commentMeta(result, musicItem, item.ReplyCnt ?? item.SubCommentCount) : result;
+  }
+  const total = commentCount(data.Total);
+  const last = data.Comments[data.Comments.length - 1];
+  const isEnd = data.HasMore === false || data.HasMore === 0 ? true : data.HasMore === true || data.HasMore === 1 ? false : data.Comments.length < pageSize || (total != null && page * pageSize >= total);
+  const commentSeq = String(last?.SeqNo ?? "");
+  if (!isEnd && (!commentSeq || commentSeq === String(state.commentSeq || ""))) throw new Error("Provider comment cursor did not advance");
+  return finish({ data: data.Comments.map(item => format(item, !root)), total, isEnd,
+    nextState: { commentSeq, rankScore: String(last?.RankScore ?? "") } });
+
 }
 
 function getMusicDetailPageUrl(musicItem) {
@@ -1451,7 +1455,7 @@ module.exports = {
   getHotSearch,
   platform: "QQ音乐",
   author: "BakaMusic",
-  version: "1.3.2",
+  version: "1.3.3",
   srcUrl: UPDATE_URL,
   cacheControl: "no-cache",
   primaryKey: ["id", "songmid"],

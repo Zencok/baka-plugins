@@ -973,26 +973,92 @@ function formatComment(item = {}) {
   };
 }
 
-async function getMusicComments(musicItem = {}, page = 1) {
-  const aid = musicItem.aid || (typeof musicItem.id === "number" || /^\d+$/.test(String(musicItem.id || "")) ? musicItem.id : "");
-  if (!aid) return { isEnd: true, data: [] };
-  const params = {
-    type: 1, mode: 3, oid: aid, plat: 1, web_location: 1315875,
-    pagination_str: JSON.stringify({ offset: page > 1 ? String((page - 1) * PAGE_SIZE) : "" }),
-  };
-  try {
-    const body = await apiGet("/x/v2/reply/wbi/main", params, { wbi: true, useCookie: true });
-    const replies = body.data?.replies || [];
-    const data = replies.map((reply) => {
-      const comment = formatComment(reply);
-      if (reply.replies?.length) comment.replies = reply.replies.map(formatComment);
-      return comment;
-    });
-    return { isEnd: Boolean(body.data?.cursor?.is_end) || data.length < PAGE_SIZE, data };
-  } catch (error) {
-    console.error(`[bilibili] getMusicComments: ${error.message}`);
-    return { isEnd: true, data: [] };
+
+function commentSort(value) {
+  if (value == null || value === "hot") return "hot";
+  if (value === "latest" || value === "new" || value === "newest") return "latest";
+  throw new Error("Invalid comment sort; expected hot or latest");
+}
+function commentCount(value) {
+  if ((typeof value !== "number" && typeof value !== "string") || !/^(0|[1-9]\d*)$/.test(String(value))) return undefined;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+function commentText(value) {
+  // Keep URL and filesystem tokens intact before decoding provider line breaks.
+  return String(value == null ? "" : value).split(/((?:https?:\/\/|www\.)[^\s<>]+|[A-Za-z]:[\\/][^\s<>]+|(?:^|[\s(\[])\/[A-Za-z0-9_.~-][^\s<>]*)/gi)
+    .map((part, index) => index % 2 ? part : part.replace(/\\r\\n|\\n|\\r|\/r\/n|\/n|\r\n?|<br\s*\/?>|&#(?:10|13|x0?a|x0?d);/gi, "\n")).join("");
+}
+function normalizeComment(item) {
+  const result = { ...item, comment: commentText(item.comment) };
+  if (typeof result.avatar === "string" && result.avatar.startsWith("//")) result.avatar = "https:" + result.avatar;
+  if (Array.isArray(item.replies)) result.replies = item.replies.map(normalizeComment);
+  if (item.quote && typeof item.quote === "object") result.quote = normalizeComment(item.quote);
+  return result;
+}
+function commentReplyContext(entity, rootId) {
+  return { v: 1, provider: "cc.baka.bilibili", entityId: entity.id, rootId: String(rootId) };
+}
+function commentRoot(entity, context) {
+  if (context == null) return null;
+  if (typeof context !== "object" || Array.isArray(context) || context.v !== 1 ||
+      context.provider !== "cc.baka.bilibili" || context.entityId !== entity.id ||
+      typeof context.rootId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(context.rootId) ||
+      Object.keys(context).some(key => !["v", "provider", "entityId", "rootId"].includes(key))) {
+    throw new Error("Comment reply context does not match this provider or entity scope");
   }
+  return context.rootId;
+}
+function commentMeta(item, entity, total) {
+  const count = commentCount(total);
+  if (count != null) item.replyCount = count;
+  if (item.id != null && (count == null || count > 0)) item.replyContext = commentReplyContext(entity, item.id);
+  return item;
+}
+// V1 uses numbered calls; retain only bounded native continuation state, never comment bodies.
+const commentLegacyStates = new Map();
+function legacyCommentState(entity, page, sort, root) {
+  const key = JSON.stringify([entity.id, sort, root]);
+  if (page === 1) {
+    if (commentLegacyStates.size >= 100) commentLegacyStates.delete(commentLegacyStates.keys().next().value);
+    commentLegacyStates.set(key, new Map());
+  }
+  const states = commentLegacyStates.get(key);
+  return { state: states?.get(page) || {}, finish(result) {
+    if (states && !result.isEnd && result.nextState) states.set(page + 1, result.nextState);
+    return { isEnd: result.isEnd, data: result.data.map(normalizeComment),
+      ...(Number.isSafeInteger(result.total) && result.total >= 0 ? { total: result.total } : {}) };
+  } };
+}
+
+async function getMusicComments(musicItem, page = 1, request = {}) {
+  if (typeof request === "string") request = { sort: request };
+  const sort = commentSort(request.sort);
+  const root = commentRoot(musicItem, request.replyContext);
+  const pageSize = 20;
+  const { state, finish } = legacyCommentState(musicItem, page, sort, root);
+
+  const aid = musicItem.aid || (typeof musicItem.id === "number" || /^\d+$/.test(String(musicItem.id || "")) ? musicItem.id : "");
+  if (!aid) throw new Error("Provider comment video identity is unavailable");
+  if (!root && page > 1 && !state.replyOffset) throw new Error("Provider comment cursor is unavailable");
+  const params = root ? { type: 1, oid: aid, root, pn: page, ps: pageSize }
+    : { type: 1, mode: sort === "hot" ? 3 : 2, oid: aid, plat: 1, web_location: 1315875,
+      pagination_str: JSON.stringify({ offset: state.replyOffset || "" }) };
+  const body = await apiGet(root ? "/x/v2/reply/reply" : "/x/v2/reply/wbi/main", params, { wbi: !root, useCookie: true });
+  if (body.code !== 0 || !Array.isArray(body.data?.replies)) throw new Error("Provider comments request failed");
+  function format(item, main = false) {
+    const result = { id: String(item.rpid), nickName: item.member?.uname || "", avatar: item.member?.avatar,
+      comment: item.content?.message || "", like: Number(item.like) || 0, createAt: Number(item.ctime) > 0 ? Number(item.ctime) * 1000 : null,
+      location: item.reply_control?.location, replies: (item.replies || []).map(value => format(value)) };
+    return main ? commentMeta(result, musicItem, item.rcount) : result;
+  }
+  const total = commentCount(root ? body.data.page?.count : body.data.cursor?.all_count);
+  const nextOffset = body.data.cursor?.pagination_reply?.next_offset;
+  const isEnd = root ? body.data.replies.length < pageSize || (total != null && page * pageSize >= total) : Boolean(body.data.cursor?.is_end);
+  if (!root && !isEnd && (typeof nextOffset !== "string" || !nextOffset || nextOffset.length > 512 || nextOffset === state.replyOffset)) throw new Error("Provider comment cursor did not advance");
+  return finish({ data: body.data.replies.map(item => format(item, !root)), total, isEnd,
+    nextState: root ? {} : { replyOffset: nextOffset } });
+
 }
 
 function subtitleToLrc(payload) {
@@ -1066,7 +1132,7 @@ module.exports = {
   getHotSearch,
   platform: "bilibili",
   author: "BakaMusic",
-  version: "2.1.2",
+  version: "2.1.3",
   appVersion: ">=0.1.0-alpha.0",
   srcUrl: "https://music.cwo.cc.cd/plugins/bilibili.js",
   cacheControl: "no-cache",
