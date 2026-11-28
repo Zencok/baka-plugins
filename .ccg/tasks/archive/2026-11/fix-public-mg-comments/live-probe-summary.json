@@ -1,0 +1,117 @@
+{
+  "date": "2026-11-28T09:32:45.737Z",
+  "records": [
+    {
+      "name": "first",
+      "summary": {
+        "capabilities": [
+          "search",
+          "entities.get",
+          "collections.get",
+          "collections.members",
+          "discovery.charts",
+          "discovery.playlistTags",
+          "discovery.playlists",
+          "discovery.hotSearch",
+          "media.prepare",
+          "media.resolve",
+          "media.video",
+          "lyrics.get",
+          "comments.list",
+          "links.resolve",
+          "links.share"
+        ],
+        "hasLyrics": false,
+        "hasNext": true,
+        "hasUrl": false,
+        "items": 3,
+        "lean": true,
+        "providerId": "cc.baka.mg",
+        "version": "1.0.3"
+      },
+      "total": 56396,
+      "ids": [
+        "142732004",
+        "142731453",
+        "142724885"
+      ],
+      "validTime": true,
+      "hasText": true
+    },
+    {
+      "name": "next",
+      "summary": {
+        "capabilities": [
+          "search",
+          "entities.get",
+          "collections.get",
+          "collections.members",
+          "discovery.charts",
+          "discovery.playlistTags",
+          "discovery.playlists",
+          "discovery.hotSearch",
+          "media.prepare",
+          "media.resolve",
+          "media.video",
+          "lyrics.get",
+          "comments.list",
+          "links.resolve",
+          "links.share"
+        ],
+        "hasLyrics": false,
+        "hasNext": true,
+        "hasUrl": false,
+        "items": 3,
+        "lean": true,
+        "providerId": "cc.baka.mg",
+        "version": "1.0.3"
+      },
+      "total": 56396,
+      "ids": [
+        "142715793",
+        "142682839",
+        "142674900"
+      ],
+      "duplicatePrevious": false,
+      "validTime": true,
+      "hasText": true
+    },
+    {
+      "name": "copyright-only",
+      "summary": {
+        "capabilities": [
+          "search",
+          "entities.get",
+          "collections.get",
+          "collections.members",
+          "discovery.charts",
+          "discovery.playlistTags",
+          "discovery.playlists",
+          "discovery.hotSearch",
+          "media.prepare",
+          "media.resolve",
+          "media.video",
+          "lyrics.get",
+          "comments.list",
+          "links.resolve",
+          "links.share"
+        ],
+        "hasLyrics": false,
+        "hasNext": true,
+        "hasUrl": false,
+        "items": 3,
+        "lean": true,
+        "providerId": "cc.baka.mg",
+        "version": "1.0.3"
+      },
+      "total": 56396,
+      "ids": [
+        "142732004",
+        "142731453",
+        "142724885"
+      ],
+      "validTime": true,
+      "hasText": true
+    }
+  ]
+}

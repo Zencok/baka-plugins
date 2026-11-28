@@ -96,7 +96,7 @@ test("all seven V2 providers load with no Node/DOM/package globals and declare i
   for (const id of ids) {
     const { plugin } = load(id);
     assert.equal(plugin.manifest.id, "cc.baka." + id);
-    assert.equal(plugin.manifest.version, id === "kw" ? "1.0.4" : ["wy", "kg"].includes(id) ? "1.0.3" : id === "am" ? "1.0.1" : "1.0.2");
+    assert.equal(plugin.manifest.version, id === "kw" ? "1.0.4" : ["wy", "kg", "mg"].includes(id) ? "1.0.3" : id === "am" ? "1.0.1" : "1.0.2");
     assert.equal(plugin.manifest.sourceId, id + ".v1");
     assert.equal(plugin.manifest.author, "BakaMusic");
     for (const capability of plugin.manifest.capabilities) {

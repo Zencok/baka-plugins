@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "mg.v1",
   id: "cc.baka.mg",
   name: "咪咕音乐",
-  version: "1.0.2",
+  version: "1.0.3",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-cache",
@@ -3027,53 +3027,100 @@ function createOperations(sdk) {
     return { ...topListItem, musicList: [] };
   }
 
-  async function getMusicComments(musicItem, page = 1) {
-    const pageSize = 20;
-
+  async function getMusicComments(musicItem, request = {}) {
     try {
-      const targetId = musicItem.id || musicItem.copyrightId;
+      const state = pageState(request.cursor);
+      if (
+        request.cursor != null &&
+        (state.upstreamPage < 2 || state.offset < 1 || !/^[1-9]\d*$/.test(state.commentId || ""))
+      ) {
+        throw new Error("Invalid provider comment cursor");
+      }
+      const copyrightId = String(musicItem.copyrightId || "");
+      let resourceId = String(
+        musicItem.songId || (String(musicItem.id || "") !== copyrightId ? musicItem.id || "" : ""),
+      );
+      // The current comment API expects songId, not copyrightId. Older saved
+      // records can contain only the primary copyright identity.
+      if (!resourceId && copyrightId) {
+        const info = await httpGet(
+          "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do",
+          {
+            params: { resourceType: 2, copyrightId },
+            headers: { Referer: "https://m.music.migu.cn/" },
+            timeout: 10000,
+          },
+        );
+        if (info.data?.code !== "000000") throw new Error("Provider comment song lookup failed");
+        resourceId = String(info.data.resource?.[0]?.songId || "");
+      }
+      if (!/^[1-9]\d*$/.test(resourceId)) throw new Error("Provider comment song identity is unavailable");
 
-      const res = await httpGet(`https://music.migu.cn/v3/api/comment/listComments`, {
+      const pageSize = Math.min(20, pageLimit(request));
+      const res = await httpGet("https://u.musicapp.migu.cn/MIGUM3.0/user/comment/stack/v1.0", {
         params: {
-          targetId: targetId,
-          pageSize: pageSize,
-          pageNo: page,
+          resourceId,
+          resourceType: 2,
+          pageSize,
+          hotCommentStart: 0,
+          platformType: 1,
+          commentId: state.commentId || "0",
+          queryType: 1,
         },
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4195.1 Safari/537.36",
-          Referer: "https://music.migu.cn",
+          Referer: "https://m.music.migu.cn/",
         },
+        timeout: 10000,
       });
-
-      if (res.status !== 200 || res.data.returnCode !== "000000") {
+      const data = res.data?.data;
+      const total = Number(data?.commentNums);
+      if (
+        res.data?.code !== "000000" ||
+        !Array.isArray(data?.comments) ||
+        !/^(0|[1-9]\d*)$/.test(String(data.commentNums)) ||
+        !Number.isSafeInteger(total) || total < 0
+      ) {
         throw new Error("Provider comments request failed");
       }
-
-      const comments = (res.data.data?.items || []).map((item) => ({
-        id: item.commentId?.toString(),
-        nickName: item.author?.name || "",
-        avatar: item.author?.avatar?.startsWith("//")
-          ? `http:${item.author.avatar}`
-          : item.author?.avatar,
-        comment: item.body || "",
-        like: item.praiseCount,
-        createAt: item.createTime ? new Date(item.createTime).getTime() : null,
-        replies: (item.replyCommentList || []).map((c) => ({
-          id: c.commentId?.toString(),
-          nickName: c.author?.name || "",
-          avatar: c.author?.avatar?.startsWith("//") ? `http:${c.author.avatar}` : c.author?.avatar,
-          comment: c.body || "",
-          like: c.praiseCount,
-          createAt: c.createTime ? new Date(c.createTime).getTime() : null,
-        })),
-      }));
-
-      const total = res.data.data?.itemTotal || 0;
-
+      function formatComment(item, reply = false) {
+        const id = String((reply ? item?.replyId : item?.commentId) || "");
+        if (!/^[1-9]\d*$/.test(id)) throw new Error("Provider returned an invalid comment identity");
+        const user = item.user || {};
+        const avatar = user.middleIcon || user.smallIcon || user.bigIcon;
+        const time = String((reply ? item.replyTime : item.commentTime) || "");
+        const timestamp = Date.parse(time.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(:\d{2})?$/, "$1T$2$3+08:00"));
+        const like = Number(item.opNumItem?.thumbNum || 0);
+        const result = {
+          id,
+          nickName: user.nickName || "",
+          avatar: avatar?.startsWith("//") ? "https:" + avatar : avatar,
+          comment: (reply ? item.replyInfo : item.commentInfo) || "",
+          like: Number.isFinite(like) ? like : 0,
+          createAt: Number.isFinite(timestamp) ? timestamp : null,
+        };
+        if (!reply) result.replies = (item.replyComments || []).map((item) => formatComment(item, true));
+        return result;
+      }
+      // queryType=1 supplies newest comments plus a separate hot preview.
+      // Only the newest stream follows commentId, so do not repeat hot previews.
+      const items = data.comments.map((item) => formatComment(item));
+      const ids = items.map((item) => item.id);
+      if (
+        (!items.length && state.offset < total) ||
+        new Set(ids).size !== ids.length || ids.includes(state.commentId)
+      ) {
+        throw new Error("Provider comment pagination did not advance");
+      }
+      const offset = state.offset + items.length;
+      const isEnd = items.length < pageSize || offset >= total;
       return {
-        isEnd: page * pageSize >= total,
-        data: comments,
+        items,
+        total,
+        nextCursor: isEnd ? null : "v2:" + encodeURIComponent(JSON.stringify({
+          upstreamPage: state.upstreamPage + 1, offset, commentId: ids[ids.length - 1],
+        })),
       };
     } catch (error) {
       sdk.log.error("[咪咕] 获取评论失败:", error);
@@ -3380,11 +3427,7 @@ const handlers = {
   },
   lyrics: { get: async ({ entity }, sdk) => operations(sdk).lyric(entity) },
   comments: {
-    list: async (request, sdk) =>
-      pageResult(
-        await operations(sdk).comments(request.entity, pageNumber(request.cursor)),
-        request,
-      ),
+    list: async (request, sdk) => operations(sdk).comments(request.entity, request),
   },
   links: {
     resolve: async ({ url }, sdk) => operations(sdk).importSheet(url),

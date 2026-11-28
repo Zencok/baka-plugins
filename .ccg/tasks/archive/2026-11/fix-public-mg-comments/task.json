@@ -1,0 +1,12 @@
+{
+  "createdAt": "2026-11-28T09:21:04.0139052Z",
+  "domain": "plugins",
+  "branch": "main",
+  "currentPhase": "completed",
+  "nextAction": "Archived with atomic MG V2 comment protocol repair",
+  "title": "Fix public MG V2 comment requests against current upstream",
+  "id": "fix-public-mg-comments",
+  "complexity": "M",
+  "status": "completed",
+  "risk": "medium"
+}
