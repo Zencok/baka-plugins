@@ -1,0 +1,13 @@
+{
+  "id": "preserve-public-kg-root-comments",
+  "title": "Preserve public KG root comments when thread identity is unavailable",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "plugins",
+  "currentPhase": "completed",
+  "nextAction": "Archived local review and regression proof; parent integrates with public comment release",
+  "createdAt": "2026-11-28T10:09:57.191Z",
+  "branch": "main",
+  "completedAt": "2026-11-28T10:10:16.523Z"
+}

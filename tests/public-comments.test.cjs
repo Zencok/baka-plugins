@@ -217,3 +217,23 @@ for (const version of [1, 2]) test(`KG V${version}: opaque thread identity comes
   }
   assert.equal(calls, 1);
 });
+
+for (const version of [1, 2]) test(`KG V${version}: missing thread identity preserves real root and preview comments`, async () => {
+  for (const replyCount of [0, 21]) {
+    const root = row('kg');
+    root.reply_num = replyCount;
+    if (!replyCount) root.replys = [];
+    const loaded = load('kg', version, () => {
+      const body = response('kg', 'hot', [root]);
+      delete body.childrenid;
+      return body;
+    });
+    const page = await loaded.list({});
+    const item = (page.items || page.data)[0];
+    assert.equal(item.id, '100');
+    assert.equal(item.comment, text);
+    assert.equal(item.replyCount, replyCount);
+    assert.equal(item.replies.length, replyCount ? 2 : 0);
+    assert.equal(item.replyContext, undefined, 'missing native identity must not fabricate a thread context');
+  }
+});

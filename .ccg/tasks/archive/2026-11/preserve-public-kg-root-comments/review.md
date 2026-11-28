@@ -1,0 +1,5 @@
+# Preserve public KG roots without thread identity
+
+Final local review identified that missing childrenid is only a thread-expansion limitation, not a reason to reject real root comments. Both public KG templates now retain root comments, actual inline replies and honest replyCount, while emitting replyContext only when childrenid/mixsongId are valid and the reply count is positive or unknown. Known zero replies never require a thread ID. Existing strict validation still rejects caller-supplied malformed contexts before HTTP.
+
+Validation: node --test --test-name-pattern "KG|kg" tests/public-comments.test.cjs: **17/17 passed**, zero failures/skips. New V1/V2 fixtures cover missing childrenid with zero and positive reply counts. git diff --check passed; manually reviewed only the two KG metadata checks, removal of the root-page rejection and the fixture. No upstream probing, full-suite repetition, device work, external Claude or deployment. Same pending public release versions remain 1.3.8 (V1) and 1.0.4 (V2). No .ccg/spec exists or new convention is needed.

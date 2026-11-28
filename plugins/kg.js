@@ -2386,7 +2386,9 @@ function commentRoot(entity, context) {
 function commentMeta(item, entity, total, childrenId, mixsongId) {
   const count = commentCount(total);
   if (count != null) item.replyCount = count;
-  if (item.id != null && (count == null || count > 0)) item.replyContext = commentReplyContext(entity, item.id, childrenId, mixsongId);
+  if (item.id != null && (count == null || count > 0) && /^[1-9]\d{0,19}$/.test(childrenId) && /^[1-9]\d{0,19}$/.test(mixsongId)) {
+    item.replyContext = commentReplyContext(entity, item.id, childrenId, mixsongId);
+  }
   return item;
 }
 // V1 uses numbered calls; retain only bounded native continuation state, never comment bodies.
@@ -2426,7 +2428,6 @@ async function getMusicComments(musicItem, page = 1, request = {}) {
   const res = await axios_1.default.get(url, { headers: { "User-Agent": root ? "Android712-AndroidPhone-8983-18-0-COMMENT-wifi" : "Mozilla/5.0", "x-router": "m.comment.service.kugou.com" }, timeout: 15000 });
   if ((res.data?.err_code != null && res.data.err_code !== 0) || !Array.isArray(res.data?.list)) throw new Error("Provider comments request failed");
   const childrenId = root ? request.replyContext.childrenId : String(res.data.childrenid || "");
-  if (!root && res.data.list.length && !/^[1-9]\d{0,19}$/.test(childrenId)) throw new Error("Provider comment thread identity is unavailable");
   function format(item, main = false) {
     const time = item.addtime ? Date.parse(String(item.addtime).replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/, "$1T$2+08:00")) : NaN;
     const result = { id: String(item.id), nickName: item.user_name || "", avatar: item.user_pic, comment: item.content || "",
