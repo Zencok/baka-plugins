@@ -15,7 +15,7 @@
 | V1 | `plugins/*.js` | `/api/subscription.json` | `/plugins/qq.js` |
 | V2 | `plugins/v2/*.js` | `/api/v2/subscription`（也可用 `.json` 路由） | `/v2/plugins/qq`（也可用 `qq.js`） |
 
-V2 七个平台 ID 为 `cc.baka.{am,wy,qq,kg,kw,mg,bilibili}`，酷我版本为 **1.0.3**，网易云/QQ/酷狗/咪咕/Bilibili 为 **1.0.2**，Apple Music 为 **1.0.1**。本次按各平台公开 V1 基线恢复类型分派、排行榜分组、导入筛选与音质策略；酷我保留此前 HTTPS 修复。V1 保留原版本。客户端仅允许这套公开 V2 插件绑定 LX 解析器；内部 `lyra.mesh.*` 使用内部来源。
+V2 七个平台 ID 为 `cc.baka.{am,wy,qq,kg,kw,mg,bilibili}`，酷我版本为 **1.0.4**，网易云/酷狗为 **1.0.3**，QQ/咪咕/Bilibili 为 **1.0.2**，Apple Music 为 **1.0.1**。本次按各平台公开 V1 基线恢复类型分派、排行榜分组、导入筛选与音质策略；酷我保留此前 HTTPS 修复。网易云/酷狗/酷我的歌词搜索保留原歌曲 ID 与完整业务元数据，不再返回旧版显示名 `platform` 身份别名，以兼容客户端严格身份校验。V1 保留原版本。客户端仅允许这套公开 V2 插件绑定 LX 解析器；内部 `lyra.mesh.*` 使用内部来源。
 
 本次修复 V2 歌单分类的分组与常用分类，按各自旧版公开插件分别保留分类和常用项顺序、ID 类型及筛选参数；已安装插件需在客户端更新后获得修复。客户端需支持扁平分类的分组字段，以及首页独立返回的常用分类 `pinned` 数组。
 

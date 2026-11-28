@@ -1,0 +1,12 @@
+{
+  "domain": "plugins",
+  "nextAction": "Archived with atomic lyric-search identity fix",
+  "complexity": "M",
+  "title": "Preserve strict V2 track identity in public lyric search",
+  "branch": "main",
+  "status": "completed",
+  "currentPhase": "completed",
+  "createdAt": "2026-11-28T09:24:54.0024009Z",
+  "id": "fix-public-lyric-search-identity",
+  "risk": "medium"
+}

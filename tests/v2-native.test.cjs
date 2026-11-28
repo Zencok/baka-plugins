@@ -74,7 +74,7 @@ test('public providers load and paginate through the actual QuickJS HTTP SDK', {
       const result = await run(probe, [paths[platform]]);
       const summary = JSON.parse(result.stdout.trim());
       assert.equal(summary.providerId, 'cc.baka.' + platform);
-      assert.equal(summary.version, platform === 'kw' ? '1.0.3' : platform === 'am' ? '1.0.1' : '1.0.2');
+      assert.equal(summary.version, platform === 'kw' ? '1.0.4' : ['wy', 'kg'].includes(platform) ? '1.0.3' : platform === 'am' ? '1.0.1' : '1.0.2');
       assert.equal(summary.lean, true);
     }
     const requestFile = path.join(directory, 'request.json');

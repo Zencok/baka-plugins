@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "kg.v1",
   id: "cc.baka.kg",
   name: "酷狗音乐",
-  version: "1.0.2",
+  version: "1.0.3",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-cache",
@@ -1418,14 +1418,7 @@ function createOperations(sdk) {
     const res = await searchMusic(query, page);
     return {
       isEnd: res.isEnd,
-      data: res.data.map((item) => ({
-        title: item.title,
-        artist: item.artist,
-        id: item.id,
-        artwork: item.artwork,
-        album: item.album,
-        platform: "酷狗音乐",
-      })),
+      data: res.data,
     };
   }
 

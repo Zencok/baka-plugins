@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "wy.v1",
   id: "cc.baka.wy",
   name: "网易云音乐",
-  version: "1.0.2",
+  version: "1.0.3",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-store",
@@ -888,7 +888,7 @@ function createOperations(sdk) {
 
     return {
       isEnd: res.result.songCount <= page * pageSize,
-      data: formattedSongs.map((item) => ({ ...item, platform: "网易云音乐" })),
+      data: formattedSongs,
     };
   }
 
