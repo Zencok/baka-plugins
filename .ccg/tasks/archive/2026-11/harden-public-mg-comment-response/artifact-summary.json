@@ -1,0 +1,47 @@
+{
+  "artifact": "D:\\Github\\Music\\baka-plugins\\artifacts\\public-provider-runtime-20261128-mg104\\mg.js",
+  "sha256": "a96bbe0c2a7dc2265b2908b314c78c95096b2140a3fb94788583b9feb3308ea7",
+  "version": "1.0.4",
+  "srcUrl": "https://music.cwo.cc.cd/v2/plugins/mg.js",
+  "nativeInspection": {
+    "capabilities": [
+      "search",
+      "entities.get",
+      "collections.get",
+      "collections.members",
+      "discovery.charts",
+      "discovery.playlistTags",
+      "discovery.playlists",
+      "discovery.hotSearch",
+      "media.prepare",
+      "media.resolve",
+      "media.video",
+      "lyrics.get",
+      "comments.list",
+      "links.resolve",
+      "links.share"
+    ],
+    "lean": true,
+    "providerId": "cc.baka.mg",
+    "version": "1.0.4"
+  },
+  "live": {
+    "checkedAt": "2026-11-28T09:46:22.345Z",
+    "resourceId": "3790007",
+    "requestLimit": 1,
+    "pages": [
+      {
+        "items": 1,
+        "total": 56396,
+        "continuation": true
+      },
+      {
+        "items": 1,
+        "total": 56396,
+        "continuation": true
+      }
+    ],
+    "distinctAcrossPages": true,
+    "evidence": "actual lean QuickJS host and official upstream; no phone/UI validation"
+  }
+}

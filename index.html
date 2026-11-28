@@ -2142,7 +2142,7 @@
                 card.innerHTML = `
                     <div class="plugin-icon-circle" aria-hidden="true">${plugin.emoji}</div>
                     <div class="plugin-name">${plugin.name}</div>
-                    <div class="plugin-version">v${v2 ? (plugin.file === 'kw.js' ? '1.0.4' : ['wy.js', 'kg.js', 'mg.js'].includes(plugin.file) ? '1.0.3' : plugin.file === 'am.js' ? '1.0.1' : '1.0.2') : plugin.version}</div>
+                    <div class="plugin-version">v${v2 ? (['kw.js', 'mg.js'].includes(plugin.file) ? '1.0.4' : ['wy.js', 'kg.js'].includes(plugin.file) ? '1.0.3' : plugin.file === 'am.js' ? '1.0.1' : '1.0.2') : plugin.version}</div>
                     <div class="plugin-badge ${plugin.requiresKey ? '' : 'free'}">${plugin.requiresKey ? '' : 'Free'}</div>
                     <button class="plugin-copy-btn">复制</button>
                     <div class="plugin-url-detail"></div>

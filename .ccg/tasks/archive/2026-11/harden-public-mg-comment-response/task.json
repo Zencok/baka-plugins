@@ -1,0 +1,13 @@
+{
+  "nextAction": "Archived with atomic commit; generated artifact available for later authorized deployment",
+  "status": "completed",
+  "title": "Reject malformed MG comment totals and over-wide comment pages",
+  "currentPhase": "completed",
+  "branch": "main",
+  "domain": "plugins",
+  "createdAt": "2026-11-28T09:42:59.9562147Z",
+  "risk": "medium",
+  "id": "harden-public-mg-comment-response",
+  "complexity": "M",
+  "completedAt": "2026-11-28T09:47:05.799Z"
+}

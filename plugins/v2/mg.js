@@ -10,7 +10,7 @@ const manifest = {
   sourceId: "mg.v1",
   id: "cc.baka.mg",
   name: "咪咕音乐",
-  version: "1.0.3",
+  version: "1.0.4",
   srcUrl: typeof UPDATE_URL === "string" ? UPDATE_URL : "",
   author: "BakaMusic",
   cacheControl: "no-cache",
@@ -3075,11 +3075,16 @@ function createOperations(sdk) {
         timeout: 10000,
       });
       const data = res.data?.data;
-      const total = Number(data?.commentNums);
+      const rawTotal = data?.commentNums;
+      if (typeof rawTotal !== "string" && typeof rawTotal !== "number") {
+        throw new Error("Provider comments request failed");
+      }
+      const total = Number(rawTotal);
       if (
         res.data?.code !== "000000" ||
         !Array.isArray(data?.comments) ||
-        !/^(0|[1-9]\d*)$/.test(String(data.commentNums)) ||
+        data.comments.length > pageSize ||
+        !/^(0|[1-9]\d*)$/.test(String(rawTotal)) ||
         !Number.isSafeInteger(total) || total < 0
       ) {
         throw new Error("Provider comments request failed");

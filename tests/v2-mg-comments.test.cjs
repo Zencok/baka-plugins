@@ -113,6 +113,29 @@ test('MG rejects a repeated native comment page rather than looping cursors', as
   await assert.rejects(plugin.handlers.comments.list({ ...request, cursor: first.nextCursor }, sdk), /advance|cursor/);
 });
 
+test('MG rejects nonprimitive comment totals before numeric coercion', async () => {
+  const plugin = load();
+  const request = { entity: { id: '1125329711' } };
+  for (const commentNums of [[0], ['0'], {}, null]) {
+    await assert.rejects(plugin.handlers.comments.list(request, sdkFor(() => ({
+      code: '000000', data: { comments: [], commentNums },
+    }))));
+  }
+  const page = await plugin.handlers.comments.list(request, sdkFor(() => ({
+    code: '000000', data: { comments: [], commentNums: 0 },
+  })));
+  assert.deepEqual(plain(page), { items: [], nextCursor: null, total: 0 });
+});
+
+test('MG rejects upstream comment pages wider than the requested bounded page size', async () => {
+  const plugin = load();
+  for (const [limit, count] of [[1, 2], [100, 21]]) {
+    const comments = Array.from({ length: count }, (_, index) => comment(String(count - index)));
+    await assert.rejects(plugin.handlers.comments.list({ entity: { id: '1125329711' }, limit },
+      sdkFor(() => body(comments, count))));
+  }
+});
+
 test('MG current comment protocol runs through the actual lean QuickJS HTTP SDK', { skip: !process.env.BAKA_V2_PROBE }, async () => {
   const http = require('node:http');
   const os = require('node:os');

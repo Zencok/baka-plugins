@@ -26,7 +26,7 @@ test('isolated Netlify bundles serve every configured V2 subscription and provid
       vm.runInNewContext(response.body, context, { timeout: 1000 });
       assert.equal(context.module.exports.manifest.id, entry.id);
       assert.equal(context.module.exports.manifest.srcUrl, entry.url);
-      assert.equal(context.module.exports.manifest.version, platform === 'kw' ? '1.0.4' : ['wy', 'kg', 'mg'].includes(platform) ? '1.0.3' : platform === 'am' ? '1.0.1' : '1.0.2');
+      assert.equal(context.module.exports.manifest.version, ['kw', 'mg'].includes(platform) ? '1.0.4' : ['wy', 'kg'].includes(platform) ? '1.0.3' : platform === 'am' ? '1.0.1' : '1.0.2');
     }
   }
 });
